@@ -77,21 +77,17 @@ curl http://127.0.0.1:3000/api/health
 
 ---
 
-## 4. Frontend — build the static site
+## 4. Frontend — build the frontend bundle
 
-The build outputs to `dist/client/` (with a prerendered `index.html`). Move it to `public/` so CloudPanel serves it.
+The build outputs to `dist/` with separate `client/` and `server/` folders.
 
 ```bash
 cd ~/htdocs/www.ultrax.work
 npm install
 npm run build
-# Replace public/ with the build output
-rm -rf public
-mv dist public
-ls public/client/index.html   # sanity check — file must exist
 ```
 
-The nginx `root` (Step 5) points at `public/client`, not `public/`.
+> Note: this project is built with TanStack Start for a Cloudflare-style SSR target, so it does **not** emit a standalone static `index.html` in `dist/client/` by default.
 
 ---
 

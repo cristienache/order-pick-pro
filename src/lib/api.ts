@@ -1,9 +1,9 @@
 // API client — talks to the backend at /api/*.
-// In production both frontend and backend are served from www.ultrax.work,
-// so a relative base path works. In dev, set VITE_API_BASE to your local API.
+// In local development you can set VITE_API_BASE, but we only honor it on localhost.
 
-const API_BASE = import.meta.env.VITE_API_BASE || "";
-
+const isLocalBrowser = typeof window !== "undefined"
+  && ["localhost", "127.0.0.1"].includes(window.location.hostname);
+const API_BASE = isLocalBrowser ? (import.meta.env.VITE_API_BASE || "") : "";
 const TOKEN_KEY = "ultrax_token";
 
 export function getToken(): string | null {

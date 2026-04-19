@@ -301,8 +301,9 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
       y -= 10;
 
       for (const item of order.line_items) {
-        const nameText = item.sku ? `${item.name}  [${item.sku}]` : item.name;
-        const attrText = extractAttributes(item);
+        const nameRaw = item.sku ? `${item.name}  [${item.sku}]` : item.name;
+        const nameText = sanitize(nameRaw);
+        const attrText = sanitize(extractAttributes(item));
         const nameLines = wrapText(nameText, colItemW - 6, 10);
         const attrLines = wrapText(attrText, colAttrW - 6, 9);
         const lineCount = Math.max(nameLines.length, attrLines.length, 1);

@@ -175,7 +175,20 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
     const colAttrW = usableWidth * 0.43;
     const colQtyW = usableWidth * 0.15;
 
-    let page = pdf.addPage([pageWidth, pageHeight]);
+    // Helper that creates a page and patches drawText to auto-sanitize.
+    const newPage = () => {
+      const p = pdf.addPage([pageWidth, pageHeight]);
+      const original = p.drawText.bind(p);
+      p.drawText = ((text: string, opts?: Parameters<typeof p.drawText>[1]) =>
+        original(sanitize(text), opts)) as typeof p.drawText;
+      return p;
+    };
+
+    // Patched font width measurement (matches what we'll actually draw)
+    const measure = (text: string, size: number, f = font) =>
+      f.widthOfTextAtSize(sanitize(text), size);
+
+    let page = newPage();
     let y = pageHeight - marginY;
 
     const generatedAt = new Date().toLocaleString("en-GB", {
@@ -186,7 +199,7 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
 
     const drawHeader = () => {
       page.drawText("Ultraskins Picklist", { x: marginX, y, size: 16, font: fontBold, color: rgb(0, 0, 0) });
-      page.drawText(`Generated ${generatedAt}  •  ${orders.length} orders`, {
+      page.drawText(`Generated ${generatedAt}  -  ${orders.length} orders`, {
         x: marginX,
         y: y - 16,
         size: 9,
@@ -199,10 +212,11 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
 
     const ensureSpace = (needed: number) => {
       if (y - needed < marginY) {
-        page = pdf.addPage([pageWidth, pageHeight]);
+        page = newPage();
         y = pageHeight - marginY;
       }
     };
+
 
     // Word-wrap helper
     const wrapText = (text: string, maxWidth: number, size: number, f = font): string[] => {

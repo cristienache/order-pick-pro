@@ -11,6 +11,18 @@ import { encrypt, decrypt } from "./crypto.js";
 import { signToken, requireAuth, requireAdmin } from "./auth.js";
 import { fetchProcessingOrders, fetchOrderById, generatePicklistPdf } from "./woocommerce.js";
 
+const isDevelopment = process.env.NODE_ENV !== "production";
+
+if (!process.env.JWT_SECRET && isDevelopment) {
+  process.env.JWT_SECRET = "ultrax-dev-jwt-secret-local-only-change-in-production";
+}
+if (!process.env.ENCRYPTION_KEY && isDevelopment) {
+  process.env.ENCRYPTION_KEY = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+}
+if (!process.env.ADMIN_EMAIL && isDevelopment) {
+  process.env.ADMIN_EMAIL = "contact@ultrax.work";
+}
+
 const PORT = Number(process.env.PORT || 3000);
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "").toLowerCase();
 const CORS_ORIGIN = (process.env.CORS_ORIGIN || "*").split(",").map((s) => s.trim());

@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-const STORE_URL = "https://ultraskins.co.uk";
+// NOTE: must include www — the apex domain redirects, and fetch drops auth headers on redirects.
+const STORE_URL = "https://www.ultraskins.co.uk";
 
 function authHeader() {
   const key = process.env.WC_CONSUMER_KEY;

@@ -331,7 +331,7 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
           });
         });
         // Qty
-        page.drawText(`× ${item.quantity}`, {
+        page.drawText(`x ${item.quantity}`, {
           x: marginX + colItemW + colAttrW,
           y,
           size: 11,

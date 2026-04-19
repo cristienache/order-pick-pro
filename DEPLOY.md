@@ -104,14 +104,15 @@ following (adapt the site user/path):
 server {
     listen 80;
     listen [::]:80;
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
 
     {{ssl_certificate_key}}
     {{ssl_certificate}}
 
     server_name www.ultrax.work ultrax.work;
-    {{root}}/htdocs/www.ultrax.work/public;
+    root {{root}}/htdocs/www.ultrax.work/public/client;
     index index.html;
 
     {{nginx_access_log}}

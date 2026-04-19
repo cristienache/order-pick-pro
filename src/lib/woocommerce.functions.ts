@@ -118,6 +118,47 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
     // Sort by order number ascending
     orders.sort((a, b) => Number(a.number) - Number(b.number));
 
+    // Sanitize text for WinAnsi-encoded standard fonts.
+    // Replaces typographic chars (smart quotes, inch/foot marks, etc.) with ASCII,
+    // then strips anything outside printable WinAnsi range so pdf-lib won't throw.
+    const sanitize = (input: string): string => {
+      if (!input) return "";
+      const map: Record<string, string> = {
+        "\u2018": "'", "\u2019": "'", "\u201A": ",", "\u201B": "'",
+        "\u201C": '"', "\u201D": '"', "\u201E": '"', "\u201F": '"',
+        "\u2032": "'",   // prime (foot)
+        "\u2033": '"',   // double prime (inch)
+        "\u2034": '"',
+        "\u2013": "-",   // en dash
+        "\u2014": "-",   // em dash
+        "\u2212": "-",   // minus
+        "\u2026": "...",
+        "\u00D7": "x",   // multiplication sign
+        "\u2715": "x",
+        "\u2716": "x",
+        "\u2022": "*",   // bullet
+        "\u00A0": " ",   // nbsp
+        "\u200B": "",    // zero-width
+        "\u2122": "(TM)",
+        "\u00AE": "(R)",
+        "\u00A9": "(C)",
+      };
+      let out = "";
+      for (const ch of input) {
+        if (ch in map) {
+          out += map[ch];
+          continue;
+        }
+        const code = ch.charCodeAt(0);
+        if ((code >= 0x20 && code <= 0x7E) || (code >= 0xA0 && code <= 0xFF)) {
+          out += ch;
+        } else {
+          out += "?";
+        }
+      }
+      return out;
+    };
+
     // Build PDF
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);
@@ -134,7 +175,20 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
     const colAttrW = usableWidth * 0.43;
     const colQtyW = usableWidth * 0.15;
 
-    let page = pdf.addPage([pageWidth, pageHeight]);
+    // Helper that creates a page and patches drawText to auto-sanitize.
+    const newPage = () => {
+      const p = pdf.addPage([pageWidth, pageHeight]);
+      const original = p.drawText.bind(p);
+      p.drawText = ((text: string, opts?: Parameters<typeof p.drawText>[1]) =>
+        original(sanitize(text), opts)) as typeof p.drawText;
+      return p;
+    };
+
+    // Patched font width measurement (matches what we'll actually draw)
+    const measure = (text: string, size: number, f = font) =>
+      f.widthOfTextAtSize(sanitize(text), size);
+
+    let page = newPage();
     let y = pageHeight - marginY;
 
     const generatedAt = new Date().toLocaleString("en-GB", {
@@ -145,7 +199,7 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
 
     const drawHeader = () => {
       page.drawText("Ultraskins Picklist", { x: marginX, y, size: 16, font: fontBold, color: rgb(0, 0, 0) });
-      page.drawText(`Generated ${generatedAt}  •  ${orders.length} orders`, {
+      page.drawText(`Generated ${generatedAt}  -  ${orders.length} orders`, {
         x: marginX,
         y: y - 16,
         size: 9,
@@ -158,10 +212,11 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
 
     const ensureSpace = (needed: number) => {
       if (y - needed < marginY) {
-        page = pdf.addPage([pageWidth, pageHeight]);
+        page = newPage();
         y = pageHeight - marginY;
       }
     };
+
 
     // Word-wrap helper
     const wrapText = (text: string, maxWidth: number, size: number, f = font): string[] => {
@@ -215,9 +270,8 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
         font: fontBold,
       });
       if (customer) {
-        const cText = customer;
-        const cWidth = font.widthOfTextAtSize(cText, 9);
-        page.drawText(cText, {
+        const cWidth = measure(customer, 9);
+        page.drawText(customer, {
           x: marginX + usableWidth - cWidth - 6,
           y: y - 11,
           size: 9,
@@ -247,8 +301,9 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
       y -= 10;
 
       for (const item of order.line_items) {
-        const nameText = item.sku ? `${item.name}  [${item.sku}]` : item.name;
-        const attrText = extractAttributes(item);
+        const nameRaw = item.sku ? `${item.name}  [${item.sku}]` : item.name;
+        const nameText = sanitize(nameRaw);
+        const attrText = sanitize(extractAttributes(item));
         const nameLines = wrapText(nameText, colItemW - 6, 10);
         const attrLines = wrapText(attrText, colAttrW - 6, 9);
         const lineCount = Math.max(nameLines.length, attrLines.length, 1);
@@ -276,7 +331,7 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
           });
         });
         // Qty
-        page.drawText(`× ${item.quantity}`, {
+        page.drawText(`x ${item.quantity}`, {
           x: marginX + colItemW + colAttrW,
           y,
           size: 11,

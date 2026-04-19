@@ -79,7 +79,7 @@ curl http://127.0.0.1:3000/api/health
 
 ## 4. Frontend — build the static site
 
-The build outputs to `dist/`. Move it to `public/` so CloudPanel serves it.
+The build outputs to `dist/client/` (with a prerendered `index.html`). Move it to `public/` so CloudPanel serves it.
 
 ```bash
 cd ~/htdocs/www.ultrax.work
@@ -88,7 +88,10 @@ npm run build
 # Replace public/ with the build output
 rm -rf public
 mv dist public
+ls public/client/index.html   # sanity check — file must exist
 ```
+
+The nginx `root` (Step 5) points at `public/client`, not `public/`.
 
 ---
 

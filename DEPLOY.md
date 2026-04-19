@@ -112,7 +112,7 @@ server {
     {{ssl_certificate}}
 
     server_name www.ultrax.work ultrax.work;
-    root {{root}}/htdocs/www.ultrax.work/public/client;
+    root /home/ultrax/htdocs/www.ultrax.work/public/client;
     index index.html;
 
     {{nginx_access_log}}

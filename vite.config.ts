@@ -8,15 +8,8 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
   tanstackStart: {
-    // Self-hosting as a static SPA: prerender root so dist/client/index.html exists,
-    // and let nginx's SPA fallback (try_files ... /index.html) handle every other route
-    // client-side. No SSR runtime needed.
-    prerender: {
-      enabled: true,
-      crawlLinks: false,
-      filter: (page: { path: string }) => page.path === "/",
-    },
-    pages: [{ path: "/" }],
+    // Self-hosting as a static SPA: emit a static index.html shell so nginx can serve
+    // it for every route via try_files ... /index.html. No SSR runtime needed.
     spa: { enabled: true },
   },
 });

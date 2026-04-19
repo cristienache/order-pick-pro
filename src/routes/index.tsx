@@ -69,7 +69,8 @@ function PicklistPage() {
       await Promise.all(activeSites.map(async (sid) => {
         const r = await api<{ orders: OrderRow[] }>(`/api/sites/${sid}/orders`);
         results[sid] = r.orders;
-        sel[sid] = new Set(r.orders.map((o) => o.id));
+        // Start with NO orders selected — user picks what to include.
+        sel[sid] = new Set();
       }));
       setOrdersBySite(results);
       setSelected(sel);
@@ -251,7 +252,11 @@ function PicklistPage() {
                 <CardContent className="p-0">
                   <div className="border-t">
                     <div className="flex items-center gap-3 px-4 py-2 bg-muted/40 text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                      <Checkbox checked={allSelected} onCheckedChange={(v) => toggleAllInSite(sid, Boolean(v))} />
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={(v) => toggleAllInSite(sid, Boolean(v))}
+                        aria-label={search.trim() ? "Select all filtered" : "Select all"}
+                      />
                       <div className="w-24">Order</div>
                       <div className="flex-1">Customer</div>
                       <div className="w-20 text-right">Items</div>

@@ -270,9 +270,8 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
         font: fontBold,
       });
       if (customer) {
-        const cText = customer;
-        const cWidth = font.widthOfTextAtSize(cText, 9);
-        page.drawText(cText, {
+        const cWidth = measure(customer, 9);
+        page.drawText(customer, {
           x: marginX + usableWidth - cWidth - 6,
           y: y - 11,
           size: 9,

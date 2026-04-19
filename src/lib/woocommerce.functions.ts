@@ -118,6 +118,47 @@ export const generatePicklistPdf = createServerFn({ method: "POST" })
     // Sort by order number ascending
     orders.sort((a, b) => Number(a.number) - Number(b.number));
 
+    // Sanitize text for WinAnsi-encoded standard fonts.
+    // Replaces typographic chars (smart quotes, inch/foot marks, etc.) with ASCII,
+    // then strips anything outside printable WinAnsi range so pdf-lib won't throw.
+    const sanitize = (input: string): string => {
+      if (!input) return "";
+      const map: Record<string, string> = {
+        "\u2018": "'", "\u2019": "'", "\u201A": ",", "\u201B": "'",
+        "\u201C": '"', "\u201D": '"', "\u201E": '"', "\u201F": '"',
+        "\u2032": "'",   // prime (foot)
+        "\u2033": '"',   // double prime (inch)
+        "\u2034": '"',
+        "\u2013": "-",   // en dash
+        "\u2014": "-",   // em dash
+        "\u2212": "-",   // minus
+        "\u2026": "...",
+        "\u00D7": "x",   // multiplication sign
+        "\u2715": "x",
+        "\u2716": "x",
+        "\u2022": "*",   // bullet
+        "\u00A0": " ",   // nbsp
+        "\u200B": "",    // zero-width
+        "\u2122": "(TM)",
+        "\u00AE": "(R)",
+        "\u00A9": "(C)",
+      };
+      let out = "";
+      for (const ch of input) {
+        if (ch in map) {
+          out += map[ch];
+          continue;
+        }
+        const code = ch.charCodeAt(0);
+        if ((code >= 0x20 && code <= 0x7E) || (code >= 0xA0 && code <= 0xFF)) {
+          out += ch;
+        } else {
+          out += "?";
+        }
+      }
+      return out;
+    };
+
     // Build PDF
     const pdf = await PDFDocument.create();
     const font = await pdf.embedFont(StandardFonts.Helvetica);

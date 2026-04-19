@@ -14,7 +14,7 @@ export default defineConfig({
     prerender: {
       enabled: true,
       crawlLinks: false,
-      filter: (page) => page.path === "/",
+      filter: (page: { path: string }) => page.path === "/",
     },
     pages: [{ path: "/" }],
     spa: { enabled: true },

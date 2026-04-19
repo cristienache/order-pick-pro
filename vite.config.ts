@@ -6,4 +6,17 @@
 // You can pass additional config via defineConfig({ vite: { ... } }) if needed.
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
-export default defineConfig();
+export default defineConfig({
+  tanstackStart: {
+    // Self-hosting as a static SPA: prerender root so dist/client/index.html exists,
+    // and let nginx's SPA fallback (try_files ... /index.html) handle every other route
+    // client-side. No SSR runtime needed.
+    prerender: {
+      enabled: true,
+      crawlLinks: false,
+      filter: (page) => page.path === "/",
+    },
+    pages: [{ path: "/" }],
+    spa: { enabled: true },
+  },
+});

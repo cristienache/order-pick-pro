@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { toast, Toaster } from "sonner";
 import { Loader2, Download, RefreshCw, Package } from "lucide-react";
@@ -40,6 +41,7 @@ function PicklistPage() {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [search, setSearch] = useState("");
+  const [sortOrder, setSortOrder] = useState<"recent" | "oldest">("recent");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -59,11 +61,18 @@ function PicklistPage() {
   const filtered = useMemo(() => {
     if (!orders) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return orders;
-    return orders.filter(
-      (o) => o.number.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q),
-    );
-  }, [orders, search]);
+    const base = !q
+      ? orders
+      : orders.filter(
+          (o) => o.number.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q),
+        );
+    const sorted = [...base].sort((a, b) => {
+      const ta = new Date(a.date_created).getTime();
+      const tb = new Date(b.date_created).getTime();
+      return sortOrder === "recent" ? tb - ta : ta - tb;
+    });
+    return sorted;
+  }, [orders, search, sortOrder]);
 
   const toggleAll = (checked: boolean) => {
     if (checked) setSelected(new Set(filtered.map((o) => o.id)));
@@ -176,12 +185,23 @@ function PicklistPage() {
                   <Badge variant="secondary">{totalItems} items total</Badge>
                 </div>
               </div>
-              <Input
-                placeholder="Filter by order number or customer…"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="max-w-sm"
-              />
+              <div className="flex items-center gap-2 flex-wrap">
+                <Input
+                  placeholder="Filter by order number or customer…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="max-w-sm"
+                />
+                <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "recent" | "oldest")}>
+                  <SelectTrigger className="w-[180px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">Most recent</SelectItem>
+                    <SelectItem value="oldest">Oldest</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <div className="border-t">

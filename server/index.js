@@ -360,7 +360,26 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
   }
 });
 
-// ---------- Bulk actions ----------
+// Full order detail (used by the order detail drawer in the dashboard).
+app.get("/api/sites/:id/orders/:orderId", requireAuth, async (req, res) => {
+  const site = loadSiteWithKeys(Number(req.params.id), req.user.id);
+  if (!site) return res.status(404).json({ error: "Not found" });
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ error: "Invalid order id" });
+  }
+  try {
+    const [order, notes] = await Promise.all([
+      fetchOrderById(site, orderId),
+      fetchOrderNotes(site, orderId),
+    ]);
+    res.json({ order, notes });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Upstream error" });
+  }
+});
+
+
 async function processBulk(selections, userId, perOrder) {
   const results = [];
   for (const sel of selections) {

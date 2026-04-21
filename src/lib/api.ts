@@ -69,7 +69,21 @@ export async function apiBlob(path: string, opts: Options = {}): Promise<Blob> {
 }
 
 export type User = { id: number; email: string; role: "user" | "admin" };
-export type Site = { id: number; name: string; store_url: string; created_at: string };
+export type Site = {
+  id: number;
+  name: string;
+  store_url: string;
+  created_at: string;
+  // Return / sender address — printed on 4x6 shipping labels.
+  // All fields are nullable: the user can fill them in later.
+  return_name: string | null;
+  return_company: string | null;
+  return_line1: string | null;
+  return_line2: string | null;
+  return_city: string | null;
+  return_postcode: string | null;
+  return_country: string | null;
+};
 export type Invite = {
   id: number; email: string; role: string; used_at: string | null;
   expires_at: string; created_at: string; token: string;

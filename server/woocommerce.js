@@ -224,16 +224,26 @@ async function generateA4Pdf(groups) {
         const nameLines = wrapText(sanitize(nameRaw), colItemW - 6, 10);
         const attrLines = wrapText(sanitize(extractAttributes(item)), colAttrW - 6, 9);
         const lineCount = Math.max(nameLines.length, attrLines.length, 1);
-        const rowHeight = lineCount * 12 + 6;
+        const lineHeight = 13;
+        const topPad = 4;     // space above first text line
+        const bottomPad = 7;  // space below last baseline (clears descenders)
+        const rowHeight = topPad + lineCount * lineHeight + bottomPad;
         ensureSpace(rowHeight);
 
-        nameLines.forEach((l, idx) => page.drawText(l, { x: marginX, y: y - idx * 12, size: 10, font }));
-        attrLines.forEach((l, idx) => page.drawText(l, { x: marginX + colItemW, y: y - idx * 12, size: 9, font, color: rgb(0.25, 0.25, 0.25) }));
-        page.drawText(`x ${item.quantity}`, { x: marginX + colItemW + colAttrW, y, size: 11, font: fontBold });
+        const firstBaseline = y - topPad - 10; // 10 = approx ascender for 10pt text
+        nameLines.forEach((l, idx) =>
+          page.drawText(l, { x: marginX, y: firstBaseline - idx * lineHeight, size: 10, font })
+        );
+        attrLines.forEach((l, idx) =>
+          page.drawText(l, { x: marginX + colItemW, y: firstBaseline - idx * lineHeight, size: 9, font, color: rgb(0.25, 0.25, 0.25) })
+        );
+        page.drawText(`x ${item.quantity}`, {
+          x: marginX + colItemW + colAttrW, y: firstBaseline, size: 11, font: fontBold,
+        });
 
         y -= rowHeight;
         page.drawLine({
-          start: { x: marginX, y: y + 2 }, end: { x: marginX + usableWidth, y: y + 2 },
+          start: { x: marginX, y }, end: { x: marginX + usableWidth, y },
           thickness: 0.25, color: rgb(0.88, 0.88, 0.88),
         });
       }

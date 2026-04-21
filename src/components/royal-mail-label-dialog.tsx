@@ -393,10 +393,45 @@ function FormRow({
 
 // ---------------- Viewer ----------------
 
-function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () => void }) {
+function LabelViewer({
+  shipment, onClose, onVoided,
+}: {
+  shipment: RmShipment;
+  onClose: () => void;
+  onVoided: () => void;
+}) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [voiding, setVoiding] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  // Cancel = delete the Click & Drop order (when still cancellable) and
+  // mark the local shipment voided so the user can create a fresh label.
+  // Uses force=true so we still recover locally if Royal Mail refuses
+  // (e.g. label already generated their side, or remote order missing).
+  const cancelLabel = async () => {
+    const ok = window.confirm(
+      "Cancel this label and delete the order in Click & Drop? You'll be able to create a new label afterwards.",
+    );
+    if (!ok) return;
+    setVoiding(true);
+    try {
+      const res = await api<{ ok: boolean; remoteWarning?: string }>(
+        `/api/royal-mail/shipments/${shipment.id}?force=true`,
+        { method: "DELETE" },
+      );
+      if (res.remoteWarning) {
+        toast.warning(`Cancelled locally. Royal Mail said: ${res.remoteWarning}`);
+      } else {
+        toast.success("Label cancelled");
+      }
+      onVoided();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cancel failed");
+    } finally {
+      setVoiding(false);
+    }
+  };
 
   useEffect(() => {
     if (!shipment.has_label) {

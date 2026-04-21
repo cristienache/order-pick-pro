@@ -502,6 +502,8 @@ async function generateAddressLabelSheetPdf(groups) {
 
   return Buffer.from(await pdf.save());
 }
+
+function wrapTextFactory(font) {
   return function wrapText(text, maxWidth, size, f = font) {
     if (!text) return [""];
     const words = text.split(/\s+/);

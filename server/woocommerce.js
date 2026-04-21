@@ -20,7 +20,10 @@ export async function fetchOrders(site, opts = {}) {
   const base = normalizeUrl(site.store_url);
 
   while (page <= 5) {
-    const url = `${base}/wp-json/wc/v3/orders?status=${encodeURIComponent(statuses)}&per_page=${perPage}&page=${page}&orderby=date&order=asc`;
+    // order=desc so we always pull the MOST RECENT orders first. With status=completed
+    // a store may have tens of thousands of historical orders; ascending order would
+    // return the oldest 500 (years old) and the user would see no recent completed orders.
+    const url = `${base}/wp-json/wc/v3/orders?status=${encodeURIComponent(statuses)}&per_page=${perPage}&page=${page}&orderby=date&order=desc`;
     const res = await fetch(url, {
       headers: {
         Authorization: authHeader(site.consumer_key, site.consumer_secret),

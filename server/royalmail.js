@@ -31,10 +31,20 @@ export function rmBaseUrl(useSandbox) {
 // reorganised. Click & Drop has no token cache to clear.
 export function clearRmToken(_userId, _sandbox) { /* no-op */ }
 
+export function normalizeRmApiKey(apiKey) {
+  return String(apiKey || "")
+    .trim()
+    .replace(/^authorization\s*:\s*/i, "")
+    .replace(/^bearer\s+/i, "")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/^['\"]|['\"]$/g, "")
+    .trim();
+}
+
 function authHeaders(apiKey) {
   return {
     Accept: "application/json",
-    Authorization: `Bearer ${apiKey}`,
+    Authorization: `Bearer ${normalizeRmApiKey(apiKey)}`,
   };
 }
 

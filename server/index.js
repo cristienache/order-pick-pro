@@ -1173,7 +1173,7 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
       await addOrderNote(
         site,
         d.woocommerce_order_id,
-        `Royal Mail ${d.service_code} label created. Tracking: ${trackingNumber}`,
+        `Royal Mail ${d.service_code || "label"} created. Tracking: ${trackingNumber}`,
         false,
       );
     } catch (e) {

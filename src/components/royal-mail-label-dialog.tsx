@@ -139,8 +139,9 @@ function LabelForm({
   // Reset when the parent opens us with a different order.
   useEffect(() => { setRecipient(recipientFromOrder(order)); }, [order.id]);
 
-  // Sensible default — most non-OBA accounts have Tracked 48.
-  const [serviceCode, setServiceCode] = useState<string>("TRM48");
+  // Default to Auto so Click & Drop can use the services/rules enabled on the account.
+  const [serviceMode, setServiceMode] = useState<string>("auto");
+  const [customServiceCode, setCustomServiceCode] = useState<string>("");
   const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
   const [weightGrams, setWeightGrams] = useState<string>("500");
   const [length, setLength] = useState<string>("");
@@ -153,21 +154,20 @@ function LabelForm({
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
-  // Look up suggestion metadata if the typed code matches one we know about.
+  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+
+  // Look up suggestion metadata if the selected/typed code matches one we know about.
   // Falls back to a generic 20kg cap so unknown codes still pass weight checks.
   const service = useMemo(() => {
     const code = serviceCode.trim().toUpperCase();
     return (
       RM_SERVICES.find((s) => s.code === code) ?? {
         code,
-        label: code || "Service",
+        label: code && code !== "AUTO" ? code : "Auto",
         maxWeight: 20000,
       }
     );
   }, [serviceCode]);
-
-  const weightNum = Number(weightGrams);
-  const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

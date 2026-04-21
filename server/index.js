@@ -9,7 +9,14 @@ import { z } from "zod";
 import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
 import { signToken, requireAuth, requireAdmin } from "./auth.js";
-import { fetchProcessingOrders, fetchOrderById, generatePicklistPdf } from "./woocommerce.js";
+import {
+  fetchOrders,
+  fetchOrderById,
+  generatePicklistPdf,
+  updateOrder,
+  addOrderNote,
+  fetchCustomerOrderCount,
+} from "./woocommerce.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
@@ -68,7 +75,29 @@ const generateSchema = z.object({
     site_id: z.number().int().positive(),
     order_ids: z.array(z.number().int().positive()).min(1).max(500),
   })).min(1).max(20),
-  format: z.enum(["a4", "label4x6"]).optional().default("a4"),
+  // Accept new format names AND legacy aliases
+  format: z.enum([
+    "picking_a4", "packing_a4", "packing_4x6",
+    "a4", "label4x6",
+  ]).optional().default("picking_a4"),
+});
+
+const VALID_STATUSES = [
+  "pending", "processing", "on-hold", "completed", "cancelled",
+  "refunded", "failed", "trash",
+];
+const bulkActionSchema = z.object({
+  selections: z.array(z.object({
+    site_id: z.number().int().positive(),
+    order_ids: z.array(z.number().int().positive()).min(1).max(500),
+  })).min(1).max(20),
+});
+const bulkCompleteSchema = bulkActionSchema.extend({
+  notify_customer: z.boolean().optional().default(true),
+});
+const bulkNoteSchema = bulkActionSchema.extend({
+  note: z.string().trim().min(1).max(2000),
+  customer_note: z.boolean().optional().default(false),
 });
 
 // ---------- Auth ----------

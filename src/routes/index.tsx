@@ -274,9 +274,11 @@ function PicklistPage() {
       const a = document.createElement("a");
       a.href = url;
       const meta = FORMATS.find((f) => f.value === format)!;
-      const stem = format === "picking_a4" ? "picking-slip"
+      const stem =
+        format === "picking_a4" ? "picking-slip"
         : format === "packing_a4" ? "packing-slip"
-        : "packing-labels";
+        : format === "packing_4x6" ? "packing-labels"
+        : "shipping-labels";
       a.download = `${stem}-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);

@@ -316,8 +316,13 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
   if (statuses.length === 0) statuses.push("processing");
   const computeRepeat = req.query.repeat === "1" || req.query.repeat === "true";
 
+  // Date bounds (ISO 8601). Forwarded to WooCommerce so historical statuses
+  // like "completed" don't pull thousands of irrelevant orders.
+  const after = typeof req.query.after === "string" && req.query.after ? req.query.after : null;
+  const before = typeof req.query.before === "string" && req.query.before ? req.query.before : null;
+
   try {
-    const orders = await fetchOrders(site, { statuses });
+    const orders = await fetchOrders(site, { statuses, after, before });
 
     // Optionally enrich with repeat-customer counts (rate-limited concurrency)
     let repeatMap = new Map();

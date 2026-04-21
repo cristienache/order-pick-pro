@@ -187,7 +187,7 @@ function LabelForm({
           woocommerce_order_id: order.id,
           customer_reference: reference || String(order.number),
           service_code: serviceCode,
-          service_format: "P",
+          service_format: packageFormat,
           weight_grams: weightNum,
           ...dims,
           safe_place: safePlace || undefined,

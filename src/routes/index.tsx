@@ -146,6 +146,14 @@ function PicklistPage() {
     if (mode === "single" && activeSites.length !== 1) setActiveSites([sites[0].id]);
   }, [mode, sites]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // "All dates" is only allowed when the status filter is exactly ["processing"].
+  // If the user changes the status set while "all" is active, snap back to "today"
+  // so they don't accidentally pull the whole order history.
+  useEffect(() => {
+    const isProcessingOnly = statuses.length === 1 && statuses[0] === "processing";
+    if (datePreset === "all" && !isProcessingOnly) setDatePreset("today");
+  }, [statuses, datePreset]);
+
   const loadOrders = useCallback(async (silent = false) => {
     if (activeSites.length === 0) return;
     setLoadingOrders(true);

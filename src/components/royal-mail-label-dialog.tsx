@@ -139,7 +139,7 @@ function LabelForm({
   // Reset when the parent opens us with a different order.
   useEffect(() => { setRecipient(recipientFromOrder(order)); }, [order.id]);
 
-  const [serviceCode, setServiceCode] = useState<string>("TRK48");
+  const [serviceCode, setServiceCode] = useState<string>("TPM");
   const [weightGrams, setWeightGrams] = useState<string>("500");
   const [length, setLength] = useState<string>("");
   const [width, setWidth] = useState<string>("");

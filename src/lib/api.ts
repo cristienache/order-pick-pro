@@ -112,16 +112,19 @@ export type RmShipment = {
   created_at: string;
 };
 
-// UI-facing list of Royal Mail UK domestic services with friendly labels and
-// the typical max weight (grams) — used to validate the form before the API
-// call. Hard limits ultimately come from Royal Mail.
+// UI-facing list of Royal Mail Click & Drop UK domestic services with friendly
+// labels and the typical max weight (grams) — used to validate the form
+// before the API call. Hard limits ultimately come from Royal Mail.
+//   CRL1 / CRL2 — OBA 1st / 2nd Class
+//   TPN  / TPM  — Tracked 24 / Tracked 48
+//   TPLN / TPLM — Tracked 24 Signed / Tracked 48 Signed
 export const RM_SERVICES: Array<{
   code: string; label: string; maxWeight: number;
 }> = [
-  { code: "CRL",   label: "1st Class",          maxWeight: 20000 },
-  { code: "CRL48", label: "2nd Class",          maxWeight: 20000 },
-  { code: "TRK24", label: "Tracked 24",         maxWeight: 20000 },
-  { code: "TRK48", label: "Tracked 48",         maxWeight: 20000 },
-  { code: "STL1",  label: "Tracked 24 Signed",  maxWeight: 20000 },
-  { code: "STL2",  label: "Tracked 48 Signed",  maxWeight: 20000 },
+  { code: "CRL1", label: "1st Class (OBA)",      maxWeight: 20000 },
+  { code: "CRL2", label: "2nd Class (OBA)",      maxWeight: 20000 },
+  { code: "TPN",  label: "Tracked 24",           maxWeight: 20000 },
+  { code: "TPM",  label: "Tracked 48",           maxWeight: 20000 },
+  { code: "TPLN", label: "Tracked 24 Signed",    maxWeight: 20000 },
+  { code: "TPLM", label: "Tracked 48 Signed",    maxWeight: 20000 },
 ];

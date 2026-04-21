@@ -61,7 +61,7 @@ db.exec(`
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
     -- Click & Drop API key (single bearer token). Encrypted at rest.
     -- The legacy client_id_enc / client_secret_enc columns from the original
-    -- Shipping API v3 design remain in `ALTER TABLE` migrations below for
+    -- Shipping API v3 design remain in ALTER TABLE migrations below for
     -- backwards compatibility but are no longer read or written.
     api_key_enc TEXT,
     client_id_enc TEXT,

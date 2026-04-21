@@ -217,7 +217,7 @@ async function generateA4Pdf(groups) {
         start: { x: marginX, y }, end: { x: marginX + usableWidth, y },
         thickness: 0.5, color: rgb(0.7, 0.7, 0.7),
       });
-      y -= 10;
+      y -= 14;
 
       for (const item of order.line_items) {
         const nameRaw = item.sku ? `${item.name}  [${item.sku}]` : item.name;

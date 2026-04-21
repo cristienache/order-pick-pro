@@ -236,27 +236,50 @@ function SitesPage() {
         </Card>
       ) : (
         <div className="grid gap-3 md:grid-cols-2">
-          {sites.map((s) => (
-            <Card key={s.id}>
-              <CardContent className="p-4 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="font-semibold truncate">{s.name}</div>
-                  <div className="text-sm text-muted-foreground truncate">{s.store_url}</div>
-                  <div className="text-xs text-muted-foreground mt-1">
-                    Added {new Date(s.created_at).toLocaleDateString()}
+          {sites.map((s) => {
+            const hasReturnAddr = Boolean(
+              (s.return_name || s.return_company) &&
+              s.return_line1 && s.return_city && s.return_postcode,
+            );
+            return (
+              <Card key={s.id}>
+                <CardContent className="p-4 flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">{s.name}</div>
+                    <div className="text-sm text-muted-foreground truncate">{s.store_url}</div>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      <span className="text-xs text-muted-foreground">
+                        Added {new Date(s.created_at).toLocaleDateString()}
+                      </span>
+                      <span
+                        className={
+                          "text-[10px] px-1.5 py-0.5 rounded-md border " +
+                          (hasReturnAddr
+                            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                            : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400")
+                        }
+                        title={
+                          hasReturnAddr
+                            ? "Return address set — 4×6 shipping labels available"
+                            : "Add a return address to enable 4×6 shipping labels"
+                        }
+                      >
+                        {hasReturnAddr ? "Return address ✓" : "No return address"}
+                      </span>
+                    </div>
                   </div>
-                </div>
-                <div className="flex gap-1">
-                  <Button size="icon" variant="ghost" onClick={() => openEdit(s)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" onClick={() => setDeleteId(s.id)}>
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="flex gap-1">
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(s)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" onClick={() => setDeleteId(s.id)}>
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 

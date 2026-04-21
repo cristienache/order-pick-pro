@@ -84,13 +84,21 @@ function AddressBlock({ a, label }: { a?: WCAddress; label: string }) {
   );
 }
 
+// Lightweight Royal Mail status used to decide what the label button does.
+type RmStatus = {
+  configured: boolean;
+  shipment: RmShipment | null;
+};
+
 export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: Props) {
   const open = siteId != null && orderId != null;
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<{ order: WCOrder; notes: WCNote[] } | null>(null);
+  const [rm, setRm] = useState<RmStatus | null>(null);
+  const [labelOpen, setLabelOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) { setData(null); return; }
+    if (!open) { setData(null); setRm(null); setLabelOpen(false); return; }
     let cancelled = false;
     setLoading(true);
     api<{ order: WCOrder; notes: WCNote[] }>(`/api/sites/${siteId}/orders/${orderId}`)
@@ -99,6 +107,24 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
         if (!cancelled) toast.error(e instanceof Error ? e.message : "Failed to load order");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
+
+    // Fetch RM connection status + any existing shipment for this order in
+    // parallel so the label button knows what to render. Failures are silent
+    // — the order detail still loads.
+    Promise.all([
+      api<{ settings: { has_client_id: boolean; has_client_secret: boolean } }>(
+        "/api/royal-mail/settings",
+      ).catch(() => null),
+      api<{ shipment: RmShipment | null }>(
+        `/api/royal-mail/shipments/by-order/${siteId}/${orderId}`,
+      ).catch(() => null),
+    ]).then(([s, ship]) => {
+      if (cancelled) return;
+      setRm({
+        configured: Boolean(s?.settings?.has_client_id && s?.settings?.has_client_secret),
+        shipment: ship?.shipment ?? null,
+      });
+    });
     return () => { cancelled = true; };
   }, [open, siteId, orderId]);
 

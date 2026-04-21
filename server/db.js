@@ -59,9 +59,14 @@ db.exec(`
   -- for WooCommerce keys. Sender fields are stored in plain text.
   CREATE TABLE IF NOT EXISTS royal_mail_credentials (
     user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    -- Click & Drop API key (single bearer token). Encrypted at rest.
+    -- The legacy client_id_enc / client_secret_enc columns from the original
+    -- Shipping API v3 design remain in `ALTER TABLE` migrations below for
+    -- backwards compatibility but are no longer read or written.
+    api_key_enc TEXT,
     client_id_enc TEXT,
     client_secret_enc TEXT,
-    -- Optional: use sandbox endpoints instead of production. Defaults to 0 (prod).
+    -- Optional: flag a sandbox key vs a production key. Defaults to 0 (prod).
     use_sandbox INTEGER NOT NULL DEFAULT 0,
     -- Sender address printed on the label
     sender_name TEXT,
@@ -122,4 +127,13 @@ for (const col of RETURN_COLS) {
   if (!sitesCols.has(col)) {
     db.exec(`ALTER TABLE sites ADD COLUMN ${col} TEXT`);
   }
+}
+
+// Add api_key_enc to royal_mail_credentials for older databases that were
+// created before the Click & Drop migration.
+const rmCols = new Set(
+  db.prepare("PRAGMA table_info(royal_mail_credentials)").all().map((c) => c.name),
+);
+if (!rmCols.has("api_key_enc")) {
+  db.exec(`ALTER TABLE royal_mail_credentials ADD COLUMN api_key_enc TEXT`);
 }

@@ -25,9 +25,10 @@ import { getFxRates } from "./fx.js";
 import {
   testRmConnection,
   clearRmToken,
-  createRmShipment,
-  getRmShipmentLabel,
-  normalizeShipmentResponse,
+  createCndOrder,
+  getCndLabel,
+  deleteCndOrder,
+  normalizeCndCreateResponse,
 } from "./royalmail.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
@@ -700,15 +701,15 @@ app.delete("/api/presets/:id", requireAuth, (req, res) => {
   res.json({ ok: true, deleted: r.changes });
 });
 
-// ---------- Royal Mail (Phase 1: credentials + sender + test connection) ----------
-// Credentials are AES-GCM encrypted at rest. Sender address is plain text.
-// Phase 2-4 will add: create shipment, label retrieval, manifest, void.
+// ---------- Royal Mail (Click & Drop API) ----------
+// We authenticate to Royal Mail Click & Drop with a single API key the user
+// generates inside their Click & Drop account. Stored AES-GCM encrypted at
+// rest in royal_mail_credentials.api_key_enc.
 const rmCredsSchema = z.object({
-  // Both credential fields are optional on save so the user can update only
-  // the sender address without retyping the secret. An empty string means
-  // "leave unchanged"; the literal "__clear__" means "remove it".
-  client_id: z.string().trim().min(1).max(200).optional(),
-  client_secret: z.string().trim().min(1).max(200).optional(),
+  // Optional on save so the user can update only the sandbox flag without
+  // retyping the key. Empty/undefined = "leave unchanged"; "__clear__" =
+  // remove the saved key.
+  api_key: z.string().trim().min(1).max(500).optional(),
   use_sandbox: z.boolean().optional().default(false),
 });
 const rmSenderSchema = z.object({
@@ -723,13 +724,12 @@ const rmSenderSchema = z.object({
   sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
 });
 
-// Public-safe view: never returns the encrypted credential blobs, only flags
-// indicating whether each is currently set.
+// Public-safe view: never returns the encrypted credential blob, only a flag
+// indicating whether a key is currently set.
 function rmRowToPublic(row) {
   if (!row) {
     return {
-      has_client_id: false,
-      has_client_secret: false,
+      has_api_key: false,
       use_sandbox: false,
       sender_name: null, sender_company: null,
       sender_address_line1: null, sender_address_line2: null,
@@ -739,8 +739,7 @@ function rmRowToPublic(row) {
     };
   }
   return {
-    has_client_id: Boolean(row.client_id_enc),
-    has_client_secret: Boolean(row.client_secret_enc),
+    has_api_key: Boolean(row.api_key_enc),
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,
@@ -763,38 +762,35 @@ app.get("/api/royal-mail/settings", requireAuth, (req, res) => {
 });
 
 // Update credentials only. Empty/missing field => leave existing value alone.
-// To clear a credential, send the literal string "__clear__".
+// To clear the saved key, send the literal string "__clear__".
 app.put("/api/royal-mail/credentials", requireAuth, (req, res) => {
   const parsed = rmCredsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
-  const { client_id, client_secret, use_sandbox } = parsed.data;
+  const { api_key, use_sandbox } = parsed.data;
 
   const existing = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
 
-  const nextClientIdEnc = client_id === "__clear__"
+  const nextApiKeyEnc = api_key === "__clear__"
     ? null
-    : (client_id ? encrypt(client_id) : (existing?.client_id_enc ?? null));
-  const nextClientSecretEnc = client_secret === "__clear__"
-    ? null
-    : (client_secret ? encrypt(client_secret) : (existing?.client_secret_enc ?? null));
+    : (api_key ? encrypt(api_key) : (existing?.api_key_enc ?? null));
 
   if (existing) {
     db.prepare(`
       UPDATE royal_mail_credentials
-      SET client_id_enc = ?, client_secret_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      SET api_key_enc = ?, use_sandbox = ?, updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0, req.user.id);
+    `).run(nextApiKeyEnc, use_sandbox ? 1 : 0, req.user.id);
   } else {
     db.prepare(`
-      INSERT INTO royal_mail_credentials (user_id, client_id_enc, client_secret_enc, use_sandbox)
-      VALUES (?, ?, ?, ?)
-    `).run(req.user.id, nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0);
+      INSERT INTO royal_mail_credentials (user_id, api_key_enc, use_sandbox)
+      VALUES (?, ?, ?)
+    `).run(req.user.id, nextApiKeyEnc, use_sandbox ? 1 : 0);
   }
 
-  // Token cache is keyed on (user, sandbox-flag); evict both buckets so the
-  // next call uses the freshly-saved credentials.
+  // Click & Drop has no token cache, but keep the call so the helper can grow
+  // a cache later without touching this route.
   clearRmToken(req.user.id, false);
   clearRmToken(req.user.id, true);
 
@@ -837,24 +833,22 @@ app.put("/api/royal-mail/sender", requireAuth, (req, res) => {
   res.json({ settings: rmRowToPublic(row) });
 });
 
-// Test connection — pulls saved credentials, calls Royal Mail, persists the
-// outcome so the dashboard chip shows the latest status.
+// Test connection — pulls the saved API key, calls Royal Mail Click & Drop's
+// /version endpoint, persists the outcome so the dashboard chip shows the
+// latest status.
 app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
   const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
-  if (!row || !row.client_id_enc || !row.client_secret_enc) {
-    return res.status(400).json({ ok: false, error: "Add Client ID and Secret first." });
+  if (!row || !row.api_key_enc) {
+    return res.status(400).json({ ok: false, error: "Add your Click & Drop API key first." });
   }
-  let clientId, clientSecret;
+  let apiKey;
   try {
-    clientId = decrypt(row.client_id_enc);
-    clientSecret = decrypt(row.client_secret_enc);
+    apiKey = decrypt(row.api_key_enc);
   } catch {
-    return res.status(500).json({ ok: false, error: "Stored credentials could not be decrypted." });
+    return res.status(500).json({ ok: false, error: "Stored API key could not be decrypted." });
   }
   const result = await testRmConnection({
-    userId: req.user.id,
-    clientId,
-    clientSecret,
+    apiKey,
     useSandbox: Boolean(row.use_sandbox),
   });
   db.prepare(`
@@ -867,18 +861,24 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
   res.json({ ...result, settings: rmRowToPublic(updated) });
 });
 
-// ---------- Royal Mail Phase 2: shipments / labels ----------
-// Service codes we currently expose in the UI. Royal Mail accepts many more
-// service-format combos; this is a UK-domestic starter set per the spec.
-const RM_SERVICE_CODES = ["CRL", "CRL48", "TRK24", "TRK48", "STL1", "STL2"];
+// ---------- Royal Mail shipments / labels (Click & Drop) ----------
+// UK domestic Click & Drop service codes we expose in the UI. C&D accepts
+// many more — this is the starter set covering OBA 1st/2nd plus Tracked.
+//   TPN  Tracked 24
+//   TPM  Tracked 48
+//   TPLN Tracked 24 Signed
+//   TPLM Tracked 48 Signed
+//   CRL1 1st Class (OBA)
+//   CRL2 2nd Class (OBA)
+const RM_SERVICE_CODES = ["CRL1", "CRL2", "TPN", "TPM", "TPLN", "TPLM"];
 
 const shipmentSchema = z.object({
   site_id: z.number().int().positive(),
   woocommerce_order_id: z.number().int().positive(),
-  // Reference printed on the label & echoed back in webhooks.
+  // Echoed back as the Click & Drop "orderReference".
   customer_reference: z.string().trim().min(1).max(40),
   service_code: z.enum(RM_SERVICE_CODES),
-  // Royal Mail format flag: P=Parcel, L=Large Letter, F=Letter.
+  // Click & Drop "packageFormat": parcel | letter | largeLetter | etc.
   service_format: z.enum(["P", "L", "F"]).default("P"),
   weight_grams: z.number().int().min(1).max(30000),
   length_mm: z.number().int().min(0).max(2000).optional(),
@@ -900,6 +900,16 @@ const shipmentSchema = z.object({
   }),
 });
 
+// Map our internal P/L/F flag to the Click & Drop packageFormat enum.
+function cndPackageFormat(serviceFormat) {
+  switch (serviceFormat) {
+    case "L": return "largeLetter";
+    case "F": return "letter";
+    case "P":
+    default:  return "parcel";
+  }
+}
+
 // UK postcode validator — used only as a soft client-side guard before we
 // hand the data to Royal Mail (their own validator is the authority).
 function isValidUkPostcode(pc) {
@@ -908,11 +918,10 @@ function isValidUkPostcode(pc) {
 
 function loadRmCreds(userId) {
   const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(userId);
-  if (!row || !row.client_id_enc || !row.client_secret_enc) return null;
+  if (!row || !row.api_key_enc) return null;
   return {
     row,
-    clientId: decrypt(row.client_id_enc),
-    clientSecret: decrypt(row.client_secret_enc),
+    apiKey: decrypt(row.api_key_enc),
     useSandbox: Boolean(row.use_sandbox),
   };
 }
@@ -969,8 +978,8 @@ app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
   res.send(buf);
 });
 
-// Create a Royal Mail shipment for a Woo order.
-// Saves the result to `shipments` and (optionally) writes a tracking note
+// Create a Royal Mail shipment for a Woo order via Click & Drop.
+// Saves the result to `shipments` and (best-effort) writes a tracking note
 // back to WooCommerce.
 app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
   const parsed = shipmentSchema.safeParse(req.body);
@@ -1003,72 +1012,98 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
   const creds = loadRmCreds(req.user.id);
   if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
 
-  const { row: rm, clientId, clientSecret, useSandbox } = creds;
+  const { row: rm, apiKey, useSandbox } = creds;
   if (!rm.sender_address_line1 || !rm.sender_city || !rm.sender_postcode) {
     return res.status(400).json({ error: "Add a sender address under Royal Mail settings first." });
   }
 
-  // Build the Royal Mail v3 payload. Field shape follows the public spec; if
-  // a tenant differs (some IBM gateways use camelCase variants) we'll surface
-  // RM's 4xx response back to the UI.
-  const payload = {
-    shipmentInformation: {
-      shipmentDate: new Date().toISOString().slice(0, 10),
-      serviceCode: d.service_code,
-      serviceFormat: d.service_format,
-      weight: { unitOfMeasurement: "g", value: d.weight_grams },
-      ...(d.length_mm && d.width_mm && d.height_mm ? {
-        dimensions: {
-          unitOfMeasurement: "mm",
-          length: d.length_mm, width: d.width_mm, height: d.height_mm,
-        },
-      } : {}),
-      descriptionOfGoods: d.description_of_goods,
-      declaredValue: 0,
-      customerReference: d.customer_reference,
-      ...(d.safe_place ? { safePlace: d.safe_place } : {}),
-    },
-    shipper: {
-      contactName: rm.sender_name || "",
-      companyName: rm.sender_company || "",
-      addressLine1: rm.sender_address_line1,
-      addressLine2: rm.sender_address_line2 || "",
-      city: rm.sender_city,
-      postcode: rm.sender_postcode,
-      countryCode: rm.sender_country || "GB",
-      phoneNumber: rm.sender_phone || "",
-      emailAddress: rm.sender_email || "",
-    },
-    destination: {
-      contactName: d.recipient.name,
-      companyName: d.recipient.company || "",
-      addressLine1: d.recipient.line1,
-      addressLine2: d.recipient.line2 || "",
-      city: d.recipient.city,
-      county: d.recipient.county || "",
-      postcode: d.recipient.postcode,
-      countryCode: d.recipient.country_code,
+  // Build the Click & Drop /orders payload (single order inside `items`).
+  // Schema: https://api.parcel.royalmail.com/api/v1/swagger
+  const cndOrder = {
+    orderReference: d.customer_reference,
+    isRecipientABusiness: false,
+    recipient: {
+      address: {
+        fullName: d.recipient.name,
+        companyName: d.recipient.company || "",
+        addressLine1: d.recipient.line1,
+        addressLine2: d.recipient.line2 || "",
+        addressLine3: "",
+        city: d.recipient.city,
+        county: d.recipient.county || "",
+        postcode: d.recipient.postcode,
+        countryCode: d.recipient.country_code,
+      },
       phoneNumber: d.recipient.phone || "",
       emailAddress: d.recipient.email || "",
+    },
+    sender: {
+      tradingName: rm.sender_company || rm.sender_name || "",
+      phoneNumber: rm.sender_phone || "",
+      emailAddress: rm.sender_email || "",
+      address: {
+        fullName: rm.sender_name || "",
+        companyName: rm.sender_company || "",
+        addressLine1: rm.sender_address_line1,
+        addressLine2: rm.sender_address_line2 || "",
+        addressLine3: "",
+        city: rm.sender_city,
+        county: "",
+        postcode: rm.sender_postcode,
+        countryCode: rm.sender_country || "GB",
+      },
+    },
+    packages: [
+      {
+        weightInGrams: d.weight_grams,
+        packageFormatIdentifier: cndPackageFormat(d.service_format),
+        ...(d.length_mm && d.width_mm && d.height_mm ? {
+          dimensions: {
+            heightInMms: d.height_mm,
+            widthInMms: d.width_mm,
+            depthInMms: d.length_mm,
+          },
+        } : {}),
+        contents: [
+          {
+            name: d.description_of_goods,
+            SKU: "",
+            quantity: 1,
+            unitValue: 0,
+            unitWeightInGrams: d.weight_grams,
+          },
+        ],
+      },
+    ],
+    orderDate: new Date().toISOString(),
+    subtotal: 0,
+    shippingCostCharged: 0,
+    total: 0,
+    currencyCode: "GBP",
+    postageDetails: {
+      serviceCode: d.service_code,
+      ...(d.safe_place ? { safePlace: d.safe_place } : {}),
+    },
+    label: {
+      includeLabelInResponse: false,
+      includeCN: false,
+      includeReturnsLabel: false,
     },
   };
 
   let result;
   try {
-    result = await createRmShipment({
-      userId: req.user.id, clientId, clientSecret, useSandbox, payload,
-    });
+    result = await createCndOrder({ apiKey, useSandbox, order: cndOrder });
   } catch (e) {
     return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
   }
 
+  // HTTP-level failure (bad key, malformed request, etc.).
   if (!result.ok) {
-    // Surface the RM error verbatim — their messages are usually actionable
-    // (e.g. "weight exceeds service limit").
     const msg =
       result.body?.message ||
-      result.body?.errors?.[0]?.errorDescription ||
       result.body?.error ||
+      result.body?.errors?.[0]?.errorMessage ||
       `Royal Mail returned ${result.status}`;
     return res.status(result.status === 401 ? 401 : 422).json({
       error: msg,
@@ -1077,20 +1112,34 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
     });
   }
 
-  let { shipmentId, trackingNumber, labelBase64, labelUri } = normalizeShipmentResponse(result.body);
+  // Per-item failure inside a 2xx response (Click & Drop quirk).
+  const norm = normalizeCndCreateResponse(result.body);
+  if (!norm.ok) {
+    return res.status(422).json({ error: norm.error, detail: norm.detail || result.body });
+  }
 
-  // Some tenants only return shipmentId in the create response and require a
-  // follow-up GET for the PDF. Try once if we have an id but no inline label.
-  if (shipmentId && !labelBase64) {
+  const orderIdentifier = norm.orderIdentifier;
+  let trackingNumber = norm.trackingNumber || null;
+  let labelBase64 = null;
+
+  // Click & Drop returns the order, then we must call /label to get the PDF.
+  // C&D auto-generates the tracking number when the label is created, so we
+  // also pick that up here if the order response didn't include one.
+  if (orderIdentifier) {
     try {
-      const lab = await getRmShipmentLabel({
-        userId: req.user.id, clientId, clientSecret, useSandbox, shipmentId,
-      });
-      if (lab.ok) {
-        const norm = normalizeShipmentResponse(lab.body);
-        if (norm.labelBase64) labelBase64 = norm.labelBase64;
+      const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier });
+      if (lab.ok && lab.buffer) {
+        labelBase64 = lab.buffer.toString("base64");
+      } else if (!lab.ok) {
+        console.warn(
+          `[rm] Could not fetch label for C&D order ${orderIdentifier}: ${lab.status} ${
+            JSON.stringify(lab.body || {}).slice(0, 200)
+          }`,
+        );
       }
-    } catch { /* non-fatal — we'll still save the shipment */ }
+    } catch (e) {
+      console.warn(`[rm] Label fetch threw for order ${orderIdentifier}: ${e.message}`);
+    }
   }
 
   const insert = db.prepare(`
@@ -1100,12 +1149,14 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id, d.site_id, d.woocommerce_order_id, site.store_url,
-    shipmentId || null, trackingNumber || null, d.service_code,
+    orderIdentifier ? String(orderIdentifier) : null,
+    trackingNumber || null,
+    d.service_code,
     labelBase64 || null,
   );
 
   // Best-effort note back to WooCommerce. Failures here MUST NOT roll back
-  // the label — the user already paid for it via OBA.
+  // the label — the order is already in Click & Drop.
   if (trackingNumber) {
     try {
       await addOrderNote(
@@ -1120,10 +1171,39 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
   }
 
   const saved = db.prepare("SELECT * FROM shipments WHERE id = ?").get(insert.lastInsertRowid);
-  res.json({
-    shipment: rmShipmentToPublic(saved),
-    label_uri: labelUri || null,
-  });
+  res.json({ shipment: rmShipmentToPublic(saved) });
+});
+
+// Void a Click & Drop order (only works before label/despatch). Marks the
+// local shipments row as voided so the order detail can offer "Create label"
+// again.
+app.delete("/api/royal-mail/shipments/:id", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const row = db.prepare("SELECT * FROM shipments WHERE id = ? AND user_id = ?").get(id, req.user.id);
+  if (!row) return res.status(404).json({ error: "Shipment not found" });
+  if (row.voided) return res.json({ ok: true, alreadyVoided: true });
+
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  if (row.royal_mail_shipment_id) {
+    try {
+      const result = await deleteCndOrder({
+        apiKey: creds.apiKey,
+        useSandbox: creds.useSandbox,
+        orderIdentifier: row.royal_mail_shipment_id,
+      });
+      if (!result.ok && result.status !== 404) {
+        const msg = result.body?.message || `Royal Mail returned ${result.status}`;
+        return res.status(422).json({ error: msg, detail: result.body });
+      }
+    } catch (e) {
+      return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
+    }
+  }
+
+  db.prepare("UPDATE shipments SET voided = 1 WHERE id = ?").run(id);
+  res.json({ ok: true });
 });
 
 

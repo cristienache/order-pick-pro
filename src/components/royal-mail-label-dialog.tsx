@@ -139,7 +139,8 @@ function LabelForm({
   // Reset when the parent opens us with a different order.
   useEffect(() => { setRecipient(recipientFromOrder(order)); }, [order.id]);
 
-  const [serviceCode, setServiceCode] = useState<string>("TPM");
+  // Sensible default — most non-OBA accounts have Tracked 48.
+  const [serviceCode, setServiceCode] = useState<string>("TRM48");
   const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
   const [weightGrams, setWeightGrams] = useState<string>("500");
   const [length, setLength] = useState<string>("");
@@ -152,10 +153,18 @@ function LabelForm({
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
-  const service = useMemo(
-    () => RM_SERVICES.find((s) => s.code === serviceCode) ?? RM_SERVICES[0],
-    [serviceCode],
-  );
+  // Look up suggestion metadata if the typed code matches one we know about.
+  // Falls back to a generic 20kg cap so unknown codes still pass weight checks.
+  const service = useMemo(() => {
+    const code = serviceCode.trim().toUpperCase();
+    return (
+      RM_SERVICES.find((s) => s.code === code) ?? {
+        code,
+        label: code || "Service",
+        maxWeight: 20000,
+      }
+    );
+  }, [serviceCode]);
 
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;

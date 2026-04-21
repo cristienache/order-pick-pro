@@ -97,6 +97,27 @@ export async function addOrderNote(site, orderId, note, customerNote = false) {
 }
 
 /**
+ * Fetch all notes for an order (for the order detail drawer).
+ * Returns [] on failure (non-fatal).
+ */
+export async function fetchOrderNotes(site, orderId) {
+  try {
+    const base = normalizeUrl(site.store_url);
+    const res = await fetch(`${base}/wp-json/wc/v3/orders/${orderId}/notes`, {
+      headers: {
+        Authorization: authHeader(site.consumer_key, site.consumer_secret),
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) return [];
+    const list = await res.json();
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Count completed orders for a customer email (used for "repeat customer" badge).
  * Returns 0 on any failure (non-fatal).
  */

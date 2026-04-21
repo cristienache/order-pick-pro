@@ -300,22 +300,116 @@ function loadSiteWithKeys(siteId, userId) {
 app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
   const site = loadSiteWithKeys(Number(req.params.id), req.user.id);
   if (!site) return res.status(404).json({ error: "Not found" });
+
+  // ?statuses=processing,on-hold (default: processing). ?repeat=1 -> compute repeat-customer flag (extra API calls).
+  const requested = String(req.query.statuses || "processing")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const statuses = requested.filter((s) => VALID_STATUSES.includes(s));
+  if (statuses.length === 0) statuses.push("processing");
+  const computeRepeat = req.query.repeat === "1" || req.query.repeat === "true";
+
   try {
-    const orders = await fetchProcessingOrders(site);
+    const orders = await fetchOrders(site, { statuses });
+
+    // Optionally enrich with repeat-customer counts (rate-limited concurrency)
+    let repeatMap = new Map();
+    if (computeRepeat) {
+      const emails = Array.from(new Set(
+        orders.map((o) => (o.billing?.email || "").toLowerCase()).filter(Boolean),
+      ));
+      const chunkSize = 4;
+      for (let i = 0; i < emails.length; i += chunkSize) {
+        const chunk = emails.slice(i, i + chunkSize);
+        const counts = await Promise.all(chunk.map((e) => fetchCustomerOrderCount(site, e)));
+        chunk.forEach((e, idx) => repeatMap.set(e, counts[idx]));
+      }
+    }
+
     res.json({
-      orders: orders.map((o) => ({
-        id: o.id,
-        number: o.number,
-        date_created: o.date_created,
-        total: o.total,
-        currency: o.currency,
-        customer: `${o.billing?.first_name ?? ""} ${o.billing?.last_name ?? ""}`.trim(),
-        itemCount: o.line_items.reduce((s, li) => s + li.quantity, 0),
-        lineCount: o.line_items.length,
-      })),
+      orders: orders.map((o) => {
+        const email = (o.billing?.email || "").toLowerCase();
+        const ship = Array.isArray(o.shipping_lines) && o.shipping_lines.length
+          ? o.shipping_lines.map((s) => s.method_title).filter(Boolean).join(" + ")
+          : "";
+        return {
+          id: o.id,
+          number: o.number,
+          status: o.status,
+          date_created: o.date_created,
+          total: o.total,
+          currency: o.currency,
+          customer: `${o.billing?.first_name ?? ""} ${o.billing?.last_name ?? ""}`.trim(),
+          email,
+          shipping_method: ship,
+          itemCount: o.line_items.reduce((s, li) => s + li.quantity, 0),
+          lineCount: o.line_items.length,
+          previous_completed: repeatMap.get(email) ?? null,
+        };
+      }),
     });
   } catch (e) {
     res.status(502).json({ error: e.message || "Upstream error" });
+  }
+});
+
+// ---------- Bulk actions ----------
+async function processBulk(selections, userId, perOrder) {
+  const results = [];
+  for (const sel of selections) {
+    const site = loadSiteWithKeys(sel.site_id, userId);
+    if (!site) {
+      results.push({ site_id: sel.site_id, error: "Site not found", succeeded: 0, failed: sel.order_ids.length });
+      continue;
+    }
+    let succeeded = 0;
+    const errors = [];
+    const chunkSize = 5;
+    for (let i = 0; i < sel.order_ids.length; i += chunkSize) {
+      const chunk = sel.order_ids.slice(i, i + chunkSize);
+      const settled = await Promise.allSettled(chunk.map((id) => perOrder(site, id)));
+      settled.forEach((r, idx) => {
+        if (r.status === "fulfilled") succeeded++;
+        else errors.push({ id: chunk[idx], error: r.reason?.message || String(r.reason) });
+      });
+    }
+    results.push({
+      site_id: sel.site_id,
+      site_name: site.name,
+      succeeded,
+      failed: errors.length,
+      errors: errors.slice(0, 10),
+    });
+  }
+  return results;
+}
+
+app.post("/api/orders/complete", requireAuth, async (req, res) => {
+  const parsed = bulkCompleteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+  try {
+    const results = await processBulk(parsed.data.selections, req.user.id, (site, id) =>
+      // status=completed; WooCommerce default behavior emails the customer when
+      // moving from processing to completed. notify_customer=false suppresses it.
+      updateOrder(site, id, parsed.data.notify_customer
+        ? { status: "completed" }
+        : { status: "completed", _suppress_notification: true })
+    );
+    res.json({ results });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Bulk complete failed" });
+  }
+});
+
+app.post("/api/orders/note", requireAuth, async (req, res) => {
+  const parsed = bulkNoteSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+  try {
+    const results = await processBulk(parsed.data.selections, req.user.id, (site, id) =>
+      addOrderNote(site, id, parsed.data.note, parsed.data.customer_note)
+    );
+    res.json({ results });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Bulk note failed" });
   }
 });
 
@@ -338,7 +432,11 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
       groups.push({ site: { name: site.name, store_url: site.store_url }, orders });
     }
     const pdf = await generatePicklistPdf(groups, { format: parsed.data.format });
-    const suffix = parsed.data.format === "label4x6" ? "labels" : "picklist";
+    const fmt = parsed.data.format;
+    const suffix =
+      fmt === "packing_4x6" || fmt === "label4x6" ? "packing-labels"
+      : fmt === "packing_a4" ? "packing-slip"
+      : "picking-slip";
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${suffix}-${new Date().toISOString().slice(0, 10)}.pdf"`);
     res.send(pdf);

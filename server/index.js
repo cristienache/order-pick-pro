@@ -164,6 +164,16 @@ app.get("/api/auth/me", requireAuth, (req, res) => {
   res.json({ user });
 });
 
+// ---------- FX rates (GBP base, cached for 1h) ----------
+app.get("/api/fx", requireAuth, async (_req, res) => {
+  try {
+    const fx = await getFxRates();
+    res.json({ base: fx.base, rates: fx.rates, fetchedAt: fx.fetchedAt, source: fx.source });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "FX unavailable" });
+  }
+});
+
 // ---------- Invites ----------
 app.post("/api/invites", requireAuth, requireAdmin, (req, res) => {
   const parsed = inviteSchema.safeParse(req.body);

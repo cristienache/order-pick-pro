@@ -279,18 +279,16 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, (req, res) => {
 });
 
 // ---------- Sites (per-user) ----------
-function siteToPublic(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    store_url: row.store_url,
-    created_at: row.created_at,
-  };
-}
+// All "return_*" columns are nullable — the user can fill them in later via
+// the Edit dialog. They're required only when generating a 4x6 shipping label.
+const SITE_PUBLIC_COLS =
+  "id, name, store_url, created_at, " +
+  "return_name, return_company, return_line1, return_line2, " +
+  "return_city, return_postcode, return_country";
 
 app.get("/api/sites", requireAuth, (req, res) => {
   const rows = db.prepare(
-    "SELECT id, name, store_url, created_at FROM sites WHERE user_id = ? ORDER BY name ASC",
+    `SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE user_id = ? ORDER BY name ASC`,
   ).all(req.user.id);
   res.json({ sites: rows });
 });
@@ -298,12 +296,20 @@ app.get("/api/sites", requireAuth, (req, res) => {
 app.post("/api/sites", requireAuth, (req, res) => {
   const parsed = siteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-  const { name, store_url, consumer_key, consumer_secret } = parsed.data;
+  const d = parsed.data;
   const result = db.prepare(`
-    INSERT INTO sites (user_id, name, store_url, consumer_key_enc, consumer_secret_enc)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(req.user.id, name, store_url.replace(/\/+$/, ""), encrypt(consumer_key), encrypt(consumer_secret));
-  const row = db.prepare("SELECT id, name, store_url, created_at FROM sites WHERE id = ?").get(result.lastInsertRowid);
+    INSERT INTO sites (
+      user_id, name, store_url, consumer_key_enc, consumer_secret_enc,
+      return_name, return_company, return_line1, return_line2,
+      return_city, return_postcode, return_country
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.user.id, d.name, d.store_url.replace(/\/+$/, ""),
+    encrypt(d.consumer_key), encrypt(d.consumer_secret),
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+  );
+  const row = db.prepare(`SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE id = ?`).get(result.lastInsertRowid);
   res.json({ site: row });
 });
 
@@ -313,12 +319,21 @@ app.put("/api/sites/:id", requireAuth, (req, res) => {
   if (!owned) return res.status(404).json({ error: "Not found" });
   const parsed = siteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
-  const { name, store_url, consumer_key, consumer_secret } = parsed.data;
+  const d = parsed.data;
   db.prepare(`
-    UPDATE sites SET name = ?, store_url = ?, consumer_key_enc = ?, consumer_secret_enc = ?
+    UPDATE sites SET
+      name = ?, store_url = ?, consumer_key_enc = ?, consumer_secret_enc = ?,
+      return_name = ?, return_company = ?, return_line1 = ?, return_line2 = ?,
+      return_city = ?, return_postcode = ?, return_country = ?
     WHERE id = ? AND user_id = ?
-  `).run(name, store_url.replace(/\/+$/, ""), encrypt(consumer_key), encrypt(consumer_secret), id, req.user.id);
-  const row = db.prepare("SELECT id, name, store_url, created_at FROM sites WHERE id = ?").get(id);
+  `).run(
+    d.name, d.store_url.replace(/\/+$/, ""),
+    encrypt(d.consumer_key), encrypt(d.consumer_secret),
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+    id, req.user.id,
+  );
+  const row = db.prepare(`SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE id = ?`).get(id);
   res.json({ site: row });
 });
 
@@ -337,6 +352,15 @@ function loadSiteWithKeys(siteId, userId) {
     store_url: row.store_url,
     consumer_key: decrypt(row.consumer_key_enc),
     consumer_secret: decrypt(row.consumer_secret_enc),
+    return_address: {
+      name: row.return_name,
+      company: row.return_company,
+      line1: row.return_line1,
+      line2: row.return_line2,
+      city: row.return_city,
+      postcode: row.return_postcode,
+      country: row.return_country,
+    },
   };
 }
 

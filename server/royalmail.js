@@ -115,13 +115,13 @@ export async function createCndOrder({ apiKey, useSandbox, order }) {
   });
 }
 
-// GET /orders/{orderIdentifier}/label?documentType=postageLabel&documentFormat=PDF
-// Royal Mail returns the PDF directly (binary). The orderIdentifier here is
-// the integer C&D returns when the order is created.
+// GET /orders/{orderIdentifier}/label?documentType=postageLabel&includeReturnsLabel=false&includeCN=false
+// This endpoint is reserved for OBA customers. Non-OBA Click & Drop accounts
+// can create orders, but may need labels generated/paid for in Click & Drop.
 export async function getCndLabel({ apiKey, useSandbox, orderIdentifier }) {
   const path =
     `/orders/${encodeURIComponent(orderIdentifier)}/label` +
-    `?documentType=postageLabel&documentFormat=PDF`;
+    `?documentType=postageLabel&includeReturnsLabel=false&includeCN=false`;
   return rmBinary({ apiKey, useSandbox, method: "GET", path });
 }
 

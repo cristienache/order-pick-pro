@@ -57,6 +57,20 @@ const charMap = {
   "\u2122": "(TM)", "\u00AE": "(R)", "\u00A9": "(C)",
 };
 
+function formatAddress(order) {
+  const a = order.shipping && (order.shipping.address_1 || order.shipping.city || order.shipping.postcode)
+    ? order.shipping
+    : order.billing;
+  if (!a) return [];
+  const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+  const company = a.company || "";
+  const line1 = a.address_1 || "";
+  const line2 = a.address_2 || "";
+  const cityLine = [a.city, a.state, a.postcode].filter(Boolean).join(", ");
+  const country = a.country || "";
+  return [name, company, line1, line2, cityLine, country].filter((s) => s && s.trim());
+}
+
 function sanitize(input) {
   if (!input) return "";
   let out = "";

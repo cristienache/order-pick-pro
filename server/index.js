@@ -693,6 +693,173 @@ app.delete("/api/presets/:id", requireAuth, (req, res) => {
   res.json({ ok: true, deleted: r.changes });
 });
 
+// ---------- Royal Mail (Phase 1: credentials + sender + test connection) ----------
+// Credentials are AES-GCM encrypted at rest. Sender address is plain text.
+// Phase 2-4 will add: create shipment, label retrieval, manifest, void.
+const rmCredsSchema = z.object({
+  // Both credential fields are optional on save so the user can update only
+  // the sender address without retyping the secret. An empty string means
+  // "leave unchanged"; the literal "__clear__" means "remove it".
+  client_id: z.string().trim().min(1).max(200).optional(),
+  client_secret: z.string().trim().min(1).max(200).optional(),
+  use_sandbox: z.boolean().optional().default(false),
+});
+const rmSenderSchema = z.object({
+  sender_name: optAddrField(100),
+  sender_company: optAddrField(100),
+  sender_address_line1: optAddrField(150),
+  sender_address_line2: optAddrField(150),
+  sender_city: optAddrField(80),
+  sender_postcode: optAddrField(20),
+  sender_country: z.string().trim().min(2).max(3).optional().default("GB"),
+  sender_phone: optAddrField(40),
+  sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
+});
+
+// Public-safe view: never returns the encrypted credential blobs, only flags
+// indicating whether each is currently set.
+function rmRowToPublic(row) {
+  if (!row) {
+    return {
+      has_client_id: false,
+      has_client_secret: false,
+      use_sandbox: false,
+      sender_name: null, sender_company: null,
+      sender_address_line1: null, sender_address_line2: null,
+      sender_city: null, sender_postcode: null,
+      sender_country: "GB", sender_phone: null, sender_email: null,
+      last_tested_at: null, last_test_ok: null, last_test_message: null,
+    };
+  }
+  return {
+    has_client_id: Boolean(row.client_id_enc),
+    has_client_secret: Boolean(row.client_secret_enc),
+    use_sandbox: Boolean(row.use_sandbox),
+    sender_name: row.sender_name,
+    sender_company: row.sender_company,
+    sender_address_line1: row.sender_address_line1,
+    sender_address_line2: row.sender_address_line2,
+    sender_city: row.sender_city,
+    sender_postcode: row.sender_postcode,
+    sender_country: row.sender_country || "GB",
+    sender_phone: row.sender_phone,
+    sender_email: row.sender_email,
+    last_tested_at: row.last_tested_at,
+    last_test_ok: row.last_test_ok === null ? null : Boolean(row.last_test_ok),
+    last_test_message: row.last_test_message,
+  };
+}
+
+app.get("/api/royal-mail/settings", requireAuth, (req, res) => {
+  const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: rmRowToPublic(row) });
+});
+
+// Update credentials only. Empty/missing field => leave existing value alone.
+// To clear a credential, send the literal string "__clear__".
+app.put("/api/royal-mail/credentials", requireAuth, (req, res) => {
+  const parsed = rmCredsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const { client_id, client_secret, use_sandbox } = parsed.data;
+
+  const existing = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+
+  const nextClientIdEnc = client_id === "__clear__"
+    ? null
+    : (client_id ? encrypt(client_id) : (existing?.client_id_enc ?? null));
+  const nextClientSecretEnc = client_secret === "__clear__"
+    ? null
+    : (client_secret ? encrypt(client_secret) : (existing?.client_secret_enc ?? null));
+
+  if (existing) {
+    db.prepare(`
+      UPDATE royal_mail_credentials
+      SET client_id_enc = ?, client_secret_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0, req.user.id);
+  } else {
+    db.prepare(`
+      INSERT INTO royal_mail_credentials (user_id, client_id_enc, client_secret_enc, use_sandbox)
+      VALUES (?, ?, ?, ?)
+    `).run(req.user.id, nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0);
+  }
+
+  // Token cache is keyed on (user, sandbox-flag); evict both buckets so the
+  // next call uses the freshly-saved credentials.
+  clearRmToken(req.user.id, false);
+  clearRmToken(req.user.id, true);
+
+  const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: rmRowToPublic(row) });
+});
+
+app.put("/api/royal-mail/sender", requireAuth, (req, res) => {
+  const parsed = rmSenderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  const existing = db.prepare("SELECT user_id FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  if (existing) {
+    db.prepare(`
+      UPDATE royal_mail_credentials
+      SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
+          sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
+          updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(
+      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+      req.user.id,
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO royal_mail_credentials (
+        user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
+        sender_city, sender_postcode, sender_country, sender_phone, sender_email
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.user.id,
+      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+    );
+  }
+  const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: rmRowToPublic(row) });
+});
+
+// Test connection — pulls saved credentials, calls Royal Mail, persists the
+// outcome so the dashboard chip shows the latest status.
+app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
+  const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  if (!row || !row.client_id_enc || !row.client_secret_enc) {
+    return res.status(400).json({ ok: false, error: "Add Client ID and Secret first." });
+  }
+  let clientId, clientSecret;
+  try {
+    clientId = decrypt(row.client_id_enc);
+    clientSecret = decrypt(row.client_secret_enc);
+  } catch {
+    return res.status(500).json({ ok: false, error: "Stored credentials could not be decrypted." });
+  }
+  const result = await testRmConnection({
+    userId: req.user.id,
+    clientId,
+    clientSecret,
+    useSandbox: Boolean(row.use_sandbox),
+  });
+  db.prepare(`
+    UPDATE royal_mail_credentials
+    SET last_tested_at = datetime('now'), last_test_ok = ?, last_test_message = ?
+    WHERE user_id = ?
+  `).run(result.ok ? 1 : 0, result.message || null, req.user.id);
+
+  const updated = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ ...result, settings: rmRowToPublic(updated) });
+});
+
 // ---------- Health ----------
 app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 

@@ -686,14 +686,21 @@ function PicklistPage() {
                             <Checkbox checked={isSel}
                               onCheckedChange={(v) => toggleOne(sid, o.id, Boolean(v))} />
                           </div>
-                          <div className="w-24 font-medium flex flex-col">
+                          <div className="w-24 font-medium">
                             <span>#{o.number}</span>
-                            {o.status !== "processing" && (
-                              <span className="text-[10px] text-muted-foreground capitalize">{o.status.replace("-", " ")}</span>
-                            )}
                           </div>
                           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{o.customer || "\u2014"}</span>
+                            {o.status === "completed" && (
+                              <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-0 text-[10px] px-1.5 py-0">
+                                Completed
+                              </Badge>
+                            )}
+                            {o.status !== "processing" && o.status !== "completed" && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 capitalize">
+                                {o.status.replace("-", " ")}
+                              </Badge>
+                            )}
                             <PriorityBadges order={o} highValueThreshold={highValueThreshold} />
                           </div>
                           <div className="w-20 text-right tabular-nums">

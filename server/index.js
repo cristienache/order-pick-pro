@@ -1045,54 +1045,47 @@ app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
   res.send(buf);
 });
 
-// Create a Royal Mail shipment for a Woo order via Click & Drop.
-// Saves the result to `shipments` and (best-effort) writes a tracking note
-// back to WooCommerce.
-app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
-  const parsed = shipmentSchema.safeParse(req.body);
-  if (!parsed.success) {
-    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-  }
-  const d = parsed.data;
+// Core: create one Click & Drop shipment for an already-validated payload.
+// Returns { status, body } where body is what we'd JSON-respond with. Used by
+// both the single-order and bulk endpoints so behaviour stays in lock-step
+// (duplicate guard, line-item enrichment, WC note, persistence).
+async function createShipmentForUser({ userId, data: input, creds }) {
+  const d = { ...input };
 
   if (d.recipient.country_code === "GB" && !isValidUkPostcode(d.recipient.postcode)) {
-    return res.status(400).json({ error: "Recipient UK postcode looks invalid." });
+    return { status: 400, body: { error: "Recipient UK postcode looks invalid." } };
   }
 
-  // Reject duplicates upfront — the user can void the existing label if they
-  // really want a new one.
   const existing = db.prepare(`
     SELECT id, tracking_number FROM shipments
     WHERE user_id = ? AND site_id = ? AND woocommerce_order_id = ? AND voided = 0
-  `).get(req.user.id, d.site_id, d.woocommerce_order_id);
+  `).get(userId, d.site_id, d.woocommerce_order_id);
   if (existing) {
-    return res.status(409).json({
-      error: "A label already exists for this order. Void it first to create a new one.",
-      shipment_id: existing.id,
-      tracking_number: existing.tracking_number,
-    });
+    return {
+      status: 409,
+      body: {
+        error: "A label already exists for this order. Void it first to create a new one.",
+        shipment_id: existing.id,
+        tracking_number: existing.tracking_number,
+      },
+    };
   }
 
-  const site = loadSiteWithKeys(d.site_id, req.user.id);
-  if (!site) return res.status(404).json({ error: "Site not found" });
-
-  const creds = loadRmCreds(req.user.id);
-  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+  const site = loadSiteWithKeys(d.site_id, userId);
+  if (!site) return { status: 404, body: { error: "Site not found" } };
 
   const { row: rm, apiKey, useSandbox } = creds;
   if (!rm.sender_address_line1 || !rm.sender_city || !rm.sender_postcode) {
-    return res.status(400).json({ error: "Add a sender address under Royal Mail settings first." });
+    return { status: 400, body: { error: "Add a sender address under Royal Mail settings first." } };
   }
 
-  // If the client didn't pre-supply line items, fetch them from WooCommerce so
-  // the printed Royal Mail label shows real SKUs instead of "1x Goods".
+  // Pull line items from WooCommerce if the client didn't pre-supply them, so
+  // the printed label shows real SKUs.
   if (!Array.isArray(d.line_items) || d.line_items.length === 0) {
     const fetched = await loadOrderLineItemsForLabel(site, d.woocommerce_order_id);
     if (fetched && fetched.length > 0) d.line_items = fetched;
   }
 
-  // Build the Click & Drop /orders payload (single order inside `items`).
-  // Schema: https://api.parcel.royalmail.com/api/v1/swagger
   const cndOrder = {
     orderReference: d.customer_reference,
     isRecipientABusiness: false,
@@ -1138,10 +1131,6 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
             depthInMms: d.length_mm,
           },
         } : {}),
-        // Use the order's actual line items as the parcel contents — the SKU
-        // shows up on the printed label instead of a generic "1x Goods" line.
-        // Falls back to description_of_goods if the order has no line items
-        // (deleted product, etc.) or we couldn't load them.
         contents: buildCndContents({
           lineItems: d.line_items,
           fallbackName: d.description_of_goods,
@@ -1173,10 +1162,9 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
   try {
     result = await createCndOrder({ apiKey, useSandbox, order: cndOrder });
   } catch (e) {
-    return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
+    return { status: 502, body: { error: `Royal Mail request failed: ${e.message}` } };
   }
 
-  // HTTP-level failure (bad key, malformed request, etc.).
   if (!result.ok) {
     const baseMsg =
       result.body?.message ||
@@ -1190,26 +1178,21 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
       `[rm] create order failed: status=${result.status} sandbox=${useSandbox} ` +
       `keyPrefix=${apiKey.slice(0, 6)} keyLen=${apiKey.length}`,
     );
-    return res.status(result.status === 401 ? 401 : 422).json({
-      error: msg,
-      status: result.status,
-      detail: result.body,
-    });
+    return {
+      status: result.status === 401 ? 401 : 422,
+      body: { error: msg, status: result.status, detail: result.body },
+    };
   }
 
-  // Per-item failure inside a 2xx response (Click & Drop quirk).
   const norm = normalizeCndCreateResponse(result.body);
   if (!norm.ok) {
-    return res.status(422).json({ error: norm.error, detail: norm.detail || result.body });
+    return { status: 422, body: { error: norm.error, detail: norm.detail || result.body } };
   }
 
   const orderIdentifier = norm.orderIdentifier;
-  let trackingNumber = norm.trackingNumber || null;
+  const trackingNumber = norm.trackingNumber || null;
   let labelBase64 = null;
 
-  // Click & Drop returns the order, then we must call /label to get the PDF.
-  // C&D auto-generates the tracking number when the label is created, so we
-  // also pick that up here if the order response didn't include one.
   if (orderIdentifier) {
     try {
       const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier });
@@ -1233,15 +1216,13 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
       royal_mail_shipment_id, tracking_number, service_code, label_pdf_base64
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    req.user.id, d.site_id, d.woocommerce_order_id, site.store_url,
+    userId, d.site_id, d.woocommerce_order_id, site.store_url,
     orderIdentifier ? String(orderIdentifier) : null,
     trackingNumber || null,
     d.service_code,
     labelBase64 || null,
   );
 
-  // Best-effort note back to WooCommerce. Failures here MUST NOT roll back
-  // the label — the order is already in Click & Drop.
   if (trackingNumber) {
     try {
       await addOrderNote(
@@ -1256,7 +1237,223 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
   }
 
   const saved = db.prepare("SELECT * FROM shipments WHERE id = ?").get(insert.lastInsertRowid);
-  res.json({ shipment: rmShipmentToPublic(saved) });
+  return { status: 200, body: { shipment: rmShipmentToPublic(saved) } };
+}
+
+// Create a Royal Mail shipment for a single Woo order via Click & Drop.
+app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
+  const parsed = shipmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  const { status, body } = await createShipmentForUser({
+    userId: req.user.id,
+    data: parsed.data,
+    creds,
+  });
+  res.status(status).json(body);
+});
+
+// Bulk: create labels for many Woo orders at once. Each order uses the same
+// shared shipping params (service / format / weight). Per-order details are
+// pulled from WooCommerce server-side so the client only needs to send the
+// site + order IDs and the shared form values.
+const bulkShipmentSchema = z.object({
+  // Shared shipping params. Same shape as the single-order schema, minus the
+  // per-order fields (recipient, woocommerce_order_id, customer_reference,
+  // line_items).
+  service_code: z.string().trim().max(10).optional().or(z.literal(""))
+    .transform((v) => (v && v.toLowerCase() !== "auto" ? v.toUpperCase() : null)),
+  service_format: z.enum(["P", "L", "F"]).default("P"),
+  weight_grams: z.number().int().min(1).max(30000),
+  length_mm: z.number().int().min(0).max(2000).optional(),
+  width_mm: z.number().int().min(0).max(2000).optional(),
+  height_mm: z.number().int().min(0).max(2000).optional(),
+  safe_place: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
+  description_of_goods: z.string().trim().max(60).default("Goods"),
+  selections: z.array(z.object({
+    site_id: z.number().int().positive(),
+    order_ids: z.array(z.number().int().positive()).min(1).max(200),
+  })).min(1).max(10),
+});
+
+// Map a WC address to the recipient shape expected by createShipmentForUser.
+function recipientFromWcOrder(order) {
+  const a = (order.shipping && (order.shipping.address_1 || order.shipping.first_name))
+    ? order.shipping
+    : (order.billing || {});
+  return {
+    name: `${a.first_name || ""} ${a.last_name || ""}`.trim() || "Customer",
+    company: a.company || null,
+    line1: a.address_1 || "",
+    line2: a.address_2 || null,
+    city: a.city || "",
+    county: a.state || null,
+    postcode: (a.postcode || "").toUpperCase(),
+    country_code: (a.country || "GB").toUpperCase().slice(0, 2),
+    phone: order.billing?.phone || null,
+    email: order.billing?.email || null,
+  };
+}
+
+app.post("/api/royal-mail/shipments/bulk", requireAuth, async (req, res) => {
+  const parsed = bulkShipmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  const results = [];
+  let succeeded = 0;
+  let failed = 0;
+
+  for (const sel of d.selections) {
+    const site = loadSiteWithKeys(sel.site_id, req.user.id);
+    if (!site) {
+      for (const oid of sel.order_ids) {
+        results.push({ site_id: sel.site_id, order_id: oid, ok: false, error: "Site not found" });
+        failed++;
+      }
+      continue;
+    }
+
+    for (const orderId of sel.order_ids) {
+      let order;
+      try {
+        order = await fetchOrderById(site, orderId);
+      } catch (e) {
+        results.push({ site_id: sel.site_id, order_id: orderId, ok: false, error: `Could not load order: ${e.message}` });
+        failed++;
+        continue;
+      }
+      if (!order) {
+        results.push({ site_id: sel.site_id, order_id: orderId, ok: false, error: "Order not found in WooCommerce" });
+        failed++;
+        continue;
+      }
+
+      const lineItems = (order.line_items || []).map((li) => ({
+        sku: String(li.sku || ""),
+        name: String(li.name || ""),
+        quantity: Math.max(1, Number(li.quantity) || 1),
+      }));
+
+      const data = {
+        site_id: sel.site_id,
+        woocommerce_order_id: orderId,
+        customer_reference: String(order.number || orderId).slice(0, 40),
+        service_code: d.service_code,
+        service_format: d.service_format,
+        weight_grams: d.weight_grams,
+        length_mm: d.length_mm,
+        width_mm: d.width_mm,
+        height_mm: d.height_mm,
+        safe_place: d.safe_place,
+        description_of_goods: d.description_of_goods,
+        line_items: lineItems,
+        recipient: recipientFromWcOrder(order),
+      };
+
+      try {
+        const r = await createShipmentForUser({ userId: req.user.id, data, creds });
+        if (r.status === 200 && r.body.shipment) {
+          results.push({
+            site_id: sel.site_id,
+            order_id: orderId,
+            order_number: order.number,
+            ok: true,
+            shipment: r.body.shipment,
+          });
+          succeeded++;
+        } else {
+          results.push({
+            site_id: sel.site_id,
+            order_id: orderId,
+            order_number: order.number,
+            ok: false,
+            error: r.body?.error || `Failed (${r.status})`,
+          });
+          failed++;
+        }
+      } catch (e) {
+        results.push({ site_id: sel.site_id, order_id: orderId, ok: false, error: e.message });
+        failed++;
+      }
+    }
+  }
+
+  res.json({ succeeded, failed, results });
+});
+
+// Bulk: merge multiple shipment label PDFs into a single multi-page PDF.
+// Accepts shipment IDs as a comma-separated `ids` query param. Skips
+// shipments without a printable PDF and reports them in a header so the
+// client can warn the user.
+app.get("/api/royal-mail/shipments/bulk/labels.pdf", requireAuth, async (req, res) => {
+  const raw = String(req.query.ids || "").trim();
+  if (!raw) return res.status(400).json({ error: "ids query param required" });
+  const ids = raw.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return res.status(400).json({ error: "No valid shipment IDs" });
+  if (ids.length > 200) return res.status(400).json({ error: "Too many shipments (max 200)" });
+
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT id, label_pdf_base64, tracking_number FROM shipments
+     WHERE user_id = ? AND id IN (${placeholders})`
+  ).all(req.user.id, ...ids);
+
+  if (rows.length === 0) return res.status(404).json({ error: "No shipments found" });
+
+  const { PDFDocument } = await import("pdf-lib");
+  const merged = await PDFDocument.create();
+  const skipped = [];
+  // Preserve the order the caller asked for, not the SQL row order.
+  const byId = new Map(rows.map((r) => [r.id, r]));
+
+  for (const id of ids) {
+    const row = byId.get(id);
+    if (!row || !row.label_pdf_base64) {
+      skipped.push({ id, reason: "no_pdf" });
+      continue;
+    }
+    const buf = Buffer.from(row.label_pdf_base64, "base64");
+    const looksLikePdf = buf.length > 4 && buf.subarray(0, 4).toString("latin1") === "%PDF";
+    if (!looksLikePdf) {
+      skipped.push({ id, reason: "invalid_pdf" });
+      continue;
+    }
+    try {
+      const src = await PDFDocument.load(buf);
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      for (const p of pages) merged.addPage(p);
+    } catch (e) {
+      skipped.push({ id, reason: `merge_error: ${e.message}` });
+    }
+  }
+
+  if (merged.getPageCount() === 0) {
+    return res.status(422).json({
+      error: "None of the selected shipments have a printable PDF.",
+      skipped,
+    });
+  }
+
+  const bytes = await merged.save();
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", String(bytes.length));
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="rm-labels-${new Date().toISOString().slice(0, 10)}.pdf"`,
+  );
+  if (skipped.length > 0) {
+    res.setHeader("X-Skipped-Shipments", JSON.stringify(skipped).slice(0, 4000));
+  }
+  res.send(Buffer.from(bytes));
 });
 
 // Void a Click & Drop order (only works before label/despatch). Marks the

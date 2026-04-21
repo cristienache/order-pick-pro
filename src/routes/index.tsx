@@ -470,131 +470,147 @@ function PicklistPage() {
         <>
           {/* Filters */}
           <Card>
-            <CardContent className="p-3 flex items-center gap-2 flex-wrap">
-              <Input placeholder="Filter by order #, customer, or email\u2026" value={search}
-                onChange={(e) => setSearch(e.target.value)} className="max-w-xs" />
-              <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
-                <SelectTrigger className="w-[140px]">
-                  <CalendarIcon className="h-3.5 w-3.5" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All dates</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="24h">Last 24h</SelectItem>
-                  <SelectItem value="7d">Last 7 days</SelectItem>
-                  <SelectItem value="custom">Custom range\u2026</SelectItem>
-                </SelectContent>
-              </Select>
-              {datePreset === "custom" && (
-                <>
-                  <Input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
-                    className="w-[150px]" aria-label="From date" />
-                  <span className="text-muted-foreground text-xs">to</span>
-                  <Input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
-                    className="w-[150px]" aria-label="To date" />
-                </>
-              )}
+            <CardContent className="p-3 space-y-3">
+              {/* Row 1 — Filter (data fetching + narrowing) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">
+                  Filter
+                </span>
+                <Input placeholder="Order #, customer, or email\u2026" value={search}
+                  onChange={(e) => setSearch(e.target.value)} className="max-w-xs h-9" />
 
-              {/* Status multi-select */}
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm" className="gap-1.5">
-                    <Filter className="h-3.5 w-3.5" />
-                    {statuses.length === 1
-                      ? ALL_STATUSES.find((s) => s.value === statuses[0])?.label
-                      : `${statuses.length} statuses`}
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuLabel>Order status</DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  {ALL_STATUSES.map((s) => (
-                    <DropdownMenuCheckboxItem
-                      key={s.value}
-                      checked={statuses.includes(s.value)}
-                      onCheckedChange={(v) => {
-                        setStatuses((prev) => {
-                          const next = v ? [...prev, s.value] : prev.filter((x) => x !== s.value);
-                          return next.length === 0 ? ["processing"] : next;
-                        });
-                      }}
-                    >
-                      {s.label}
-                    </DropdownMenuCheckboxItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                {/* Status multi-select */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Filter className="h-3.5 w-3.5" />
+                      {statuses.length === 1
+                        ? ALL_STATUSES.find((s) => s.value === statuses[0])?.label
+                        : `${statuses.length} statuses`}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent>
+                    <DropdownMenuLabel>Order status</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {ALL_STATUSES.map((s) => (
+                      <DropdownMenuCheckboxItem
+                        key={s.value}
+                        checked={statuses.includes(s.value)}
+                        onCheckedChange={(v) => {
+                          setStatuses((prev) => {
+                            const next = v ? [...prev, s.value] : prev.filter((x) => x !== s.value);
+                            return next.length === 0 ? ["processing"] : next;
+                          });
+                        }}
+                      >
+                        {s.label}
+                      </DropdownMenuCheckboxItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
 
-              <Button size="sm" onClick={() => loadOrders(false)} disabled={loadingOrders}
-                className="gap-1.5">
-                {loadingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Filter className="h-3.5 w-3.5" />}
-                Show
-              </Button>
+                <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
+                  <SelectTrigger className="w-[150px] h-9">
+                    <CalendarIcon className="h-3.5 w-3.5" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All dates</SelectItem>
+                    <SelectItem value="today">Today</SelectItem>
+                    <SelectItem value="24h">Last 24h</SelectItem>
+                    <SelectItem value="7d">Last 7 days</SelectItem>
+                    <SelectItem value="custom">Custom range\u2026</SelectItem>
+                  </SelectContent>
+                </Select>
+                {datePreset === "custom" && (
+                  <>
+                    <Input type="date" value={customFrom} onChange={(e) => setCustomFrom(e.target.value)}
+                      className="w-[150px] h-9" aria-label="From date" />
+                    <span className="text-muted-foreground text-xs">to</span>
+                    <Input type="date" value={customTo} onChange={(e) => setCustomTo(e.target.value)}
+                      className="w-[150px] h-9" aria-label="To date" />
+                  </>
+                )}
 
-              <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "recent" | "oldest")}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Most recent</SelectItem>
-                  <SelectItem value="oldest">Oldest</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="ghost" size="sm" className="gap-1.5">
-                    <Filter className="h-3.5 w-3.5" /> Priority
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-72 space-y-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="hv">High-value threshold</Label>
-                    <div className="flex items-center gap-2">
-                      <Input id="hv" type="number" min={0} step={10}
-                        value={highValueThreshold}
-                        onChange={(e) => setHighValueThreshold(Number(e.target.value) || 0)}
-                        className="w-28" />
-                      <span className="text-xs text-muted-foreground">currency units</span>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <Filter className="h-3.5 w-3.5" /> Priority
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-72 space-y-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="hv">High-value threshold</Label>
+                      <div className="flex items-center gap-2">
+                        <Input id="hv" type="number" min={0} step={10}
+                          value={highValueThreshold}
+                          onChange={(e) => setHighValueThreshold(Number(e.target.value) || 0)}
+                          className="w-28" />
+                        <span className="text-xs text-muted-foreground">currency units</span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox id="repeat" checked={computeRepeat}
-                      onCheckedChange={(v) => setComputeRepeat(Boolean(v))} />
-                    <Label htmlFor="repeat" className="text-sm font-normal cursor-pointer">
-                      Detect repeat customers <span className="text-muted-foreground">(slower)</span>
-                    </Label>
-                  </div>
-                </PopoverContent>
-              </Popover>
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="repeat" checked={computeRepeat}
+                        onCheckedChange={(v) => setComputeRepeat(Boolean(v))} />
+                      <Label htmlFor="repeat" className="text-sm font-normal cursor-pointer">
+                        Detect repeat customers <span className="text-muted-foreground">(slower)</span>
+                      </Label>
+                    </div>
+                  </PopoverContent>
+                </Popover>
 
-              <Button variant="ghost" size="sm" onClick={() => setNotify(!notify)}
-                className="gap-1.5" aria-label={notify ? "Disable new-order notifications" : "Enable new-order notifications"}>
-                {notify ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}
-                {notify ? "Notifications on" : "Notifications off"}
-              </Button>
+                <Button size="sm" onClick={() => loadOrders(false)} disabled={loadingOrders}
+                  className="gap-1.5 ml-auto">
+                  {loadingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Show
+                </Button>
+              </div>
 
-              <FilterPresets
-                siteId={activeSites.length === 1 ? activeSites[0] : null}
-                currentPayload={{
-                  statuses, datePreset, customFrom, customTo, search, sortOrder,
-                  highValueThreshold, computeRepeat,
-                }}
-                onApply={(p: PresetPayload) => {
-                  setStatuses(p.statuses);
-                  setDatePreset(p.datePreset as DatePreset);
-                  setCustomFrom(p.customFrom);
-                  setCustomTo(p.customTo);
-                  setSearch(p.search);
-                  setSortOrder(p.sortOrder as "recent" | "oldest");
-                  setHighValueThreshold(p.highValueThreshold);
-                  setComputeRepeat(p.computeRepeat);
-                }}
-              />
+              <div className="border-t" />
 
-              <div className="ml-auto flex gap-2">
-                <Badge variant="secondary">{totalSelected} selected</Badge>
-                <Badge variant="secondary">{totalItems} items</Badge>
+              {/* Row 2 — View (sort, presets, notifications, counts) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">
+                  View
+                </span>
+                <Label htmlFor="sort-order" className="text-xs text-muted-foreground">Sort by</Label>
+                <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "recent" | "oldest")}>
+                  <SelectTrigger id="sort-order" className="w-[150px] h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="recent">Most recent</SelectItem>
+                    <SelectItem value="oldest">Oldest</SelectItem>
+                  </SelectContent>
+                </Select>
+
+                <FilterPresets
+                  siteId={activeSites.length === 1 ? activeSites[0] : null}
+                  currentPayload={{
+                    statuses, datePreset, customFrom, customTo, search, sortOrder,
+                    highValueThreshold, computeRepeat,
+                  }}
+                  onApply={(p: PresetPayload) => {
+                    setStatuses(p.statuses);
+                    setDatePreset(p.datePreset as DatePreset);
+                    setCustomFrom(p.customFrom);
+                    setCustomTo(p.customTo);
+                    setSearch(p.search);
+                    setSortOrder(p.sortOrder as "recent" | "oldest");
+                    setHighValueThreshold(p.highValueThreshold);
+                    setComputeRepeat(p.computeRepeat);
+                  }}
+                />
+
+                <Button variant="ghost" size="sm" onClick={() => setNotify(!notify)}
+                  className="gap-1.5" aria-label={notify ? "Disable new-order notifications" : "Enable new-order notifications"}>
+                  {notify ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {notify ? "Notifications on" : "Notifications off"}
+                </Button>
+
+                <div className="ml-auto flex gap-2">
+                  <Badge variant="secondary">{totalSelected} selected</Badge>
+                  <Badge variant="secondary">{totalItems} items</Badge>
+                </div>
               </div>
             </CardContent>
           </Card>

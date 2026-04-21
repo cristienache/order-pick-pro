@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 
@@ -540,6 +543,54 @@ app.delete("/api/presets/:id", requireAuth, (req, res) => {
 
 // ---------- Health ----------
 app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+
+// ---------- GitHub deploy webhook ----------
+// Configure in GitHub: repo Settings -> Webhooks -> Add webhook
+//   Payload URL: https://www.ultrax.work/api/deploy/github
+//   Content type: application/json
+//   Secret: same value as GITHUB_WEBHOOK_SECRET in server/.env
+//   Events: Just the push event
+//
+// We verify the HMAC signature, then fire scripts/deploy.sh in the background
+// and return 202 immediately so GitHub doesn't time out waiting for the build.
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const DEPLOY_SCRIPT = path.resolve(__dirname, "..", "scripts", "deploy.sh");
+
+// Capture the raw body for HMAC verification — must come BEFORE any handler
+// that needs it. We mount it on the webhook path only so the rest of the API
+// keeps using express.json().
+app.post(
+  "/api/deploy/github",
+  express.raw({ type: "application/json", limit: "5mb" }),
+  (req, res) => {
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: "Webhook not configured" });
+
+    const sig = req.header("x-hub-signature-256") || "";
+    const expected =
+      "sha256=" +
+      crypto.createHmac("sha256", secret).update(req.body).digest("hex");
+    const ok =
+      sig.length === expected.length &&
+      crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    if (!ok) return res.status(401).json({ error: "Bad signature" });
+
+    const event = req.header("x-github-event");
+    if (event === "ping") return res.json({ pong: true });
+    if (event !== "push") return res.json({ ignored: event });
+
+    // Fire and forget. Detach so the deploy keeps running even if the API
+    // restarts itself partway through (it does, on server/ changes).
+    const child = spawn("bash", [DEPLOY_SCRIPT], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+
+    res.status(202).json({ ok: true, started: true });
+  }
+);
 
 app.listen(PORT, () => {
   console.log(`Ultrax API listening on http://127.0.0.1:${PORT}`);

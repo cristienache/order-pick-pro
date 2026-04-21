@@ -68,6 +68,7 @@ const generateSchema = z.object({
     site_id: z.number().int().positive(),
     order_ids: z.array(z.number().int().positive()).min(1).max(500),
   })).min(1).max(20),
+  format: z.enum(["a4", "label4x6"]).optional().default("a4"),
 });
 
 // ---------- Auth ----------

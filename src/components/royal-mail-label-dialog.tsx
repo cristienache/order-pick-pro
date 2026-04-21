@@ -447,14 +447,20 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
           <Button variant="outline" onClick={printLabel} disabled={!shipment.has_label || !pdfUrl}>
             <Printer className="h-4 w-4" /> Print
           </Button>
-          <Button asChild variant="outline" disabled={!pdfUrl}>
-            <a
-              href={pdfUrl ?? "#"}
-              download={`rm-${shipment.tracking_number || shipment.id}.pdf`}
-            >
+          {pdfUrl ? (
+            <Button asChild variant="outline">
+              <a
+                href={pdfUrl}
+                download={`rm-${shipment.tracking_number || shipment.id}.pdf`}
+              >
+                <Download className="h-4 w-4" /> Download PDF
+              </a>
+            </Button>
+          ) : (
+            <Button variant="outline" disabled>
               <Download className="h-4 w-4" /> Download PDF
-            </a>
-          </Button>
+            </Button>
+          )}
         </div>
       </div>
 

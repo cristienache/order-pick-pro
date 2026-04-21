@@ -9,6 +9,7 @@ import { playChime } from "@/lib/chime";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PriorityBadges } from "@/components/priority-badges";
+import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +49,8 @@ const FORMATS: { value: Format; label: string; hint: string }[] = [
   { value: "picking_a4", label: "Picking slip (A4)", hint: "Warehouse \u2014 SKUs + attributes" },
   { value: "packing_a4", label: "Packing slip (A4)", hint: "Customer-facing \u2014 no SKUs" },
   { value: "packing_4x6", label: "Packing label (4\u00d76\")", hint: "Thermal label, one per order" },
+  { value: "shipping_4x6", label: "Shipping label (4\u00d76\")", hint: "Royal Mail size \u2014 thermal" },
+  { value: "shipping_a6", label: "Shipping label (A6)", hint: "Royal Mail size \u2014 105\u00d7148 mm" },
 ];
 
 const HIGH_VALUE_KEY = "ultrax_hv_threshold";

@@ -10,6 +10,7 @@ import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PriorityBadges } from "@/components/priority-badges";
 import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
+import { OrderDetailDrawer } from "@/components/order-detail-drawer";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";

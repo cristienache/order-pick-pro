@@ -867,8 +867,266 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
   res.json({ ...result, settings: rmRowToPublic(updated) });
 });
 
-// ---------- Health ----------
-app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toISOString() }));
+// ---------- Royal Mail Phase 2: shipments / labels ----------
+// Service codes we currently expose in the UI. Royal Mail accepts many more
+// service-format combos; this is a UK-domestic starter set per the spec.
+const RM_SERVICE_CODES = ["CRL", "CRL48", "TRK24", "TRK48", "STL1", "STL2"];
+
+const shipmentSchema = z.object({
+  site_id: z.number().int().positive(),
+  woocommerce_order_id: z.number().int().positive(),
+  // Reference printed on the label & echoed back in webhooks.
+  customer_reference: z.string().trim().min(1).max(40),
+  service_code: z.enum(RM_SERVICE_CODES),
+  // Royal Mail format flag: P=Parcel, L=Large Letter, F=Letter.
+  service_format: z.enum(["P", "L", "F"]).default("P"),
+  weight_grams: z.number().int().min(1).max(30000),
+  length_mm: z.number().int().min(0).max(2000).optional(),
+  width_mm: z.number().int().min(0).max(2000).optional(),
+  height_mm: z.number().int().min(0).max(2000).optional(),
+  safe_place: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
+  description_of_goods: z.string().trim().max(60).default("Goods"),
+  recipient: z.object({
+    name: z.string().trim().min(1).max(100),
+    company: z.string().trim().max(100).optional().or(z.literal("")).transform((v) => v || null),
+    line1: z.string().trim().min(1).max(150),
+    line2: z.string().trim().max(150).optional().or(z.literal("")).transform((v) => v || null),
+    city: z.string().trim().min(1).max(80),
+    county: z.string().trim().max(80).optional().or(z.literal("")).transform((v) => v || null),
+    postcode: z.string().trim().min(2).max(20),
+    country_code: z.string().trim().length(2).default("GB"),
+    phone: z.string().trim().max(40).optional().or(z.literal("")).transform((v) => v || null),
+    email: z.string().trim().max(200).optional().or(z.literal("")).transform((v) => v || null),
+  }),
+});
+
+// UK postcode validator — used only as a soft client-side guard before we
+// hand the data to Royal Mail (their own validator is the authority).
+function isValidUkPostcode(pc) {
+  return /^[A-Z]{1,2}\d[A-Z\d]?\s?\d[A-Z]{2}$/i.test(String(pc || "").trim());
+}
+
+function loadRmCreds(userId) {
+  const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(userId);
+  if (!row || !row.client_id_enc || !row.client_secret_enc) return null;
+  return {
+    row,
+    clientId: decrypt(row.client_id_enc),
+    clientSecret: decrypt(row.client_secret_enc),
+    useSandbox: Boolean(row.use_sandbox),
+  };
+}
+
+function rmShipmentToPublic(s) {
+  return {
+    id: s.id,
+    woocommerce_order_id: s.woocommerce_order_id,
+    woocommerce_store_url: s.woocommerce_store_url,
+    royal_mail_shipment_id: s.royal_mail_shipment_id,
+    tracking_number: s.tracking_number,
+    service_code: s.service_code,
+    has_label: Boolean(s.label_pdf_base64),
+    manifested: Boolean(s.manifested),
+    manifest_id: s.manifest_id,
+    voided: Boolean(s.voided),
+    created_at: s.created_at,
+  };
+}
+
+// List shipments for the current user, newest first.
+app.get("/api/royal-mail/shipments", requireAuth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM shipments WHERE user_id = ? ORDER BY created_at DESC LIMIT 200
+  `).all(req.user.id);
+  res.json({ shipments: rows.map(rmShipmentToPublic) });
+});
+
+// Lookup any existing shipment for a given Woo order. Used by the order
+// drawer to decide between "Create label" vs "Show existing label".
+app.get("/api/royal-mail/shipments/by-order/:siteId/:orderId", requireAuth, (req, res) => {
+  const siteId = Number(req.params.siteId);
+  const orderId = Number(req.params.orderId);
+  const row = db.prepare(`
+    SELECT * FROM shipments
+    WHERE user_id = ? AND site_id = ? AND woocommerce_order_id = ? AND voided = 0
+    ORDER BY created_at DESC LIMIT 1
+  `).get(req.user.id, siteId, orderId);
+  res.json({ shipment: row ? rmShipmentToPublic(row) : null });
+});
+
+// Stream a saved label PDF.
+app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
+  const row = db.prepare(
+    "SELECT label_pdf_base64, tracking_number FROM shipments WHERE id = ? AND user_id = ?"
+  ).get(Number(req.params.id), req.user.id);
+  if (!row || !row.label_pdf_base64) return res.status(404).json({ error: "Label not found" });
+  const buf = Buffer.from(row.label_pdf_base64, "base64");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="rm-${row.tracking_number || "label"}.pdf"`,
+  );
+  res.send(buf);
+});
+
+// Create a Royal Mail shipment for a Woo order.
+// Saves the result to `shipments` and (optionally) writes a tracking note
+// back to WooCommerce.
+app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
+  const parsed = shipmentSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+
+  if (d.recipient.country_code === "GB" && !isValidUkPostcode(d.recipient.postcode)) {
+    return res.status(400).json({ error: "Recipient UK postcode looks invalid." });
+  }
+
+  // Reject duplicates upfront — the user can void the existing label if they
+  // really want a new one.
+  const existing = db.prepare(`
+    SELECT id, tracking_number FROM shipments
+    WHERE user_id = ? AND site_id = ? AND woocommerce_order_id = ? AND voided = 0
+  `).get(req.user.id, d.site_id, d.woocommerce_order_id);
+  if (existing) {
+    return res.status(409).json({
+      error: "A label already exists for this order. Void it first to create a new one.",
+      shipment_id: existing.id,
+      tracking_number: existing.tracking_number,
+    });
+  }
+
+  const site = loadSiteWithKeys(d.site_id, req.user.id);
+  if (!site) return res.status(404).json({ error: "Site not found" });
+
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  const { row: rm, clientId, clientSecret, useSandbox } = creds;
+  if (!rm.sender_address_line1 || !rm.sender_city || !rm.sender_postcode) {
+    return res.status(400).json({ error: "Add a sender address under Royal Mail settings first." });
+  }
+
+  // Build the Royal Mail v3 payload. Field shape follows the public spec; if
+  // a tenant differs (some IBM gateways use camelCase variants) we'll surface
+  // RM's 4xx response back to the UI.
+  const payload = {
+    shipmentInformation: {
+      shipmentDate: new Date().toISOString().slice(0, 10),
+      serviceCode: d.service_code,
+      serviceFormat: d.service_format,
+      weight: { unitOfMeasurement: "g", value: d.weight_grams },
+      ...(d.length_mm && d.width_mm && d.height_mm ? {
+        dimensions: {
+          unitOfMeasurement: "mm",
+          length: d.length_mm, width: d.width_mm, height: d.height_mm,
+        },
+      } : {}),
+      descriptionOfGoods: d.description_of_goods,
+      declaredValue: 0,
+      customerReference: d.customer_reference,
+      ...(d.safe_place ? { safePlace: d.safe_place } : {}),
+    },
+    shipper: {
+      contactName: rm.sender_name || "",
+      companyName: rm.sender_company || "",
+      addressLine1: rm.sender_address_line1,
+      addressLine2: rm.sender_address_line2 || "",
+      city: rm.sender_city,
+      postcode: rm.sender_postcode,
+      countryCode: rm.sender_country || "GB",
+      phoneNumber: rm.sender_phone || "",
+      emailAddress: rm.sender_email || "",
+    },
+    destination: {
+      contactName: d.recipient.name,
+      companyName: d.recipient.company || "",
+      addressLine1: d.recipient.line1,
+      addressLine2: d.recipient.line2 || "",
+      city: d.recipient.city,
+      county: d.recipient.county || "",
+      postcode: d.recipient.postcode,
+      countryCode: d.recipient.country_code,
+      phoneNumber: d.recipient.phone || "",
+      emailAddress: d.recipient.email || "",
+    },
+  };
+
+  let result;
+  try {
+    result = await createRmShipment({
+      userId: req.user.id, clientId, clientSecret, useSandbox, payload,
+    });
+  } catch (e) {
+    return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
+  }
+
+  if (!result.ok) {
+    // Surface the RM error verbatim — their messages are usually actionable
+    // (e.g. "weight exceeds service limit").
+    const msg =
+      result.body?.message ||
+      result.body?.errors?.[0]?.errorDescription ||
+      result.body?.error ||
+      `Royal Mail returned ${result.status}`;
+    return res.status(result.status === 401 ? 401 : 422).json({
+      error: msg,
+      status: result.status,
+      detail: result.body,
+    });
+  }
+
+  let { shipmentId, trackingNumber, labelBase64, labelUri } = normalizeShipmentResponse(result.body);
+
+  // Some tenants only return shipmentId in the create response and require a
+  // follow-up GET for the PDF. Try once if we have an id but no inline label.
+  if (shipmentId && !labelBase64) {
+    try {
+      const lab = await getRmShipmentLabel({
+        userId: req.user.id, clientId, clientSecret, useSandbox, shipmentId,
+      });
+      if (lab.ok) {
+        const norm = normalizeShipmentResponse(lab.body);
+        if (norm.labelBase64) labelBase64 = norm.labelBase64;
+      }
+    } catch { /* non-fatal — we'll still save the shipment */ }
+  }
+
+  const insert = db.prepare(`
+    INSERT INTO shipments (
+      user_id, site_id, woocommerce_order_id, woocommerce_store_url,
+      royal_mail_shipment_id, tracking_number, service_code, label_pdf_base64
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.user.id, d.site_id, d.woocommerce_order_id, site.store_url,
+    shipmentId || null, trackingNumber || null, d.service_code,
+    labelBase64 || null,
+  );
+
+  // Best-effort note back to WooCommerce. Failures here MUST NOT roll back
+  // the label — the user already paid for it via OBA.
+  if (trackingNumber) {
+    try {
+      await addOrderNote(
+        site,
+        d.woocommerce_order_id,
+        `Royal Mail ${d.service_code} label created. Tracking: ${trackingNumber}`,
+        false,
+      );
+    } catch (e) {
+      console.warn(`[rm] Could not write WC note for order ${d.woocommerce_order_id}: ${e.message}`);
+    }
+  }
+
+  const saved = db.prepare("SELECT * FROM shipments WHERE id = ?").get(insert.lastInsertRowid);
+  res.json({
+    shipment: rmShipmentToPublic(saved),
+    label_uri: labelUri || null,
+  });
+});
+
+
 
 // ---------- GitHub deploy webhook ----------
 // Configure in GitHub: repo Settings -> Webhooks -> Add webhook

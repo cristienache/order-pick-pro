@@ -146,6 +146,14 @@ function PicklistPage() {
     if (mode === "single" && activeSites.length !== 1) setActiveSites([sites[0].id]);
   }, [mode, sites]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // "All dates" is only allowed when the status filter is exactly ["processing"].
+  // If the user changes the status set while "all" is active, snap back to "today"
+  // so they don't accidentally pull the whole order history.
+  useEffect(() => {
+    const isProcessingOnly = statuses.length === 1 && statuses[0] === "processing";
+    if (datePreset === "all" && !isProcessingOnly) setDatePreset("today");
+  }, [statuses, datePreset]);
+
   const loadOrders = useCallback(async (silent = false) => {
     if (activeSites.length === 0) return;
     setLoadingOrders(true);
@@ -521,7 +529,7 @@ function PicklistPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">
                   Filter
                 </span>
-                <Input placeholder="Order #, customer, or email…" value={search}
+                <Input placeholder="Order #, customer, or email..." value={search}
                   onChange={(e) => setSearch(e.target.value)} className="max-w-xs h-9" />
 
                 {/* Status multi-select */}
@@ -555,12 +563,21 @@ function PicklistPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
+                <Select
+                  value={datePreset}
+                  onValueChange={(v) => setDatePreset(v as DatePreset)}
+                >
                   <SelectTrigger className="w-[150px] h-9">
                     <CalendarIcon className="h-3.5 w-3.5" />
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* "All dates" is only meaningful for the live processing
+                        backlog — for completed/cancelled/etc. it would pull
+                        the entire WooCommerce history, so we hide it. */}
+                    {statuses.length === 1 && statuses[0] === "processing" && (
+                      <SelectItem value="all">All dates</SelectItem>
+                    )}
                     <SelectItem value="today">Today</SelectItem>
                     <SelectItem value="24h">Last 24h</SelectItem>
                     <SelectItem value="7d">Last 7 days</SelectItem>

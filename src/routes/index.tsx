@@ -11,6 +11,7 @@ import { AppShell } from "@/components/app-shell";
 import { PriorityBadges } from "@/components/priority-badges";
 import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { OrderDetailDrawer } from "@/components/order-detail-drawer";
+import { BulkRoyalMailDialog, type BulkSelection } from "@/components/bulk-royal-mail-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -33,6 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Download, RefreshCw, Package, Store, MoreHorizontal,
   CheckCircle2, MessageSquarePlus, Filter, Calendar as CalendarIcon, Bell, BellOff, ChevronDown,
+  Truck, Printer,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -101,6 +103,11 @@ function PicklistPage() {
   const [noteText, setNoteText] = useState("");
   const [noteCustomerEmail, setNoteCustomerEmail] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Bulk Royal Mail dialog state. mode === null means closed; selections are
+  // snapshotted on open so a click on the dropdown freezes the working set.
+  const [rmBulkMode, setRmBulkMode] = useState<"create" | "print" | null>(null);
+  const [rmBulkSelections, setRmBulkSelections] = useState<BulkSelection[]>([]);
 
   // Auto-refresh + polling timestamps
   const lastSeenIdsRef = useRef<Set<number>>(new Set());

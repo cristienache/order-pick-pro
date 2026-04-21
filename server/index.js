@@ -379,7 +379,7 @@ app.get("/api/sites/:id/orders/:orderId", requireAuth, async (req, res) => {
   }
 });
 
-
+// ---------- Bulk actions ----------
 async function processBulk(selections, userId, perOrder) {
   const results = [];
   for (const sel of selections) {

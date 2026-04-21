@@ -158,15 +158,14 @@ async function generateA4Pdf(groups) {
   let page = newPage();
   let y = pageHeight - marginY;
   const totalOrders = groups.reduce((s, g) => s + g.orders.length, 0);
-  const generatedAt = new Date().toLocaleString("en-GB", {
-    timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short",
-  });
 
   page.drawText("Picklist", { x: marginX, y, size: 16, font: fontBold });
-  page.drawText(`Generated ${generatedAt}  -  ${totalOrders} orders across ${groups.length} site(s)`, {
-    x: marginX, y: y - 16, size: 9, font, color: rgb(0.35, 0.35, 0.35),
+  const summary = `${totalOrders} orders across ${groups.length} site(s)`;
+  const sw = measure(summary, 10);
+  page.drawText(summary, {
+    x: marginX + usableWidth - sw, y: y + 2, size: 10, font, color: rgb(0.4, 0.4, 0.4),
   });
-  y -= 36;
+  y -= 24;
 
   const ensureSpace = (needed) => {
     if (y - needed < marginY) { page = newPage(); y = pageHeight - marginY; }

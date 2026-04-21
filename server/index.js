@@ -29,6 +29,7 @@ import {
   getCndLabel,
   deleteCndOrder,
   normalizeCndCreateResponse,
+  normalizeRmApiKey,
 } from "./royalmail.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";

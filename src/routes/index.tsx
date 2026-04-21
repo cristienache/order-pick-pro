@@ -148,8 +148,10 @@ function PicklistPage() {
     statuses.includes("processing") &&
     !statuses.some((s) => s === "completed" || s === "cancelled" || s === "refunded");
   useEffect(() => {
-    if (datePreset === "all" && !allowsAllDates) setDatePreset("today");
-  }, [allowsAllDates, datePreset]);
+    if (allowsAllDates) setDatePreset("all");
+    else if (datePreset === "all") setDatePreset("today");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allowsAllDates]);
 
   const loadOrders = useCallback(async (silent = false) => {
     if (activeSites.length === 0) return;

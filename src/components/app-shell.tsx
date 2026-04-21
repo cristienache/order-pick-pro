@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { LogOut, Package, Settings, Users, Store } from "lucide-react";
+import { LogOut, Package, Settings, Users, Store, Truck } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -24,6 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <nav className="flex items-center gap-1 text-sm">
               <NavLink to="/" icon={<Package className="h-4 w-4" />}>Picklist</NavLink>
               <NavLink to="/sites" icon={<Store className="h-4 w-4" />}>My Sites</NavLink>
+              <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>Royal Mail</NavLink>
               {user?.role === "admin" && (
                 <>
                   <NavLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</NavLink>

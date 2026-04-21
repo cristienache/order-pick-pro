@@ -508,11 +508,29 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
   const parsed = generateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
 
+  const requiresReturnAddress = parsed.data.format === "shipping_4x6";
+
   try {
     const groups = [];
     for (const sel of parsed.data.selections) {
       const site = loadSiteWithKeys(sel.site_id, req.user.id);
       if (!site) return res.status(404).json({ error: `Site ${sel.site_id} not found` });
+
+      // Block shipping-label generation for sites without a complete return
+      // address — the label literally has nowhere to print "from", and Royal
+      // Mail / couriers reject labels missing a sender.
+      if (requiresReturnAddress && !returnAddressIsComplete({
+        return_name: site.return_address.name,
+        return_company: site.return_address.company,
+        return_line1: site.return_address.line1,
+        return_city: site.return_address.city,
+        return_postcode: site.return_address.postcode,
+      })) {
+        return res.status(400).json({
+          error: `"${site.name}" is missing a return address. Add it under Sites → Edit → Return address before printing 4x6 shipping labels.`,
+        });
+      }
+
       const orders = [];
       const chunkSize = 5;
       for (let i = 0; i < sel.order_ids.length; i += chunkSize) {
@@ -520,7 +538,14 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
         const results = await Promise.all(chunk.map((id) => fetchOrderById(site, id)));
         orders.push(...results);
       }
-      groups.push({ site: { name: site.name, store_url: site.store_url }, orders });
+      groups.push({
+        site: {
+          name: site.name,
+          store_url: site.store_url,
+          return_address: site.return_address,
+        },
+        orders,
+      });
     }
     const pdf = await generatePicklistPdf(groups, { format: parsed.data.format });
     const fmt = parsed.data.format;

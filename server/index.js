@@ -701,15 +701,15 @@ app.delete("/api/presets/:id", requireAuth, (req, res) => {
   res.json({ ok: true, deleted: r.changes });
 });
 
-// ---------- Royal Mail (Phase 1: credentials + sender + test connection) ----------
-// Credentials are AES-GCM encrypted at rest. Sender address is plain text.
-// Phase 2-4 will add: create shipment, label retrieval, manifest, void.
+// ---------- Royal Mail (Click & Drop API) ----------
+// We authenticate to Royal Mail Click & Drop with a single API key the user
+// generates inside their Click & Drop account. Stored AES-GCM encrypted at
+// rest in royal_mail_credentials.api_key_enc.
 const rmCredsSchema = z.object({
-  // Both credential fields are optional on save so the user can update only
-  // the sender address without retyping the secret. An empty string means
-  // "leave unchanged"; the literal "__clear__" means "remove it".
-  client_id: z.string().trim().min(1).max(200).optional(),
-  client_secret: z.string().trim().min(1).max(200).optional(),
+  // Optional on save so the user can update only the sandbox flag without
+  // retyping the key. Empty/undefined = "leave unchanged"; "__clear__" =
+  // remove the saved key.
+  api_key: z.string().trim().min(1).max(500).optional(),
   use_sandbox: z.boolean().optional().default(false),
 });
 const rmSenderSchema = z.object({
@@ -724,13 +724,12 @@ const rmSenderSchema = z.object({
   sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
 });
 
-// Public-safe view: never returns the encrypted credential blobs, only flags
-// indicating whether each is currently set.
+// Public-safe view: never returns the encrypted credential blob, only a flag
+// indicating whether a key is currently set.
 function rmRowToPublic(row) {
   if (!row) {
     return {
-      has_client_id: false,
-      has_client_secret: false,
+      has_api_key: false,
       use_sandbox: false,
       sender_name: null, sender_company: null,
       sender_address_line1: null, sender_address_line2: null,
@@ -740,8 +739,7 @@ function rmRowToPublic(row) {
     };
   }
   return {
-    has_client_id: Boolean(row.client_id_enc),
-    has_client_secret: Boolean(row.client_secret_enc),
+    has_api_key: Boolean(row.api_key_enc),
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,
@@ -764,38 +762,35 @@ app.get("/api/royal-mail/settings", requireAuth, (req, res) => {
 });
 
 // Update credentials only. Empty/missing field => leave existing value alone.
-// To clear a credential, send the literal string "__clear__".
+// To clear the saved key, send the literal string "__clear__".
 app.put("/api/royal-mail/credentials", requireAuth, (req, res) => {
   const parsed = rmCredsSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
-  const { client_id, client_secret, use_sandbox } = parsed.data;
+  const { api_key, use_sandbox } = parsed.data;
 
   const existing = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
 
-  const nextClientIdEnc = client_id === "__clear__"
+  const nextApiKeyEnc = api_key === "__clear__"
     ? null
-    : (client_id ? encrypt(client_id) : (existing?.client_id_enc ?? null));
-  const nextClientSecretEnc = client_secret === "__clear__"
-    ? null
-    : (client_secret ? encrypt(client_secret) : (existing?.client_secret_enc ?? null));
+    : (api_key ? encrypt(api_key) : (existing?.api_key_enc ?? null));
 
   if (existing) {
     db.prepare(`
       UPDATE royal_mail_credentials
-      SET client_id_enc = ?, client_secret_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      SET api_key_enc = ?, use_sandbox = ?, updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0, req.user.id);
+    `).run(nextApiKeyEnc, use_sandbox ? 1 : 0, req.user.id);
   } else {
     db.prepare(`
-      INSERT INTO royal_mail_credentials (user_id, client_id_enc, client_secret_enc, use_sandbox)
-      VALUES (?, ?, ?, ?)
-    `).run(req.user.id, nextClientIdEnc, nextClientSecretEnc, use_sandbox ? 1 : 0);
+      INSERT INTO royal_mail_credentials (user_id, api_key_enc, use_sandbox)
+      VALUES (?, ?, ?)
+    `).run(req.user.id, nextApiKeyEnc, use_sandbox ? 1 : 0);
   }
 
-  // Token cache is keyed on (user, sandbox-flag); evict both buckets so the
-  // next call uses the freshly-saved credentials.
+  // Click & Drop has no token cache, but keep the call so the helper can grow
+  // a cache later without touching this route.
   clearRmToken(req.user.id, false);
   clearRmToken(req.user.id, true);
 

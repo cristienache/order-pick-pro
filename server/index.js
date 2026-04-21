@@ -933,6 +933,61 @@ function loadRmCreds(userId) {
   };
 }
 
+// Build the Click & Drop `contents[]` for a package from WooCommerce line items.
+// Royal Mail prints `quantity x SKU` (or name if no SKU) on the label, so we
+// surface the actual product SKUs the user is shipping. Falls back to a single
+// generic "Goods" line if there's nothing to show.
+function buildCndContents({ lineItems, fallbackName, totalWeightGrams }) {
+  const items = Array.isArray(lineItems)
+    ? lineItems
+        .map((li) => ({
+          // Display priority on the label: SKU > name > "Goods".
+          name: String(li.sku || li.name || fallbackName || "Goods").slice(0, 60),
+          SKU: String(li.sku || "").slice(0, 60),
+          quantity: Math.max(1, Math.min(999, Number(li.quantity) || 1)),
+          unitValue: 0,
+          // Spread weight across units so the package total still matches.
+          unitWeightInGrams: 0,
+        }))
+        .filter((c) => c.name)
+    : [];
+
+  if (items.length === 0) {
+    return [{
+      name: fallbackName || "Goods",
+      SKU: "",
+      quantity: 1,
+      unitValue: 0,
+      unitWeightInGrams: totalWeightGrams || 0,
+    }];
+  }
+
+  // Distribute the parcel weight across the first item — Click & Drop only
+  // needs the package weight to match its total, but unitWeightInGrams must
+  // sum to something sensible.
+  const totalUnits = items.reduce((s, c) => s + c.quantity, 0);
+  const perUnit = totalUnits > 0 ? Math.floor((totalWeightGrams || 0) / totalUnits) : 0;
+  for (const c of items) c.unitWeightInGrams = perUnit;
+  return items;
+}
+
+// Fetch the WooCommerce order's line items and reduce them to the small shape
+// we ship to Click & Drop. Best-effort — failures return null and the caller
+// falls back to the generic "Goods" description.
+async function loadOrderLineItemsForLabel(site, orderId) {
+  try {
+    const order = await fetchOrderById(site, orderId);
+    if (!order || !Array.isArray(order.line_items)) return null;
+    return order.line_items.map((li) => ({
+      sku: String(li.sku || ""),
+      name: String(li.name || ""),
+      quantity: Math.max(1, Number(li.quantity) || 1),
+    }));
+  } catch {
+    return null;
+  }
+}
+
 function rmShipmentToPublic(s) {
   return {
     id: s.id,

@@ -470,8 +470,10 @@ function PicklistPage() {
             tone={stats.aging > 0 ? "warn" : "default"} />
           <StatCard label="Today's orders" value={stats.todayCount}
             hint="placed today" />
-          <StatCard label="Today's revenue" value={stats.todayRevenue.toFixed(2)}
-            hint="all selected sites" />
+          <StatCard label="Today's revenue" value={`£${stats.todayRevenueGbp.toFixed(2)}`}
+            hint={stats.unconvertedCount > 0
+              ? `GBP equivalent — ${stats.unconvertedCount} order(s) skipped (no rate)`
+              : "GBP equivalent across currencies"} />
         </div>
       )}
 

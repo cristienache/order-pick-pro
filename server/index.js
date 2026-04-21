@@ -773,9 +773,10 @@ app.put("/api/royal-mail/credentials", requireAuth, (req, res) => {
 
   const existing = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
 
-  const nextApiKeyEnc = api_key === "__clear__"
+  const cleanApiKey = api_key && api_key !== "__clear__" ? normalizeRmApiKey(api_key) : api_key;
+  const nextApiKeyEnc = cleanApiKey === "__clear__"
     ? null
-    : (api_key ? encrypt(api_key) : (existing?.api_key_enc ?? null));
+    : (cleanApiKey ? encrypt(cleanApiKey) : (existing?.api_key_enc ?? null));
 
   if (existing) {
     db.prepare(`

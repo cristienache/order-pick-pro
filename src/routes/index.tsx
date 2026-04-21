@@ -521,7 +521,7 @@ function PicklistPage() {
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">
                   Filter
                 </span>
-                <Input placeholder="Order #, customer, or email…" value={search}
+                <Input placeholder="Order #, customer, or email..." value={search}
                   onChange={(e) => setSearch(e.target.value)} className="max-w-xs h-9" />
 
                 {/* Status multi-select */}

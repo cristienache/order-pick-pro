@@ -70,6 +70,107 @@ export async function getRmToken({ userId, clientId, clientSecret, useSandbox })
   return fresh.token;
 }
 
+// Shared helper for authenticated RM calls. On 401 we evict the cached token
+// and retry exactly once (RM tokens occasionally expire mid-day before the
+// advertised TTL). Returns { ok, status, body, raw }.
+async function rmRequest({ userId, clientId, clientSecret, useSandbox, method, path, body }) {
+  const url = `${rmBaseUrl(useSandbox)}${path}`;
+  const doCall = async () => {
+    const token = await getRmToken({ userId, clientId, clientSecret, useSandbox });
+    const headers = {
+      "X-IBM-Client-Id": clientId,
+      "X-IBM-Client-Secret": clientSecret,
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+    };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const text = await res.text();
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { raw: text }; }
+    return { res, body: parsed, raw: text };
+  };
+
+  let attempt = await doCall();
+  if (attempt.res.status === 401) {
+    clearRmToken(userId, useSandbox);
+    attempt = await doCall();
+  }
+  return { ok: attempt.res.ok, status: attempt.res.status, body: attempt.body, raw: attempt.raw };
+}
+
+// POST /shipments — create a shipment and (usually) get the label inline.
+//
+// Royal Mail Shipping API v3 request shape (simplified, UK domestic):
+//   {
+//     shipmentInformation: {
+//       shipmentDate: "YYYY-MM-DD",
+//       serviceCode: "TPN",        // e.g. CRL, CRL48, TRK24, TRK48, STL1, STL2
+//       serviceFormat: "P",        // P = Parcel, L = Large Letter, F = Letter
+//       weight: { unitOfMeasurement: "g", value: 500 },
+//       descriptionOfGoods: "Goods",
+//       declaredValue: 0,
+//       customerReference: "WC-123"
+//     },
+//     shipper: { ...address... },
+//     destination: { ...address... }
+//   }
+//
+// Response is highly tenant-dependent. We surface whatever shape RM returns;
+// the caller normalizes shipmentId / trackingNumber / labelBase64.
+export async function createRmShipment({
+  userId, clientId, clientSecret, useSandbox, payload,
+}) {
+  return rmRequest({
+    userId, clientId, clientSecret, useSandbox,
+    method: "POST",
+    path: "/shipments",
+    body: payload,
+  });
+}
+
+// Pull label PDF separately when the create response only returned a URI/id.
+// Most RM tenants accept GET /shipments/{shipmentId}/label.
+export async function getRmShipmentLabel({
+  userId, clientId, clientSecret, useSandbox, shipmentId,
+}) {
+  return rmRequest({
+    userId, clientId, clientSecret, useSandbox,
+    method: "GET",
+    path: `/shipments/${encodeURIComponent(shipmentId)}/label`,
+  });
+}
+
+// Normalize the create-shipment response into a stable shape for the DB.
+// Royal Mail tenants return slightly different field names; we try the most
+// common ones in priority order.
+export function normalizeShipmentResponse(body) {
+  if (!body || typeof body !== "object") return {};
+  const shipmentId =
+    body.shipmentId || body.consignmentNumber || body.id ||
+    body.shipment?.shipmentId || body.shipment?.id || null;
+  const trackingNumber =
+    body.trackingNumber ||
+    body.shipmentTrackingNumber ||
+    body.shipment?.trackingNumber ||
+    (Array.isArray(body.packages) && body.packages[0]?.trackingNumber) ||
+    null;
+  // Label PDF as base64 — tried in priority order.
+  const labelBase64 =
+    body.label || body.labelImage || body.labelData ||
+    body.shipment?.label || body.documents?.label ||
+    (Array.isArray(body.labels) && body.labels[0]?.data) ||
+    null;
+  const labelUri =
+    body.labelUri || body.labelUrl ||
+    body.shipment?.labelUri || null;
+  return { shipmentId, trackingNumber, labelBase64, labelUri };
+}
+
 // Probe the credentials against a lightweight, side-effect-free endpoint.
 // Returns { ok, status, message, detail } — never throws.
 //

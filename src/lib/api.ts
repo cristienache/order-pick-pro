@@ -74,3 +74,9 @@ export type Invite = {
   id: number; email: string; role: string; used_at: string | null;
   expires_at: string; created_at: string; token: string;
 };
+export type FilterPreset = {
+  id: number;
+  name: string;
+  created_at: string;
+  payload: Record<string, unknown>;
+};

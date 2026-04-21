@@ -22,6 +22,7 @@ import {
   fetchCustomerOrderCount,
 } from "./woocommerce.js";
 import { getFxRates } from "./fx.js";
+import { testRmConnection, clearRmToken } from "./royalmail.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 

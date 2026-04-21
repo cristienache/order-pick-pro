@@ -203,7 +203,7 @@ function shippingMethodTitle(order) {
  *  - "packing_a4":   customer-facing packing slip, A4 (no SKUs)
  *  - "packing_4x6":  customer-facing packing slip, 4x6" labels (one per order)
  *  - "shipping_4x6": Royal Mail-style shipping label, 4x6" (102x152 mm), one per order
- *  - "shipping_a6":  Royal Mail-style shipping label, A6 (105x148 mm), one per order
+ *  - "shipping_a6":  Address label sheet — 21 labels (60x40 mm) per A4, 3 cols x 7 rows
  *
  * Backwards-compat aliases:
  *  - "a4"       -> "picking_a4"
@@ -213,7 +213,7 @@ export async function generatePicklistPdf(groups, opts = {}) {
   const raw = opts.format || "picking_a4";
   const format = raw === "a4" ? "picking_a4" : raw === "label4x6" ? "packing_4x6" : raw;
   if (format === "shipping_4x6") return generateShippingLabelPdf(groups, { size: "4x6" });
-  if (format === "shipping_a6") return generateShippingLabelPdf(groups, { size: "a6" });
+  if (format === "shipping_a6") return generateAddressLabelSheetPdf(groups);
   if (format === "packing_4x6") return generate4x6Pdf(groups, { mode: "packing" });
   if (format === "packing_a4") return generateA4Pdf(groups, { mode: "packing" });
   return generateA4Pdf(groups, { mode: "picking" });

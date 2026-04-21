@@ -170,6 +170,8 @@ Click **Save** (CloudPanel reloads nginx).
 
 ## Updating the app
 
+### Manual update
+
 ```bash
 cd ~/htdocs/www.ultrax.work
 git pull
@@ -184,6 +186,47 @@ cd server
 npm install --omit=dev
 pm2 restart ultrax-api
 ```
+
+### Automatic update on every git push (recommended)
+
+The repo ships with `scripts/deploy.sh` and a webhook endpoint at
+`POST /api/deploy/github` that runs it. After the first manual deploy:
+
+```bash
+# 1. Make the deploy script executable
+chmod +x ~/htdocs/www.ultrax.work/scripts/deploy.sh
+
+# 2. Generate a webhook secret and add it to server/.env
+SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
+echo "GITHUB_WEBHOOK_SECRET=$SECRET" >> ~/htdocs/www.ultrax.work/server/.env
+echo "Webhook secret: $SECRET"   # copy this for step 4
+pm2 restart ultrax-api
+```
+
+3. Make sure both pm2 processes exist (the script restarts both):
+
+```bash
+pm2 list   # should show ultrax-api and ultrax-ssr
+```
+
+4. In GitHub, go to your repo → **Settings → Webhooks → Add webhook**:
+   - **Payload URL**: `https://www.ultrax.work/api/deploy/github`
+   - **Content type**: `application/json`
+   - **Secret**: paste the `$SECRET` value from step 2
+   - **Events**: *Just the push event*
+   - **Active**: ✅
+   - Save. GitHub sends a `ping` immediately — green tick = wired up.
+
+5. Push to `main` (Lovable does this automatically when you accept changes).
+   Within ~30 seconds the site rebuilds. Watch progress with:
+
+```bash
+tail -f ~/deploy.log
+```
+
+The script does: `git fetch && reset --hard origin/main`, `npm install`,
+`npm run build`, swaps `dist` → `public`, reinstalls server deps only when
+`server/` changed in the push, and restarts both pm2 processes.
 
 ---
 

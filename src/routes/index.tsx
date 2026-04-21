@@ -287,12 +287,13 @@ function PicklistPage() {
       .reduce((a, o) => a + o.itemCount, 0);
   }, 0);
 
-  // ---------- Daily stats ----------
+  // ---------- Daily stats (revenue normalised to GBP) ----------
   const stats = useMemo(() => {
     let backlog = 0;     // processing orders shown
     let aging = 0;       // processing > 24h
     let todayCount = 0;  // orders dated today (any status shown)
-    let todayRevenue = 0;
+    let todayRevenueGbp = 0;
+    let unconvertedCount = 0; // orders we couldn't convert (missing rate)
     let totalItemsAll = 0;
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     for (const sid of activeSites) {
@@ -304,12 +305,16 @@ function PicklistPage() {
         if (Number.isFinite(t) && t >= startOfDay.getTime()) {
           todayCount++;
           const v = parseFloat(o.total);
-          if (Number.isFinite(v)) todayRevenue += v;
+          if (Number.isFinite(v)) {
+            const gbp = toGbp(v, o.currency);
+            if (gbp !== null) todayRevenueGbp += gbp;
+            else unconvertedCount++;
+          }
         }
       }
     }
-    return { backlog, aging, todayCount, todayRevenue, totalItemsAll };
-  }, [ordersBySite, activeSites]);
+    return { backlog, aging, todayCount, todayRevenueGbp, unconvertedCount, totalItemsAll };
+  }, [ordersBySite, activeSites, toGbp]);
 
   // ---------- Generate ----------
   const generate = async () => {

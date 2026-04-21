@@ -174,7 +174,16 @@ function PicklistPage() {
             Pull processing orders from your sites and generate a pick-list PDF.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
+            <SelectTrigger className="w-[180px]" aria-label="Output format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="a4">A4 picklist</SelectItem>
+              <SelectItem value="label4x6">4×6" labels (1/order)</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={loadOrders} disabled={loadingOrders || activeSites.length === 0}
             variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
             {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

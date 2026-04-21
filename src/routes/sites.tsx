@@ -119,7 +119,7 @@ function SitesPage() {
           <DialogTrigger asChild>
             <Button onClick={openCreate}><Plus className="h-4 w-4" /> Add site</Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{editing ? "Edit site" : "Add WooCommerce site"}</DialogTitle>
               <DialogDescription>
@@ -152,6 +152,66 @@ function SitesPage() {
                   onChange={(e) => setForm({ ...form, consumer_secret: e.target.value })}
                   placeholder="cs_..." />
               </div>
+
+              {/* Return address — printed on 4x6 shipping labels.
+                  Optional at save time, but the picklist endpoint will reject
+                  shipping_4x6 generation if these aren't filled in. */}
+              <div className="border-t pt-4 space-y-3">
+                <div>
+                  <h3 className="font-semibold text-sm">Return address</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Printed on the 4×6 shipping label. Required to generate
+                    shipping labels for this site.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="ra_name">Sender name</Label>
+                    <Input id="ra_name" value={form.return_name} maxLength={100}
+                      onChange={(e) => setForm({ ...form, return_name: e.target.value })}
+                      placeholder="Jane Doe" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ra_company">Company (optional)</Label>
+                    <Input id="ra_company" value={form.return_company} maxLength={100}
+                      onChange={(e) => setForm({ ...form, return_company: e.target.value })}
+                      placeholder="Ultraskins Ltd" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ra_line1">Address line 1</Label>
+                  <Input id="ra_line1" value={form.return_line1} maxLength={150}
+                    onChange={(e) => setForm({ ...form, return_line1: e.target.value })}
+                    placeholder="Unit 4, Trade Park" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ra_line2">Address line 2 (optional)</Label>
+                  <Input id="ra_line2" value={form.return_line2} maxLength={150}
+                    onChange={(e) => setForm({ ...form, return_line2: e.target.value })}
+                    placeholder="Industrial Estate" />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-2 col-span-2">
+                    <Label htmlFor="ra_city">City</Label>
+                    <Input id="ra_city" value={form.return_city} maxLength={80}
+                      onChange={(e) => setForm({ ...form, return_city: e.target.value })}
+                      placeholder="Manchester" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="ra_postcode">Postcode</Label>
+                    <Input id="ra_postcode" value={form.return_postcode} maxLength={20}
+                      onChange={(e) => setForm({ ...form, return_postcode: e.target.value.toUpperCase() })}
+                      placeholder="M1 1AA" />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ra_country">Country (optional)</Label>
+                  <Input id="ra_country" value={form.return_country} maxLength={60}
+                    onChange={(e) => setForm({ ...form, return_country: e.target.value })}
+                    placeholder="United Kingdom" />
+                </div>
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
                 <Button type="submit" disabled={saving}>

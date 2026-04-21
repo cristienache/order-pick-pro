@@ -375,6 +375,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
           }}
           initialShipment={rm?.shipment ?? null}
           onCreated={(s) => setRm((prev) => prev ? { ...prev, shipment: s } : prev)}
+          onVoided={() => setRm((prev) => prev ? { ...prev, shipment: null } : prev)}
         />
       )}
     </Sheet>

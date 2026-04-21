@@ -1195,6 +1195,13 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
 // again.
 app.delete("/api/royal-mail/shipments/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
+  // `?force=true` means: still mark the local row voided even if Click & Drop
+  // refuses the delete (typical when the order already has a label generated
+  // server-side, or when the remote order has been removed manually). This is
+  // what powers the "Cancel label" button in the label viewer — the user
+  // wants to abandon the broken/half-created shipment and start over.
+  const force = String(req.query.force || "").toLowerCase() === "true";
+
   const row = db.prepare("SELECT * FROM shipments WHERE id = ? AND user_id = ?").get(id, req.user.id);
   if (!row) return res.status(404).json({ error: "Shipment not found" });
   if (row.voided) return res.json({ ok: true, alreadyVoided: true });
@@ -1202,6 +1209,7 @@ app.delete("/api/royal-mail/shipments/:id", requireAuth, async (req, res) => {
   const creds = loadRmCreds(req.user.id);
   if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
 
+  let remoteWarning = null;
   if (row.royal_mail_shipment_id) {
     try {
       const result = await deleteCndOrder({
@@ -1211,15 +1219,21 @@ app.delete("/api/royal-mail/shipments/:id", requireAuth, async (req, res) => {
       });
       if (!result.ok && result.status !== 404) {
         const msg = result.body?.message || `Royal Mail returned ${result.status}`;
-        return res.status(422).json({ error: msg, detail: result.body });
+        if (!force) {
+          return res.status(422).json({ error: msg, detail: result.body });
+        }
+        remoteWarning = msg;
       }
     } catch (e) {
-      return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
+      if (!force) {
+        return res.status(502).json({ error: `Royal Mail request failed: ${e.message}` });
+      }
+      remoteWarning = `Royal Mail request failed: ${e.message}`;
     }
   }
 
   db.prepare("UPDATE shipments SET voided = 1 WHERE id = ?").run(id);
-  res.json({ ok: true });
+  res.json({ ok: true, ...(remoteWarning ? { remoteWarning } : {}) });
 });
 
 

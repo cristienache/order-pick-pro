@@ -112,7 +112,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
     // parallel so the label button knows what to render. Failures are silent
     // — the order detail still loads.
     Promise.all([
-      api<{ settings: { has_client_id: boolean; has_client_secret: boolean } }>(
+      api<{ settings: { has_api_key: boolean } }>(
         "/api/royal-mail/settings",
       ).catch(() => null),
       api<{ shipment: RmShipment | null }>(
@@ -121,7 +121,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
     ]).then(([s, ship]) => {
       if (cancelled) return;
       setRm({
-        configured: Boolean(s?.settings?.has_client_id && s?.settings?.has_client_secret),
+        configured: Boolean(s?.settings?.has_api_key),
         shipment: ship?.shipment ?? null,
       });
     });

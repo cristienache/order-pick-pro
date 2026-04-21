@@ -94,3 +94,34 @@ export type FilterPreset = {
   created_at: string;
   payload: Record<string, unknown>;
 };
+
+// Shipments saved after a successful Royal Mail label creation. The PDF is
+// fetched lazily via /api/royal-mail/shipments/:id/label.pdf so we only ship
+// metadata here.
+export type RmShipment = {
+  id: number;
+  woocommerce_order_id: number;
+  woocommerce_store_url: string | null;
+  royal_mail_shipment_id: string | null;
+  tracking_number: string | null;
+  service_code: string | null;
+  has_label: boolean;
+  manifested: boolean;
+  manifest_id: string | null;
+  voided: boolean;
+  created_at: string;
+};
+
+// UI-facing list of Royal Mail UK domestic services with friendly labels and
+// the typical max weight (grams) — used to validate the form before the API
+// call. Hard limits ultimately come from Royal Mail.
+export const RM_SERVICES: Array<{
+  code: string; label: string; maxWeight: number;
+}> = [
+  { code: "CRL",   label: "1st Class",          maxWeight: 20000 },
+  { code: "CRL48", label: "2nd Class",          maxWeight: 20000 },
+  { code: "TRK24", label: "Tracked 24",         maxWeight: 20000 },
+  { code: "TRK48", label: "Tracked 48",         maxWeight: 20000 },
+  { code: "STL1",  label: "Tracked 24 Signed",  maxWeight: 20000 },
+  { code: "STL2",  label: "Tracked 48 Signed",  maxWeight: 20000 },
+];

@@ -132,14 +132,15 @@ function PicklistPage() {
     if (selections.length === 0) { toast.error("Select at least one order"); return; }
     setGenerating(true);
     try {
-      const blob = await apiBlob("/api/picklist", { body: { selections } });
+      const blob = await apiBlob("/api/picklist", { body: { selections, format } });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `picklist-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const prefix = format === "label4x6" ? "labels" : "picklist";
+      a.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Picklist generated (${totalSelected} orders)`);
+      toast.success(`${format === "label4x6" ? "Labels" : "Picklist"} generated (${totalSelected} orders)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate");
     } finally { setGenerating(false); }

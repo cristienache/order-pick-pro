@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, apiBlob, type Site } from "@/lib/api";
 import {
   ALL_STATUSES, isAging, isExpedited, isHighValue, isRepeat,
-  withinDateRange, type DatePreset, type Format, type Mode, type OrderRow,
+  withinDateRange, type DatePreset, type Format, type OrderRow,
 } from "@/lib/orders";
 import { playChime } from "@/lib/chime";
 import { RequireAuth } from "@/components/require-auth";

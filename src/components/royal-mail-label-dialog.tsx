@@ -444,7 +444,7 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={printLabel} disabled={!pdfUrl}>
+          <Button variant="outline" onClick={printLabel} disabled={!shipment.has_label || !pdfUrl}>
             <Printer className="h-4 w-4" /> Print
           </Button>
           <Button asChild variant="outline" disabled={!pdfUrl}>

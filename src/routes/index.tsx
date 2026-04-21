@@ -556,6 +556,24 @@ function PicklistPage() {
                 {notify ? "Notifications on" : "Notifications off"}
               </Button>
 
+              <FilterPresets
+                siteId={activeSites.length === 1 ? activeSites[0] : null}
+                currentPayload={{
+                  statuses, datePreset, customFrom, customTo, search, sortOrder,
+                  highValueThreshold, computeRepeat,
+                }}
+                onApply={(p: PresetPayload) => {
+                  setStatuses(p.statuses);
+                  setDatePreset(p.datePreset as DatePreset);
+                  setCustomFrom(p.customFrom);
+                  setCustomTo(p.customTo);
+                  setSearch(p.search);
+                  setSortOrder(p.sortOrder as "recent" | "oldest");
+                  setHighValueThreshold(p.highValueThreshold);
+                  setComputeRepeat(p.computeRepeat);
+                }}
+              />
+
               <div className="ml-auto flex gap-2">
                 <Badge variant="secondary">{totalSelected} selected</Badge>
                 <Badge variant="secondary">{totalItems} items</Badge>

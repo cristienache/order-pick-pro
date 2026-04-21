@@ -44,6 +44,52 @@ if (!process.env.ENCRYPTION_KEY) { console.error("FATAL: ENCRYPTION_KEY is requi
 if (!ADMIN_EMAIL) { console.error("FATAL: ADMIN_EMAIL is required"); process.exit(1); }
 
 const app = express();
+
+// ---------- GitHub auto-deploy webhook ----------
+// MUST be registered BEFORE express.json() — we need the raw request body
+// to verify the HMAC signature. Once express.json() consumes the stream,
+// req.body becomes a parsed Object and crypto.update() throws ERR_INVALID_ARG_TYPE.
+const __deployFilename = fileURLToPath(import.meta.url);
+const __deployDirname = path.dirname(__deployFilename);
+const DEPLOY_SCRIPT = path.resolve(__deployDirname, "..", "scripts", "deploy.sh");
+
+app.post(
+  "/api/deploy/github",
+  express.raw({ type: "*/*", limit: "5mb" }),
+  (req, res) => {
+    const secret = process.env.GITHUB_WEBHOOK_SECRET;
+    if (!secret) return res.status(503).json({ error: "Webhook not configured" });
+
+    const sig = req.header("x-hub-signature-256") || "";
+    // req.body is a Buffer here thanks to express.raw above.
+    const bodyBuf = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || "");
+    const expected =
+      "sha256=" +
+      crypto.createHmac("sha256", secret).update(bodyBuf).digest("hex");
+    let ok = false;
+    try {
+      ok =
+        sig.length === expected.length &&
+        crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
+    } catch { ok = false; }
+    if (!ok) return res.status(401).json({ error: "Bad signature" });
+
+    const event = req.header("x-github-event");
+    if (event === "ping") return res.json({ pong: true });
+    if (event !== "push") return res.json({ ignored: event });
+
+    // Fire-and-forget. Detached so the deploy survives an API restart
+    // (the script restarts ultrax-api itself on server/ changes).
+    const child = spawn("bash", [DEPLOY_SCRIPT], {
+      detached: true,
+      stdio: "ignore",
+    });
+    child.unref();
+
+    res.status(202).json({ ok: true, started: true });
+  }
+);
+
 app.use(express.json({ limit: "1mb" }));
 app.use(cors({
   origin: CORS_ORIGIN.includes("*") ? true : CORS_ORIGIN,
@@ -623,45 +669,6 @@ app.get("/api/health", (_req, res) => res.json({ ok: true, time: new Date().toIS
 //
 // We verify the HMAC signature, then fire scripts/deploy.sh in the background
 // and return 202 immediately so GitHub doesn't time out waiting for the build.
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DEPLOY_SCRIPT = path.resolve(__dirname, "..", "scripts", "deploy.sh");
-
-// Capture the raw body for HMAC verification — must come BEFORE any handler
-// that needs it. We mount it on the webhook path only so the rest of the API
-// keeps using express.json().
-app.post(
-  "/api/deploy/github",
-  express.raw({ type: "application/json", limit: "5mb" }),
-  (req, res) => {
-    const secret = process.env.GITHUB_WEBHOOK_SECRET;
-    if (!secret) return res.status(503).json({ error: "Webhook not configured" });
-
-    const sig = req.header("x-hub-signature-256") || "";
-    const expected =
-      "sha256=" +
-      crypto.createHmac("sha256", secret).update(req.body).digest("hex");
-    const ok =
-      sig.length === expected.length &&
-      crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
-    if (!ok) return res.status(401).json({ error: "Bad signature" });
-
-    const event = req.header("x-github-event");
-    if (event === "ping") return res.json({ pong: true });
-    if (event !== "push") return res.json({ ignored: event });
-
-    // Fire and forget. Detach so the deploy keeps running even if the API
-    // restarts itself partway through (it does, on server/ changes).
-    const child = spawn("bash", [DEPLOY_SCRIPT], {
-      detached: true,
-      stdio: "ignore",
-    });
-    child.unref();
-
-    res.status(202).json({ ok: true, started: true });
-  }
-);
-
 app.listen(PORT, () => {
   console.log(`Ultrax API listening on http://127.0.0.1:${PORT}`);
   console.log(`Master admin: ${ADMIN_EMAIL}`);

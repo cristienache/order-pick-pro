@@ -31,11 +31,13 @@ type OrderRow = {
 };
 
 type Mode = "single" | "multi";
+type Format = "a4" | "label4x6";
 
 function PicklistPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState(true);
   const [mode, setMode] = useState<Mode>("single");
+  const [format, setFormat] = useState<Format>("a4");
   const [activeSites, setActiveSites] = useState<number[]>([]);
   const [ordersBySite, setOrdersBySite] = useState<Record<number, OrderRow[]>>({});
   const [loadingOrders, setLoadingOrders] = useState(false);

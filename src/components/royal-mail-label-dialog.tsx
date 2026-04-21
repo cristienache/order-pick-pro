@@ -248,7 +248,21 @@ function LabelForm({
           Package & service
         </h3>
 
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="space-y-2">
+            <Label htmlFor="format">Package format</Label>
+            <Select value={packageFormat} onValueChange={(v) => setPackageFormat(v as "L" | "F" | "P")}>
+              <SelectTrigger id="format"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="L">Letter</SelectItem>
+                <SelectItem value="F">Large Letter</SelectItem>
+                <SelectItem value="P">Parcel</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Matches Click &amp; Drop's format options.
+            </p>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="service">Service</Label>
             <Select value={serviceCode} onValueChange={setServiceCode}>
@@ -262,7 +276,7 @@ function LabelForm({
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Max weight for this service: {service.maxWeight.toLocaleString()} g
+              Max weight: {service.maxWeight.toLocaleString()} g
             </p>
           </div>
           <div className="space-y-2">
@@ -279,11 +293,12 @@ function LabelForm({
             />
             {overweight && (
               <p className="text-xs text-destructive flex items-center gap-1">
-                <AlertCircle className="h-3 w-3" /> Above the limit for {service.label}.
+                <AlertCircle className="h-3 w-3" /> Above limit for {service.label}.
               </p>
             )}
           </div>
         </div>
+
 
         <div className="space-y-2">
           <Label className="text-xs text-muted-foreground">

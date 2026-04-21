@@ -105,6 +105,17 @@ function PicklistPage() {
   // Auto-refresh + polling timestamps
   const lastSeenIdsRef = useRef<Set<number>>(new Set());
 
+  // Order detail drawer state (siteId + orderId, both null = closed)
+  const [drawerSiteId, setDrawerSiteId] = useState<number | null>(null);
+  const [drawerOrderId, setDrawerOrderId] = useState<number | null>(null);
+  const openOrder = (sid: number, oid: number) => {
+    setDrawerSiteId(sid);
+    setDrawerOrderId(oid);
+  };
+  const closeDrawer = (open: boolean) => {
+    if (!open) { setDrawerSiteId(null); setDrawerOrderId(null); }
+  };
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {
@@ -616,11 +627,21 @@ function PicklistPage() {
                       const isSel = sel.has(o.id);
                       const aging = isAging(o);
                       return (
-                        <label key={o.id}
-                          className={`flex items-center gap-3 px-4 py-2.5 border-t cursor-pointer hover:bg-muted/30 ${
+                        <div key={o.id} role="button" tabIndex={0}
+                          onClick={() => openOrder(sid, o.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault(); openOrder(sid, o.id);
+                            }
+                          }}
+                          className={`flex items-center gap-3 px-4 py-2.5 border-t cursor-pointer hover:bg-muted/30 focus:outline-none focus:bg-muted/40 ${
                             isSel ? "bg-primary/5" : ""
                           } ${aging ? "border-l-2 border-l-red-500/60" : ""}`}>
-                          <Checkbox checked={isSel} onCheckedChange={(v) => toggleOne(sid, o.id, Boolean(v))} />
+                          <div onClick={(e) => e.stopPropagation()}
+                            className="flex items-center" aria-label="Select order">
+                            <Checkbox checked={isSel}
+                              onCheckedChange={(v) => toggleOne(sid, o.id, Boolean(v))} />
+                          </div>
                           <div className="w-24 font-medium flex flex-col">
                             <span>#{o.number}</span>
                             {o.status !== "processing" && (
@@ -641,7 +662,7 @@ function PicklistPage() {
                           <div className="w-28 text-right text-muted-foreground text-sm">
                             {new Date(o.date_created).toLocaleDateString("en-GB")}
                           </div>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

@@ -24,15 +24,38 @@ git reset --hard "origin/$DEFAULT_BRANCH"
 # 2. Frontend build
 echo "--- npm install (frontend)"
 npm install --no-audit --no-fund
+
+# Always start from a clean dist/. If a previous build left a pathologically
+# nested tree (e.g. dist/client/client/client/...), plain `rm -rf` can hit
+# ENOTEMPTY because Node's rimraf bails on extreme path lengths. `find -depth`
+# deletes from the leaves up so it always succeeds.
+echo "--- cleaning dist/"
+if [ -e dist ]; then
+  find dist -depth -exec rm -rf {} + 2>/dev/null || true
+  rm -rf dist || true
+fi
+
 echo "--- npm run build"
 npm run build
 
-# 3. Swap dist -> public atomically-ish
+# 3. Swap dist -> public atomically-ish.
+# Guard: only swap if the build actually produced output. If `public` already
+# exists we MUST delete it before `mv dist public`, otherwise mv would move
+# dist *inside* the existing public/, which is what caused the
+# dist/client/client/client/... nesting on subsequent runs.
 if [ -d dist ]; then
+  echo "--- swapping dist -> public"
   rm -rf public.old || true
-  [ -d public ] && mv public public.old
+  if [ -e public ]; then
+    mv public public.old
+    # Wipe the old tree from the leaves up in case it inherited the nesting.
+    find public.old -depth -exec rm -rf {} + 2>/dev/null || true
+    rm -rf public.old || true
+  fi
   mv dist public
-  rm -rf public.old || true
+else
+  echo "!!! build produced no dist/ — keeping existing public/ in place"
+  exit 1
 fi
 
 # 4. Backend deps + restart (only if server/ changed in this push)

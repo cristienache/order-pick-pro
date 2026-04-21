@@ -84,46 +84,16 @@ export async function fetchOrderById(site, id) {
 /**
  * Generate a picklist PDF.
  * @param {Array<{site: object, orders: Array}>} groups - one entry per site
+ * @param {{format?: "a4" | "label4x6"}} [opts]
  */
-export async function generatePicklistPdf(groups) {
-  const pdf = await PDFDocument.create();
-  const font = await pdf.embedFont(StandardFonts.Helvetica);
-  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+export async function generatePicklistPdf(groups, opts = {}) {
+  const format = opts.format || "a4";
+  if (format === "label4x6") return generateLabelPdf(groups);
+  return generateA4Pdf(groups);
+}
 
-  const pageWidth = 595.28;
-  const pageHeight = 841.89;
-  const marginX = 40;
-  const marginY = 50;
-  const usableWidth = pageWidth - marginX * 2;
-  const colItemW = usableWidth * 0.42;
-  const colAttrW = usableWidth * 0.43;
-
-  const newPage = () => {
-    const p = pdf.addPage([pageWidth, pageHeight]);
-    const original = p.drawText.bind(p);
-    p.drawText = (text, opts) => original(sanitize(text), opts);
-    return p;
-  };
-  const measure = (text, size, f = font) => f.widthOfTextAtSize(sanitize(text), size);
-
-  let page = newPage();
-  let y = pageHeight - marginY;
-  const totalOrders = groups.reduce((s, g) => s + g.orders.length, 0);
-  const generatedAt = new Date().toLocaleString("en-GB", {
-    timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short",
-  });
-
-  page.drawText("Picklist", { x: marginX, y, size: 16, font: fontBold });
-  page.drawText(`Generated ${generatedAt}  -  ${totalOrders} orders across ${groups.length} site(s)`, {
-    x: marginX, y: y - 16, size: 9, font, color: rgb(0.35, 0.35, 0.35),
-  });
-  y -= 36;
-
-  const ensureSpace = (needed) => {
-    if (y - needed < marginY) { page = newPage(); y = pageHeight - marginY; }
-  };
-
-  const wrapText = (text, maxWidth, size, f = font) => {
+function wrapTextFactory(font) {
+  return function wrapText(text, maxWidth, size, f = font) {
     if (!text) return [""];
     const words = text.split(/\s+/);
     const lines = [];
@@ -147,11 +117,50 @@ export async function generatePicklistPdf(groups) {
     if (current) lines.push(current);
     return lines;
   };
+}
+
+async function generateA4Pdf(groups) {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+
+  const pageWidth = 595.28;
+  const pageHeight = 841.89;
+  const marginX = 40;
+  const marginY = 50;
+  const usableWidth = pageWidth - marginX * 2;
+  const colItemW = usableWidth * 0.42;
+  const colAttrW = usableWidth * 0.43;
+
+  const newPage = () => {
+    const p = pdf.addPage([pageWidth, pageHeight]);
+    const original = p.drawText.bind(p);
+    p.drawText = (text, opts) => original(sanitize(text), opts);
+    return p;
+  };
+  const measure = (text, size, f = font) => f.widthOfTextAtSize(sanitize(text), size);
+  const wrapText = wrapTextFactory(font);
+
+  let page = newPage();
+  let y = pageHeight - marginY;
+  const totalOrders = groups.reduce((s, g) => s + g.orders.length, 0);
+  const generatedAt = new Date().toLocaleString("en-GB", {
+    timeZone: "Europe/London", dateStyle: "medium", timeStyle: "short",
+  });
+
+  page.drawText("Picklist", { x: marginX, y, size: 16, font: fontBold });
+  page.drawText(`Generated ${generatedAt}  -  ${totalOrders} orders across ${groups.length} site(s)`, {
+    x: marginX, y: y - 16, size: 9, font, color: rgb(0.35, 0.35, 0.35),
+  });
+  y -= 36;
+
+  const ensureSpace = (needed) => {
+    if (y - needed < marginY) { page = newPage(); y = pageHeight - marginY; }
+  };
 
   for (const group of groups) {
     if (group.orders.length === 0) continue;
 
-    // Site header
     ensureSpace(40);
     page.drawRectangle({
       x: marginX, y: y - 20, width: usableWidth, height: 24,
@@ -225,6 +234,104 @@ export async function generatePicklistPdf(groups) {
     const w = font.widthOfTextAtSize(label, 8);
     p.drawText(label, { x: pageWidth - marginX - w, y: 24, size: 8, font, color: rgb(0.5, 0.5, 0.5) });
   });
+
+  return Buffer.from(await pdf.save());
+}
+
+/**
+ * One order per 4x6" page (288 x 432 pt).
+ * If an order has too many items to fit, it overflows onto additional 4x6 pages
+ * with a "(cont.)" header.
+ */
+async function generateLabelPdf(groups) {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const wrapText = wrapTextFactory(font);
+
+  const pageWidth = 288;   // 4 inch
+  const pageHeight = 432;  // 6 inch
+  const margin = 12;
+  const usableWidth = pageWidth - margin * 2;
+
+  const flat = [];
+  for (const group of groups) {
+    const sortedOrders = [...group.orders].sort((a, b) => Number(a.number) - Number(b.number));
+    for (const order of sortedOrders) flat.push({ site: group.site, order });
+  }
+
+  const drawHeader = (page, site, order, continued) => {
+    let y = pageHeight - margin;
+    page.drawText(sanitize(site.name), {
+      x: margin, y: y - 10, size: 9, font, color: rgb(0.4, 0.4, 0.4),
+    });
+    y -= 14;
+    const title = `#${order.number}${continued ? "  (cont.)" : ""}`;
+    page.drawText(sanitize(title), {
+      x: margin, y: y - 16, size: 18, font: fontBold,
+    });
+    y -= 22;
+    const customer = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
+    if (customer) {
+      page.drawText(sanitize(customer), {
+        x: margin, y: y - 10, size: 10, font, color: rgb(0.2, 0.2, 0.2),
+      });
+      y -= 14;
+    }
+    const itemTotal = order.line_items.reduce((s, li) => s + li.quantity, 0);
+    const meta = `${order.line_items.length} lines  -  ${itemTotal} items`;
+    page.drawText(sanitize(meta), {
+      x: margin, y: y - 9, size: 8, font, color: rgb(0.5, 0.5, 0.5),
+    });
+    y -= 14;
+    page.drawLine({
+      start: { x: margin, y }, end: { x: margin + usableWidth, y },
+      thickness: 0.6, color: rgb(0.7, 0.7, 0.7),
+    });
+    y -= 12;
+    return y;
+  };
+
+  for (const { site, order } of flat) {
+    let page = pdf.addPage([pageWidth, pageHeight]);
+    let y = drawHeader(page, site, order, false);
+    const bottomLimit = margin + 8;
+    const itemColW = usableWidth - 36; // reserve right gutter for qty
+
+    for (const item of order.line_items) {
+      const nameRaw = item.sku ? `${item.name}  [${item.sku}]` : item.name;
+      const attrRaw = extractAttributes(item);
+      const nameLines = wrapText(sanitize(nameRaw), itemColW, 9);
+      const attrLines = attrRaw ? wrapText(sanitize(attrRaw), itemColW, 8) : [];
+      const rowHeight = nameLines.length * 11 + attrLines.length * 10 + 6;
+
+      if (y - rowHeight < bottomLimit) {
+        page = pdf.addPage([pageWidth, pageHeight]);
+        y = drawHeader(page, site, order, true);
+      }
+
+      nameLines.forEach((l, idx) => {
+        page.drawText(sanitize(l), { x: margin, y: y - idx * 11, size: 9, font: fontBold });
+      });
+      const afterName = y - nameLines.length * 11;
+      attrLines.forEach((l, idx) => {
+        page.drawText(sanitize(l), {
+          x: margin, y: afterName - idx * 10 + 2, size: 8, font, color: rgb(0.3, 0.3, 0.3),
+        });
+      });
+      const qtyText = `x ${item.quantity}`;
+      const qtyW = fontBold.widthOfTextAtSize(qtyText, 12);
+      page.drawText(qtyText, {
+        x: margin + usableWidth - qtyW, y, size: 12, font: fontBold,
+      });
+
+      y -= rowHeight;
+      page.drawLine({
+        start: { x: margin, y: y + 2 }, end: { x: margin + usableWidth, y: y + 2 },
+        thickness: 0.25, color: rgb(0.9, 0.9, 0.9),
+      });
+    }
+  }
 
   return Buffer.from(await pdf.save());
 }

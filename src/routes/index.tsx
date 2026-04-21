@@ -729,8 +729,17 @@ function PicklistPage() {
                             {o.itemCount}
                             <span className="text-muted-foreground text-xs ml-1">({o.lineCount})</span>
                           </div>
-                          <div className="w-24 text-right tabular-nums text-muted-foreground">
-                            {o.currency} {o.total}
+                          <div className="w-24 text-right tabular-nums text-muted-foreground flex flex-col items-end leading-tight">
+                            <span>{o.currency} {o.total}</span>
+                            {o.currency?.toUpperCase() !== "GBP" && (() => {
+                              const v = parseFloat(o.total);
+                              const gbp = Number.isFinite(v) ? toGbp(v, o.currency) : null;
+                              return gbp !== null ? (
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  ≈ £{gbp.toFixed(2)}
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                           <div className="w-28 text-right text-muted-foreground text-sm">
                             {new Date(o.date_created).toLocaleDateString("en-GB")}

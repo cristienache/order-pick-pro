@@ -169,6 +169,9 @@ function LabelForm({
     );
   }, [serviceCode]);
 
+  const weightNum = Number(weightGrams);
+  const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!Number.isInteger(weightNum) || weightNum < 1) {

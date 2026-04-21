@@ -832,6 +832,14 @@ function PicklistPage() {
         storeUrl={sites.find((s) => s.id === drawerSiteId)?.store_url}
         onOpenChange={closeDrawer}
       />
+
+      {/* Bulk Royal Mail labels (create + print) */}
+      <BulkRoyalMailDialog
+        open={rmBulkMode !== null}
+        mode={rmBulkMode || "create"}
+        selections={rmBulkSelections}
+        onOpenChange={(o) => { if (!o) setRmBulkMode(null); }}
+      />
     </div>
   );
 }

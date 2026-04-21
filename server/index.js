@@ -12,6 +12,7 @@ import { signToken, requireAuth, requireAdmin } from "./auth.js";
 import {
   fetchOrders,
   fetchOrderById,
+  fetchOrderNotes,
   generatePicklistPdf,
   updateOrder,
   addOrderNote,

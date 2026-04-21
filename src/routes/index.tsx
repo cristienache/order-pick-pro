@@ -140,6 +140,27 @@ function PicklistPage() {
       const qs = new URLSearchParams();
       qs.set("statuses", statuses.join(","));
       if (computeRepeat) qs.set("repeat", "1");
+
+      // Push date bounds to the server so WooCommerce filters at the source.
+      // Without this, "completed" pulls hundreds of historical orders even
+      // when the user only wants today.
+      const now = new Date();
+      let afterIso: string | null = null;
+      let beforeIso: string | null = null;
+      if (datePreset === "today") {
+        const start = new Date(); start.setHours(0, 0, 0, 0);
+        afterIso = start.toISOString();
+      } else if (datePreset === "24h") {
+        afterIso = new Date(now.getTime() - 24 * 3600_000).toISOString();
+      } else if (datePreset === "7d") {
+        afterIso = new Date(now.getTime() - 7 * 24 * 3600_000).toISOString();
+      } else if (datePreset === "custom") {
+        if (customFrom) afterIso = new Date(customFrom + "T00:00:00").toISOString();
+        if (customTo) beforeIso = new Date(customTo + "T23:59:59").toISOString();
+      }
+      if (afterIso) qs.set("after", afterIso);
+      if (beforeIso) qs.set("before", beforeIso);
+
       await Promise.all(activeSites.map(async (sid) => {
         const r = await api<{ orders: OrderRow[] }>(`/api/sites/${sid}/orders?${qs.toString()}`);
         results[sid] = r.orders;
@@ -158,7 +179,7 @@ function PicklistPage() {
     } catch (e) {
       if (!silent) toast.error(e instanceof Error ? e.message : "Failed to load orders");
     } finally { setLoadingOrders(false); }
-  }, [activeSites, statuses, computeRepeat]);
+  }, [activeSites, statuses, computeRepeat, datePreset, customFrom, customTo]);
 
   // Initial / dependency load
   useEffect(() => {

@@ -18,12 +18,20 @@ export async function fetchOrders(site, opts = {}) {
   let page = 1;
   const perPage = 100;
   const base = normalizeUrl(site.store_url);
+  // Cap pages: with date bounds we rarely need more than 2; without, hard-cap at 5
+  // (500 orders) to avoid runaway fetches against stores with huge histories.
+  const hasDateBounds = Boolean(opts.after || opts.before);
+  const maxPages = opts.maxPages || (hasDateBounds ? 10 : 5);
 
-  while (page <= 5) {
+  // ISO 8601 date strings, e.g. "2025-04-01T00:00:00"
+  const afterParam = opts.after ? `&after=${encodeURIComponent(opts.after)}` : "";
+  const beforeParam = opts.before ? `&before=${encodeURIComponent(opts.before)}` : "";
+
+  while (page <= maxPages) {
     // order=desc so we always pull the MOST RECENT orders first. With status=completed
     // a store may have tens of thousands of historical orders; ascending order would
     // return the oldest 500 (years old) and the user would see no recent completed orders.
-    const url = `${base}/wp-json/wc/v3/orders?status=${encodeURIComponent(statuses)}&per_page=${perPage}&page=${page}&orderby=date&order=desc`;
+    const url = `${base}/wp-json/wc/v3/orders?status=${encodeURIComponent(statuses)}&per_page=${perPage}&page=${page}&orderby=date&order=desc${afterParam}${beforeParam}`;
     const res = await fetch(url, {
       headers: {
         Authorization: authHeader(site.consumer_key, site.consumer_secret),

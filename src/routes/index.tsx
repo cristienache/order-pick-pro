@@ -31,11 +31,13 @@ type OrderRow = {
 };
 
 type Mode = "single" | "multi";
+type Format = "a4" | "label4x6";
 
 function PicklistPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState(true);
   const [mode, setMode] = useState<Mode>("single");
+  const [format, setFormat] = useState<Format>("a4");
   const [activeSites, setActiveSites] = useState<number[]>([]);
   const [ordersBySite, setOrdersBySite] = useState<Record<number, OrderRow[]>>({});
   const [loadingOrders, setLoadingOrders] = useState(false);
@@ -130,14 +132,15 @@ function PicklistPage() {
     if (selections.length === 0) { toast.error("Select at least one order"); return; }
     setGenerating(true);
     try {
-      const blob = await apiBlob("/api/picklist", { body: { selections } });
+      const blob = await apiBlob("/api/picklist", { body: { selections, format } });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `picklist-${new Date().toISOString().slice(0, 10)}.pdf`;
+      const prefix = format === "label4x6" ? "labels" : "picklist";
+      a.download = `${prefix}-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
-      toast.success(`Picklist generated (${totalSelected} orders)`);
+      toast.success(`${format === "label4x6" ? "Labels" : "Picklist"} generated (${totalSelected} orders)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate");
     } finally { setGenerating(false); }
@@ -171,7 +174,16 @@ function PicklistPage() {
             Pull processing orders from your sites and generate a pick-list PDF.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center flex-wrap">
+          <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
+            <SelectTrigger className="w-[180px]" aria-label="Output format">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="a4">A4 picklist</SelectItem>
+              <SelectItem value="label4x6">4×6" labels (1/order)</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={loadOrders} disabled={loadingOrders || activeSites.length === 0}
             variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
             {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}

@@ -51,7 +51,7 @@ const FORMATS: { value: Format; label: string; hint: string }[] = [
   { value: "packing_a4", label: "Packing slip (A4)", hint: "Customer-facing \u2014 no SKUs" },
   { value: "packing_4x6", label: "Packing label (4\u00d76\")", hint: "Thermal label, one per order" },
   { value: "shipping_4x6", label: "Shipping label (4\u00d76\")", hint: "Royal Mail size \u2014 thermal" },
-  { value: "shipping_a6", label: "Shipping label (A6)", hint: "Royal Mail size \u2014 105\u00d7148 mm" },
+  { value: "shipping_a6", label: "Address labels (21 per A4)", hint: "60\u00d740 mm \u2014 3\u00d77 grid" },
 ];
 
 const HIGH_VALUE_KEY = "ultrax_hv_threshold";

@@ -527,6 +527,12 @@ function PicklistPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
 
+              <Button size="sm" onClick={() => loadOrders(false)} disabled={loadingOrders}
+                className="gap-1.5">
+                {loadingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Filter className="h-3.5 w-3.5" />}
+                Show
+              </Button>
+
               <Select value={sortOrder} onValueChange={(v) => setSortOrder(v as "recent" | "oldest")}>
                 <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
                 <SelectContent>

@@ -72,7 +72,7 @@ function PicklistPage() {
   const [selected, setSelected] = useState<Record<number, Set<number>>>({});
   const [search, setSearch] = useState("");
   const [sortOrder, setSortOrder] = useState<"recent" | "oldest">("recent");
-  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("today");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -181,11 +181,13 @@ function PicklistPage() {
     } finally { setLoadingOrders(false); }
   }, [activeSites, statuses, computeRepeat, datePreset, customFrom, customTo]);
 
-  // Initial / dependency load
+  // Initial load only — once sites are picked. Filter changes do NOT auto-fetch:
+  // the user must press the Show button (avoids hammering WooCommerce on each toggle).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (activeSites.length === 0) return;
     loadOrders(true);
-  }, [activeSites, statuses, computeRepeat, loadOrders]);
+  }, [activeSites]);
 
   // 20-min silent auto-refresh
   useEffect(() => {
@@ -537,11 +539,10 @@ function PicklistPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All dates</SelectItem>
                     <SelectItem value="today">Today</SelectItem>
                     <SelectItem value="24h">Last 24h</SelectItem>
                     <SelectItem value="7d">Last 7 days</SelectItem>
-                    <SelectItem value="custom">Custom range\u2026</SelectItem>
+                    <SelectItem value="custom">Custom range</SelectItem>
                   </SelectContent>
                 </Select>
                 {datePreset === "custom" && (

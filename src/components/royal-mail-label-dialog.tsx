@@ -140,6 +140,7 @@ function LabelForm({
   useEffect(() => { setRecipient(recipientFromOrder(order)); }, [order.id]);
 
   const [serviceCode, setServiceCode] = useState<string>("TPM");
+  const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
   const [weightGrams, setWeightGrams] = useState<string>("500");
   const [length, setLength] = useState<string>("");
   const [width, setWidth] = useState<string>("");

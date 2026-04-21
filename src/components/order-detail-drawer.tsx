@@ -311,6 +311,42 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
               </>
             )}
 
+            {/* Royal Mail label action — content depends on connection state */}
+            {rm && (
+              <>
+                <Separator />
+                {!rm.configured ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Truck className="h-4 w-4" />
+                      <span>Connect Royal Mail to print labels.</span>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/royal-mail">Set up</Link>
+                    </Button>
+                  </div>
+                ) : rm.shipment ? (
+                  <Button
+                    onClick={() => setLabelOpen(true)}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Truck className="h-3.5 w-3.5" />
+                    View label · {rm.shipment.tracking_number || rm.shipment.service_code || "created"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setLabelOpen(true)}
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Truck className="h-3.5 w-3.5" /> Create shipping label
+                  </Button>
+                )}
+              </>
+            )}
+
             {wcUrl && (
               <>
                 <Separator />
@@ -324,6 +360,23 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
           </div>
         )}
       </SheetContent>
+
+      {/* Label dialog lives outside the drawer body so it overlays correctly. */}
+      {order && siteId != null && (
+        <RoyalMailLabelDialog
+          open={labelOpen}
+          onOpenChange={setLabelOpen}
+          siteId={siteId}
+          order={{
+            id: order.id,
+            number: order.number,
+            shipping: order.shipping,
+            billing: order.billing,
+          }}
+          initialShipment={rm?.shipment ?? null}
+          onCreated={(s) => setRm((prev) => prev ? { ...prev, shipment: s } : prev)}
+        />
+      )}
     </Sheet>
   );
 }

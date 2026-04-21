@@ -970,7 +970,12 @@ app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
   ).get(Number(req.params.id), req.user.id);
   if (!row || !row.label_pdf_base64) return res.status(404).json({ error: "Label not found" });
   const buf = Buffer.from(row.label_pdf_base64, "base64");
+  const looksLikePdf = buf.length > 4 && buf.subarray(0, 4).toString("latin1") === "%PDF";
+  if (!looksLikePdf) {
+    return res.status(422).json({ error: "Saved Royal Mail label is not a valid PDF. Open Click & Drop to generate/print this label." });
+  }
   res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", String(buf.length));
   res.setHeader(
     "Content-Disposition",
     `inline; filename="rm-${row.tracking_number || "label"}.pdf"`,

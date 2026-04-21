@@ -885,6 +885,13 @@ const shipmentSchema = z.object({
   height_mm: z.number().int().min(0).max(2000).optional(),
   safe_place: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
   description_of_goods: z.string().trim().max(60).default("Goods"),
+  // Optional pre-built line items. If omitted, the server fetches them from
+  // WooCommerce so the SKU appears on the label.
+  line_items: z.array(z.object({
+    sku: z.string().trim().max(60).optional().or(z.literal("")).transform((v) => v || ""),
+    name: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || ""),
+    quantity: z.number().int().min(1).max(999).default(1),
+  })).max(50).optional(),
   recipient: z.object({
     name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(100).optional().or(z.literal("")).transform((v) => v || null),
@@ -1069,15 +1076,15 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
             depthInMms: d.length_mm,
           },
         } : {}),
-        contents: [
-          {
-            name: d.description_of_goods,
-            SKU: "",
-            quantity: 1,
-            unitValue: 0,
-            unitWeightInGrams: d.weight_grams,
-          },
-        ],
+        // Use the order's actual line items as the parcel contents — the SKU
+        // shows up on the printed label instead of a generic "1x Goods" line.
+        // Falls back to description_of_goods if the order has no line items
+        // (deleted product, etc.) or we couldn't load them.
+        contents: buildCndContents({
+          lineItems: d.line_items,
+          fallbackName: d.description_of_goods,
+          totalWeightGrams: d.weight_grams,
+        }),
       },
     ],
     orderDate: new Date().toISOString(),

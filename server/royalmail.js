@@ -64,25 +64,43 @@ async function rmJson({ apiKey, useSandbox, method, path, body }) {
   return { ok: res.ok, status: res.status, body: parsed, raw: text };
 }
 
-// Binary helper for /label PDF downloads. Returns { ok, status, buffer, body }
-// where `body` is set only on error responses (which come back as JSON).
+// Binary helper for /label PDF downloads. Returns { ok, status, buffer, body }.
+// Royal Mail can return JSON even on HTTP 200 when a document is not available,
+// so validate the bytes before treating the response as a PDF.
 async function rmBinary({ apiKey, useSandbox, method, path, accept }) {
   const url = `${rmBaseUrl(useSandbox)}${path}`;
   const res = await fetch(url, {
     method,
     headers: {
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${normalizeRmApiKey(apiKey)}`,
       Accept: accept || "application/pdf",
     },
   });
+
+  const contentType = res.headers.get("content-type") || "";
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let parsed = null;
     try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { raw: text }; }
     return { ok: false, status: res.status, body: parsed, buffer: null };
   }
+
   const ab = await res.arrayBuffer();
-  return { ok: true, status: res.status, body: null, buffer: Buffer.from(ab) };
+  const buffer = Buffer.from(ab);
+  const looksLikePdf = buffer.length > 4 && buffer.subarray(0, 4).toString("latin1") === "%PDF";
+  if (!looksLikePdf) {
+    const text = buffer.toString("utf8");
+    let parsed = null;
+    try { parsed = text ? JSON.parse(text) : null; } catch { parsed = { raw: text.slice(0, 500) }; }
+    return {
+      ok: false,
+      status: 422,
+      body: parsed || { message: `Royal Mail returned ${contentType || "non-PDF content"} instead of a PDF.` },
+      buffer: null,
+    };
+  }
+
+  return { ok: true, status: res.status, body: null, buffer };
 }
 
 // POST /orders — create a single Click & Drop order. C&D accepts a batch shape
@@ -97,13 +115,13 @@ export async function createCndOrder({ apiKey, useSandbox, order }) {
   });
 }
 
-// GET /orders/{orderIdentifier}/label?documentType=postageLabel&documentFormat=PDF
-// Royal Mail returns the PDF directly (binary). The orderIdentifier here is
-// the integer C&D returns when the order is created.
+// GET /orders/{orderIdentifier}/label?documentType=postageLabel&includeReturnsLabel=false&includeCN=false
+// This endpoint is reserved for OBA customers. Non-OBA Click & Drop accounts
+// can create orders, but may need labels generated/paid for in Click & Drop.
 export async function getCndLabel({ apiKey, useSandbox, orderIdentifier }) {
   const path =
     `/orders/${encodeURIComponent(orderIdentifier)}/label` +
-    `?documentType=postageLabel&documentFormat=PDF`;
+    `?documentType=postageLabel&includeReturnsLabel=false&includeCN=false`;
   return rmBinary({ apiKey, useSandbox, method: "GET", path });
 }
 

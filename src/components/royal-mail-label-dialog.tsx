@@ -392,17 +392,27 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
-    if (!shipment.has_label) { setLoading(false); return; }
+    if (!shipment.has_label) {
+      setPdfUrl(null);
+      setLoading(false);
+      return;
+    }
     let url: string | null = null;
     let cancelled = false;
     apiBlob(`/api/royal-mail/shipments/${shipment.id}/label.pdf`)
       .then((blob) => {
         if (cancelled) return;
+        if (blob.type && blob.type !== "application/pdf") {
+          throw new Error("Royal Mail did not return a PDF for this shipment.");
+        }
         url = URL.createObjectURL(blob);
         setPdfUrl(url);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(e instanceof Error ? e.message : "Could not load label");
+        if (!cancelled) {
+          setPdfUrl(null);
+          toast.error(e instanceof Error ? e.message : "Could not load label");
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => {
@@ -434,17 +444,23 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={printLabel} disabled={!pdfUrl}>
+          <Button variant="outline" onClick={printLabel} disabled={!shipment.has_label || !pdfUrl}>
             <Printer className="h-4 w-4" /> Print
           </Button>
-          <Button asChild variant="outline" disabled={!pdfUrl}>
-            <a
-              href={pdfUrl ?? "#"}
-              download={`rm-${shipment.tracking_number || shipment.id}.pdf`}
-            >
+          {pdfUrl ? (
+            <Button asChild variant="outline">
+              <a
+                href={pdfUrl}
+                download={`rm-${shipment.tracking_number || shipment.id}.pdf`}
+              >
+                <Download className="h-4 w-4" /> Download PDF
+              </a>
+            </Button>
+          ) : (
+            <Button variant="outline" disabled>
               <Download className="h-4 w-4" /> Download PDF
-            </a>
-          </Button>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -461,10 +477,18 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
             className="w-full h-full"
           />
         ) : (
-          <div className="text-sm text-muted-foreground p-6 text-center">
-            No PDF was returned by Royal Mail for this shipment.
+          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-2">
+            <p>
+              No printable PDF was returned by Royal Mail for this shipment.
+            </p>
+            <p>
+              The order was created in Click &amp; Drop, but PDF retrieval is only available for some account/service combinations. Open Click &amp; Drop to buy/generate the label there.
+            </p>
+            {shipment.royal_mail_shipment_id && (
+              <p>Click &amp; Drop order ID: <span className="font-mono">{shipment.royal_mail_shipment_id}</span></p>
+            )}
             {shipment.tracking_number && (
-              <> Tracking: <span className="font-mono">{shipment.tracking_number}</span></>
+              <p>Tracking: <span className="font-mono">{shipment.tracking_number}</span></p>
             )}
           </div>
         )}

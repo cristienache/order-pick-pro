@@ -469,6 +469,29 @@ function PicklistPage() {
               <DropdownMenuItem onClick={() => setNoteDialogOpen(true)} disabled={bulkBusy}>
                 <MessageSquarePlus className="h-4 w-4" /> Add note to orders
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => {
+                  const sels = buildSelections();
+                  if (sels.length === 0) return;
+                  setRmBulkSelections(sels);
+                  setRmBulkMode("create");
+                }}
+                disabled={bulkBusy}
+              >
+                <Truck className="h-4 w-4" /> Create Royal Mail labels
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  const sels = buildSelections();
+                  if (sels.length === 0) return;
+                  setRmBulkSelections(sels);
+                  setRmBulkMode("print");
+                }}
+                disabled={bulkBusy}
+              >
+                <Printer className="h-4 w-4" /> Print Royal Mail labels
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

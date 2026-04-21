@@ -536,7 +536,16 @@ function LabelViewer({
         )}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-between items-center gap-2 flex-wrap">
+        <Button
+          variant="outline"
+          onClick={cancelLabel}
+          disabled={voiding}
+          className="text-destructive hover:text-destructive"
+        >
+          {voiding ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          Cancel label &amp; create new
+        </Button>
         <Button variant="ghost" onClick={onClose}>Close</Button>
       </div>
     </div>

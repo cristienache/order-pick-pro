@@ -864,23 +864,21 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
 });
 
 // ---------- Royal Mail shipments / labels (Click & Drop) ----------
-// UK domestic Click & Drop service codes we expose in the UI. C&D accepts
-// many more — this is the starter set covering OBA 1st/2nd plus Tracked.
-//   TPN  Tracked 24
-//   TPM  Tracked 48
-//   TPLN Tracked 24 Signed
-//   TPLM Tracked 48 Signed
-//   CRL1 1st Class (OBA)
-//   CRL2 2nd Class (OBA)
-const RM_SERVICE_CODES = ["CRL1", "CRL2", "TPN", "TPM", "TPLN", "TPLM"];
+// Click & Drop accepts many service codes and the valid set depends on the
+// customer's account (OBA contracts vs OLP "pay as you go", returns, etc.).
+// Their own schema validates this as a free string up to 10 chars, so we do
+// the same and let Royal Mail be the authority on which codes are live for
+// the caller's account. The UI offers a few common ones as suggestions.
 
 const shipmentSchema = z.object({
   site_id: z.number().int().positive(),
   woocommerce_order_id: z.number().int().positive(),
   // Echoed back as the Click & Drop "orderReference".
   customer_reference: z.string().trim().min(1).max(40),
-  service_code: z.enum(RM_SERVICE_CODES),
+  // Free text — Royal Mail validates against the account's contracted services.
+  service_code: z.string().trim().min(1).max(10),
   // Click & Drop "packageFormat": parcel | letter | largeLetter | etc.
+  // L = Letter, F = Large Letter, P = Parcel (matches Click & Drop UI order).
   service_format: z.enum(["P", "L", "F"]).default("P"),
   weight_grams: z.number().int().min(1).max(30000),
   length_mm: z.number().int().min(0).max(2000).optional(),
@@ -903,10 +901,11 @@ const shipmentSchema = z.object({
 });
 
 // Map our internal P/L/F flag to the Click & Drop packageFormat enum.
+//   L → letter, F → largeLetter, P → parcel
 function cndPackageFormat(serviceFormat) {
   switch (serviceFormat) {
-    case "L": return "largeLetter";
-    case "F": return "letter";
+    case "L": return "letter";
+    case "F": return "largeLetter";
     case "P":
     default:  return "parcel";
   }

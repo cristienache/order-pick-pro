@@ -112,19 +112,32 @@ export type RmShipment = {
   created_at: string;
 };
 
-// UI-facing list of Royal Mail Click & Drop UK domestic services with friendly
-// labels and the typical max weight (grams) — used to validate the form
-// before the API call. Hard limits ultimately come from Royal Mail.
-//   CRL1 / CRL2 — OBA 1st / 2nd Class
-//   TPN  / TPM  — Tracked 24 / Tracked 48
-//   TPLN / TPLM — Tracked 24 Signed / Tracked 48 Signed
+// Suggested Royal Mail Click & Drop service codes shown in the dialog as a
+// datalist. The valid codes for any given account depend on its contract
+// (OBA, OLP, Tracked Returns, etc.), so this is just a starter list — users
+// can type any code their Click & Drop account is enabled for.
+//   OBA contract  : CRL1 / CRL2 (1st / 2nd Class), TPN / TPM (Tracked 24 / 48),
+//                   TPLN / TPLM (Tracked 24 / 48 Signed)
+//   OLP / pay-as-you-go (more common for small senders):
+//     STL1 / STL2 — Standard 1st / 2nd Class
+//     TRM24 / TRM48 — Tracked 24 / 48
+//     SD1 / SD2 / SD5 — Special Delivery Guaranteed (£1k / £2.5k / £500)
 export const RM_SERVICES: Array<{
   code: string; label: string; maxWeight: number;
 }> = [
-  { code: "CRL1", label: "1st Class (OBA)",      maxWeight: 20000 },
-  { code: "CRL2", label: "2nd Class (OBA)",      maxWeight: 20000 },
-  { code: "TPN",  label: "Tracked 24",           maxWeight: 20000 },
-  { code: "TPM",  label: "Tracked 48",           maxWeight: 20000 },
-  { code: "TPLN", label: "Tracked 24 Signed",    maxWeight: 20000 },
-  { code: "TPLM", label: "Tracked 48 Signed",    maxWeight: 20000 },
+  // OLP (pay-as-you-go) — what most personal/small business accounts use
+  { code: "STL1",  label: "1st Class",                maxWeight: 20000 },
+  { code: "STL2",  label: "2nd Class",                maxWeight: 20000 },
+  { code: "TRM24", label: "Tracked 24",               maxWeight: 20000 },
+  { code: "TRM48", label: "Tracked 48",               maxWeight: 20000 },
+  { code: "SD1",   label: "Special Delivery (£1k)",   maxWeight: 20000 },
+  { code: "SD2",   label: "Special Delivery (£2.5k)", maxWeight: 20000 },
+  // OBA (contract account)
+  { code: "CRL1",  label: "1st Class (OBA)",          maxWeight: 20000 },
+  { code: "CRL2",  label: "2nd Class (OBA)",          maxWeight: 20000 },
+  { code: "TPN",   label: "Tracked 24 (OBA)",         maxWeight: 20000 },
+  { code: "TPM",   label: "Tracked 48 (OBA)",         maxWeight: 20000 },
+  { code: "TPLN",  label: "Tracked 24 Signed (OBA)",  maxWeight: 20000 },
+  { code: "TPLM",  label: "Tracked 48 Signed (OBA)",  maxWeight: 20000 },
 ];
+

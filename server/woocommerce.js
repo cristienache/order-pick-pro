@@ -57,6 +57,20 @@ const charMap = {
   "\u2122": "(TM)", "\u00AE": "(R)", "\u00A9": "(C)",
 };
 
+function formatAddress(order) {
+  const a = order.shipping && (order.shipping.address_1 || order.shipping.city || order.shipping.postcode)
+    ? order.shipping
+    : order.billing;
+  if (!a) return [];
+  const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
+  const company = a.company || "";
+  const line1 = a.address_1 || "";
+  const line2 = a.address_2 || "";
+  const cityLine = [a.city, a.state, a.postcode].filter(Boolean).join(", ");
+  const country = a.country || "";
+  return [name, company, line1, line2, cityLine, country].filter((s) => s && s.trim());
+}
+
 function sanitize(input) {
   if (!input) return "";
   let out = "";
@@ -224,6 +238,17 @@ async function generateA4Pdf(groups) {
           thickness: 0.25, color: rgb(0.88, 0.88, 0.88),
         });
       }
+      const addrLines = formatAddress(order);
+      if (addrLines.length) {
+        const addrHeight = addrLines.length * 11 + 18;
+        ensureSpace(addrHeight);
+        page.drawText("Ship to:", { x: marginX, y: y - 2, size: 8, font: fontBold, color: rgb(0.4, 0.4, 0.4) });
+        y -= 12;
+        for (const line of addrLines) {
+          page.drawText(sanitize(line), { x: marginX, y, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+          y -= 11;
+        }
+      }
       y -= 14;
     }
   }
@@ -271,12 +296,28 @@ async function generateLabelPdf(groups) {
       x: margin, y: y - 16, size: 18, font: fontBold,
     });
     y -= 22;
-    const customer = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
-    if (customer) {
-      page.drawText(sanitize(customer), {
-        x: margin, y: y - 10, size: 10, font, color: rgb(0.2, 0.2, 0.2),
+    const addrLines = continued ? [] : formatAddress(order);
+    if (addrLines.length) {
+      page.drawText(sanitize(addrLines[0]), {
+        x: margin, y: y - 10, size: 10, font: fontBold, color: rgb(0.1, 0.1, 0.1),
       });
-      y -= 14;
+      y -= 13;
+      for (let i = 1; i < addrLines.length; i++) {
+        const wrapped = wrapText(sanitize(addrLines[i]), usableWidth, 9);
+        for (const wl of wrapped) {
+          page.drawText(wl, { x: margin, y: y - 9, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+          y -= 11;
+        }
+      }
+      y -= 2;
+    } else {
+      const customer = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
+      if (customer) {
+        page.drawText(sanitize(customer), {
+          x: margin, y: y - 10, size: 10, font, color: rgb(0.2, 0.2, 0.2),
+        });
+        y -= 14;
+      }
     }
     const itemTotal = order.line_items.reduce((s, li) => s + li.quantity, 0);
     const meta = `${order.line_items.length} lines  -  ${itemTotal} items`;

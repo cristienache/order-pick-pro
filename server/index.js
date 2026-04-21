@@ -1100,11 +1100,18 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
 
   // HTTP-level failure (bad key, malformed request, etc.).
   if (!result.ok) {
-    const msg =
+    const baseMsg =
       result.body?.message ||
       result.body?.error ||
       result.body?.errors?.[0]?.errorMessage ||
       `Royal Mail returned ${result.status}`;
+    const msg = result.status === 401
+      ? "Royal Mail rejected the API key (401). Open Royal Mail settings, click Test, and re-paste a fresh API key from Click & Drop → Settings → Integrations."
+      : baseMsg;
+    console.warn(
+      `[rm] create order failed: status=${result.status} sandbox=${useSandbox} ` +
+      `keyPrefix=${apiKey.slice(0, 6)} keyLen=${apiKey.length}`,
+    );
     return res.status(result.status === 401 ? 401 : 422).json({
       error: msg,
       status: result.status,

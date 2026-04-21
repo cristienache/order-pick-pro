@@ -308,9 +308,10 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
       }
       groups.push({ site: { name: site.name, store_url: site.store_url }, orders });
     }
-    const pdf = await generatePicklistPdf(groups);
+    const pdf = await generatePicklistPdf(groups, { format: parsed.data.format });
+    const suffix = parsed.data.format === "label4x6" ? "labels" : "picklist";
     res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="picklist-${new Date().toISOString().slice(0, 10)}.pdf"`);
+    res.setHeader("Content-Disposition", `attachment; filename="${suffix}-${new Date().toISOString().slice(0, 10)}.pdf"`);
     res.send(pdf);
   } catch (e) {
     res.status(500).json({ error: e.message || "PDF generation failed" });

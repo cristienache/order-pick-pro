@@ -62,7 +62,7 @@ const AUTO_REFRESH_MS = 20 * 60_000;
 function PicklistPage() {
   const [sites, setSites] = useState<Site[]>([]);
   const [loadingSites, setLoadingSites] = useState(true);
-  const [mode, setMode] = useState<Mode>("single");
+  
   const [format, setFormat] = useState<Format>("picking_a4");
   const [activeSites, setActiveSites] = useState<number[]>([]);
   const [statuses, setStatuses] = useState<string[]>(["processing"]);
@@ -135,16 +135,11 @@ function PicklistPage() {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {
         setSites(r.sites);
-        if (r.sites.length > 0) setActiveSites([r.sites[0].id]);
+        if (r.sites.length > 0) setActiveSites(r.sites.map((s) => s.id));
       })
       .catch((e) => toast.error(e instanceof Error ? e.message : "Failed to load sites"))
       .finally(() => setLoadingSites(false));
   }, []);
-
-  useEffect(() => {
-    if (sites.length === 0) return;
-    if (mode === "single" && activeSites.length !== 1) setActiveSites([sites[0].id]);
-  }, [mode, sites]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "All dates" is only allowed when the status filter includes "processing"
   // (and nothing heavy like completed). If the user changes the status set while
@@ -251,8 +246,7 @@ function PicklistPage() {
   }, [activeSites, sites, notify, loadOrders]);
 
   const toggleSiteActive = (id: number) => {
-    if (mode === "single") setActiveSites([id]);
-    else setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+    setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   };
 
   const filteredBySite = useMemo(() => {
@@ -493,15 +487,9 @@ function PicklistPage() {
             <div>
               <CardTitle className="text-base">Sites</CardTitle>
               <CardDescription>
-                Choose mode and select which sites to pull orders from.
+                Click a site to toggle it on or off. All sites are selected by default.
               </CardDescription>
             </div>
-            <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)}>
-              <TabsList>
-                <TabsTrigger value="single">Single site</TabsTrigger>
-                <TabsTrigger value="multi">Multi-site</TabsTrigger>
-              </TabsList>
-            </Tabs>
           </div>
         </CardHeader>
         <CardContent>

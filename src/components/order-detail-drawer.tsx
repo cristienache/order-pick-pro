@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, type RmShipment } from "@/lib/api";
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -10,6 +10,8 @@ import {
   Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "@tanstack/react-router";
+import { RoyalMailLabelDialog } from "@/components/royal-mail-label-dialog";
 
 // Subset of WooCommerce order shape we render.
 type WCAddress = {

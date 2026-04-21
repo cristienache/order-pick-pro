@@ -22,7 +22,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
-  Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2,
+  Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiBlob, RM_SERVICES, type RmShipment } from "@/lib/api";
@@ -51,6 +51,9 @@ type Props = {
   initialShipment: RmShipment | null;
   // Notify parent when a label is created so it can refresh order status etc.
   onCreated?: (s: RmShipment) => void;
+  // Notify parent when the user cancels/voids the shipment, so it can clear
+  // its cached copy and let the user create a new one.
+  onVoided?: () => void;
 };
 
 type RecipientForm = {
@@ -86,7 +89,7 @@ function recipientFromOrder(order: Order): RecipientForm {
 }
 
 export function RoyalMailLabelDialog({
-  open, onOpenChange, siteId, order, initialShipment, onCreated,
+  open, onOpenChange, siteId, order, initialShipment, onCreated, onVoided,
 }: Props) {
   const [shipment, setShipment] = useState<RmShipment | null>(initialShipment);
   useEffect(() => { setShipment(initialShipment); }, [initialShipment, order.id]);
@@ -110,6 +113,10 @@ export function RoyalMailLabelDialog({
           <LabelViewer
             shipment={shipment}
             onClose={() => onOpenChange(false)}
+            onVoided={() => {
+              setShipment(null);
+              onVoided?.();
+            }}
           />
         ) : (
           <LabelForm

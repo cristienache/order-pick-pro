@@ -62,7 +62,7 @@ function PicklistPage() {
     if (mode === "single" && activeSites.length !== 1) setActiveSites([sites[0].id]);
   }, [mode, sites]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = useCallback(async (silent = false) => {
     if (activeSites.length === 0) return;
     setLoadingOrders(true);
     try {
@@ -76,12 +76,20 @@ function PicklistPage() {
       }));
       setOrdersBySite(results);
       setSelected(sel);
-      const total = Object.values(results).reduce((s, arr) => s + arr.length, 0);
-      toast.success(`Loaded ${total} orders across ${activeSites.length} site(s)`);
+      if (!silent) {
+        const total = Object.values(results).reduce((s, arr) => s + arr.length, 0);
+        toast.success(`Loaded ${total} orders across ${activeSites.length} site(s)`);
+      }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load orders");
+      if (!silent) toast.error(e instanceof Error ? e.message : "Failed to load orders");
     } finally { setLoadingOrders(false); }
   }, [activeSites]);
+
+  // Auto-load orders whenever active sites change (including on first mount)
+  useEffect(() => {
+    if (activeSites.length === 0) return;
+    loadOrders(true);
+  }, [activeSites, loadOrders]);
 
   const toggleSiteActive = (id: number) => {
     if (mode === "single") setActiveSites([id]);
@@ -184,7 +192,7 @@ function PicklistPage() {
               <SelectItem value="label4x6">4×6" labels (1/order)</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={loadOrders} disabled={loadingOrders || activeSites.length === 0}
+          <Button onClick={() => loadOrders(false)} disabled={loadingOrders || activeSites.length === 0}
             variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
             {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {Object.keys(ordersBySite).length ? "Reload" : "Load orders"}

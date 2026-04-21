@@ -18,6 +18,7 @@ import {
   addOrderNote,
   fetchCustomerOrderCount,
 } from "./woocommerce.js";
+import { getFxRates } from "./fx.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 

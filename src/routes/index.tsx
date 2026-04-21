@@ -9,6 +9,7 @@ import { playChime } from "@/lib/chime";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PriorityBadges } from "@/components/priority-badges";
+import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -48,6 +49,8 @@ const FORMATS: { value: Format; label: string; hint: string }[] = [
   { value: "picking_a4", label: "Picking slip (A4)", hint: "Warehouse \u2014 SKUs + attributes" },
   { value: "packing_a4", label: "Packing slip (A4)", hint: "Customer-facing \u2014 no SKUs" },
   { value: "packing_4x6", label: "Packing label (4\u00d76\")", hint: "Thermal label, one per order" },
+  { value: "shipping_4x6", label: "Shipping label (4\u00d76\")", hint: "Royal Mail size \u2014 thermal" },
+  { value: "shipping_a6", label: "Shipping label (A6)", hint: "Royal Mail size \u2014 105\u00d7148 mm" },
 ];
 
 const HIGH_VALUE_KEY = "ultrax_hv_threshold";
@@ -271,9 +274,11 @@ function PicklistPage() {
       const a = document.createElement("a");
       a.href = url;
       const meta = FORMATS.find((f) => f.value === format)!;
-      const stem = format === "picking_a4" ? "picking-slip"
+      const stem =
+        format === "picking_a4" ? "picking-slip"
         : format === "packing_a4" ? "packing-slip"
-        : "packing-labels";
+        : format === "packing_4x6" ? "packing-labels"
+        : "shipping-labels";
       a.download = `${stem}-${new Date().toISOString().slice(0, 10)}.pdf`;
       document.body.appendChild(a); a.click(); a.remove();
       URL.revokeObjectURL(url);
@@ -550,6 +555,24 @@ function PicklistPage() {
                 {notify ? <Bell className="h-3.5 w-3.5" /> : <BellOff className="h-3.5 w-3.5 text-muted-foreground" />}
                 {notify ? "Notifications on" : "Notifications off"}
               </Button>
+
+              <FilterPresets
+                siteId={activeSites.length === 1 ? activeSites[0] : null}
+                currentPayload={{
+                  statuses, datePreset, customFrom, customTo, search, sortOrder,
+                  highValueThreshold, computeRepeat,
+                }}
+                onApply={(p: PresetPayload) => {
+                  setStatuses(p.statuses);
+                  setDatePreset(p.datePreset as DatePreset);
+                  setCustomFrom(p.customFrom);
+                  setCustomTo(p.customTo);
+                  setSearch(p.search);
+                  setSortOrder(p.sortOrder as "recent" | "oldest");
+                  setHighValueThreshold(p.highValueThreshold);
+                  setComputeRepeat(p.computeRepeat);
+                }}
+              />
 
               <div className="ml-auto flex gap-2">
                 <Badge variant="secondary">{totalSelected} selected</Badge>

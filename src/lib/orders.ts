@@ -15,7 +15,12 @@ export type OrderRow = {
   previous_completed: number | null;
 };
 
-export type Format = "picking_a4" | "packing_a4" | "packing_4x6";
+export type Format =
+  | "picking_a4"
+  | "packing_a4"
+  | "packing_4x6"
+  | "shipping_4x6"
+  | "shipping_a6";
 export type Mode = "single" | "multi";
 
 export type DatePreset = "all" | "today" | "24h" | "7d" | "custom";

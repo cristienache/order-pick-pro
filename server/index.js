@@ -78,8 +78,15 @@ const generateSchema = z.object({
   // Accept new format names AND legacy aliases
   format: z.enum([
     "picking_a4", "packing_a4", "packing_4x6",
+    "shipping_4x6", "shipping_a6",
     "a4", "label4x6",
   ]).optional().default("picking_a4"),
+});
+
+const presetSchema = z.object({
+  site_id: z.number().int().positive(),
+  name: z.string().trim().min(1).max(60),
+  payload: z.record(z.string(), z.unknown()),
 });
 
 const VALID_STATUSES = [
@@ -434,7 +441,8 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
     const pdf = await generatePicklistPdf(groups, { format: parsed.data.format });
     const fmt = parsed.data.format;
     const suffix =
-      fmt === "packing_4x6" || fmt === "label4x6" ? "packing-labels"
+      fmt === "shipping_4x6" || fmt === "shipping_a6" ? "shipping-labels"
+      : fmt === "packing_4x6" || fmt === "label4x6" ? "packing-labels"
       : fmt === "packing_a4" ? "packing-slip"
       : "picking-slip";
     res.setHeader("Content-Type", "application/pdf");
@@ -443,6 +451,55 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message || "PDF generation failed" });
   }
+});
+
+// ---------- Filter presets (per user, per site) ----------
+app.get("/api/sites/:id/presets", requireAuth, (req, res) => {
+  const siteId = Number(req.params.id);
+  const owned = db.prepare("SELECT id FROM sites WHERE id = ? AND user_id = ?").get(siteId, req.user.id);
+  if (!owned) return res.status(404).json({ error: "Site not found" });
+  const rows = db.prepare(
+    "SELECT id, name, payload, created_at FROM filter_presets WHERE user_id = ? AND site_id = ? ORDER BY name ASC"
+  ).all(req.user.id, siteId);
+  res.json({
+    presets: rows.map((r) => ({
+      id: r.id, name: r.name, created_at: r.created_at,
+      payload: (() => { try { return JSON.parse(r.payload); } catch { return {}; } })(),
+    })),
+  });
+});
+
+app.post("/api/presets", requireAuth, (req, res) => {
+  const parsed = presetSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+  const { site_id, name, payload } = parsed.data;
+  const owned = db.prepare("SELECT id FROM sites WHERE id = ? AND user_id = ?").get(site_id, req.user.id);
+  if (!owned) return res.status(404).json({ error: "Site not found" });
+  try {
+    // Upsert by (user_id, site_id, name)
+    const existing = db.prepare(
+      "SELECT id FROM filter_presets WHERE user_id = ? AND site_id = ? AND name = ?"
+    ).get(req.user.id, site_id, name);
+    if (existing) {
+      db.prepare("UPDATE filter_presets SET payload = ? WHERE id = ?").run(JSON.stringify(payload), existing.id);
+      res.json({ id: existing.id, updated: true });
+    } else {
+      const r = db.prepare(
+        "INSERT INTO filter_presets (user_id, site_id, name, payload) VALUES (?, ?, ?, ?)"
+      ).run(req.user.id, site_id, name, JSON.stringify(payload));
+      res.json({ id: r.lastInsertRowid, created: true });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to save preset" });
+  }
+});
+
+app.delete("/api/presets/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const r = db.prepare(
+    "DELETE FROM filter_presets WHERE id = ? AND user_id = ?"
+  ).run(id, req.user.id);
+  res.json({ ok: true, deleted: r.changes });
 });
 
 // ---------- Health ----------

@@ -296,12 +296,28 @@ async function generateLabelPdf(groups) {
       x: margin, y: y - 16, size: 18, font: fontBold,
     });
     y -= 22;
-    const customer = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
-    if (customer) {
-      page.drawText(sanitize(customer), {
-        x: margin, y: y - 10, size: 10, font, color: rgb(0.2, 0.2, 0.2),
+    const addrLines = continued ? [] : formatAddress(order);
+    if (addrLines.length) {
+      page.drawText(sanitize(addrLines[0]), {
+        x: margin, y: y - 10, size: 10, font: fontBold, color: rgb(0.1, 0.1, 0.1),
       });
-      y -= 14;
+      y -= 13;
+      for (let i = 1; i < addrLines.length; i++) {
+        const wrapped = wrapText(sanitize(addrLines[i]), usableWidth, 9);
+        for (const wl of wrapped) {
+          page.drawText(wl, { x: margin, y: y - 9, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+          y -= 11;
+        }
+      }
+      y -= 2;
+    } else {
+      const customer = `${order.billing?.first_name ?? ""} ${order.billing?.last_name ?? ""}`.trim();
+      if (customer) {
+        page.drawText(sanitize(customer), {
+          x: margin, y: y - 10, size: 10, font, color: rgb(0.2, 0.2, 0.2),
+        });
+        y -= 14;
+      }
     }
     const itemTotal = order.line_items.reduce((s, li) => s + li.quantity, 0);
     const meta = `${order.line_items.length} lines  -  ${itemTotal} items`;

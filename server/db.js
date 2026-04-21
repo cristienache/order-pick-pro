@@ -54,3 +54,25 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_presets_user_site ON filter_presets(user_id, site_id);
 `);
+
+// ---- Idempotent schema migrations ----
+// Add return-address columns to existing `sites` rows. SQLite doesn't support
+// "ADD COLUMN IF NOT EXISTS", so we introspect first and only ALTER for
+// columns that are missing. Safe to run on every boot.
+const sitesCols = new Set(
+  db.prepare("PRAGMA table_info(sites)").all().map((c) => c.name),
+);
+const RETURN_COLS = [
+  "return_name",
+  "return_company",
+  "return_line1",
+  "return_line2",
+  "return_city",
+  "return_postcode",
+  "return_country",
+];
+for (const col of RETURN_COLS) {
+  if (!sitesCols.has(col)) {
+    db.exec(`ALTER TABLE sites ADD COLUMN ${col} TEXT`);
+  }
+}

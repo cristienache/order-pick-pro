@@ -1084,6 +1084,13 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Add a sender address under Royal Mail settings first." });
   }
 
+  // If the client didn't pre-supply line items, fetch them from WooCommerce so
+  // the printed Royal Mail label shows real SKUs instead of "1x Goods".
+  if (!Array.isArray(d.line_items) || d.line_items.length === 0) {
+    const fetched = await loadOrderLineItemsForLabel(site, d.woocommerce_order_id);
+    if (fetched && fetched.length > 0) d.line_items = fetched;
+  }
+
   // Build the Click & Drop /orders payload (single order inside `items`).
   // Schema: https://api.parcel.royalmail.com/api/v1/swagger
   const cndOrder = {

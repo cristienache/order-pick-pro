@@ -866,17 +866,16 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
 // ---------- Royal Mail shipments / labels (Click & Drop) ----------
 // Click & Drop accepts many service codes and the valid set depends on the
 // customer's account (OBA contracts vs OLP "pay as you go", returns, etc.).
-// Their own schema validates this as a free string up to 10 chars, so we do
-// the same and let Royal Mail be the authority on which codes are live for
-// the caller's account. The UI offers a few common ones as suggestions.
+// serviceCode is optional in the official schema, so we allow blank/"auto" and
+// let Click & Drop apply the account's postage rules/defaults when omitted.
 
 const shipmentSchema = z.object({
   site_id: z.number().int().positive(),
   woocommerce_order_id: z.number().int().positive(),
   // Echoed back as the Click & Drop "orderReference".
   customer_reference: z.string().trim().min(1).max(40),
-  // Free text — Royal Mail validates against the account's contracted services.
-  service_code: z.string().trim().min(1).max(10),
+  service_code: z.string().trim().max(10).optional().or(z.literal(""))
+    .transform((v) => (v && v.toLowerCase() !== "auto" ? v.toUpperCase() : null)),
   // Click & Drop "packageFormat": parcel | letter | largeLetter | etc.
   // L = Letter, F = Large Letter, P = Parcel (matches Click & Drop UI order).
   service_format: z.enum(["P", "L", "F"]).default("P"),
@@ -1081,10 +1080,14 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
     shippingCostCharged: 0,
     total: 0,
     currencyCode: "GBP",
-    postageDetails: {
-      serviceCode: d.service_code,
-      ...(d.safe_place ? { safePlace: d.safe_place } : {}),
-    },
+    ...(d.service_code ? {
+      postageDetails: {
+        serviceCode: d.service_code,
+        ...(d.safe_place ? { safePlace: d.safe_place } : {}),
+      },
+    } : d.safe_place ? {
+      postageDetails: { safePlace: d.safe_place },
+    } : {}),
     label: {
       includeLabelInResponse: false,
       includeCN: false,
@@ -1170,7 +1173,7 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
       await addOrderNote(
         site,
         d.woocommerce_order_id,
-        `Royal Mail ${d.service_code} label created. Tracking: ${trackingNumber}`,
+        `Royal Mail ${d.service_code || "label"} created. Tracking: ${trackingNumber}`,
         false,
       );
     } catch (e) {

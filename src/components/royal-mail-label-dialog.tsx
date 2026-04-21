@@ -139,8 +139,9 @@ function LabelForm({
   // Reset when the parent opens us with a different order.
   useEffect(() => { setRecipient(recipientFromOrder(order)); }, [order.id]);
 
-  // Sensible default — most non-OBA accounts have Tracked 48.
-  const [serviceCode, setServiceCode] = useState<string>("TRM48");
+  // Default to Auto so Click & Drop can use the services/rules enabled on the account.
+  const [serviceMode, setServiceMode] = useState<string>("auto");
+  const [customServiceCode, setCustomServiceCode] = useState<string>("");
   const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
   const [weightGrams, setWeightGrams] = useState<string>("500");
   const [length, setLength] = useState<string>("");
@@ -153,14 +154,16 @@ function LabelForm({
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
-  // Look up suggestion metadata if the typed code matches one we know about.
+  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+
+  // Look up suggestion metadata if the selected/typed code matches one we know about.
   // Falls back to a generic 20kg cap so unknown codes still pass weight checks.
   const service = useMemo(() => {
     const code = serviceCode.trim().toUpperCase();
     return (
       RM_SERVICES.find((s) => s.code === code) ?? {
         code,
-        label: code || "Service",
+        label: code && code !== "AUTO" ? code : "Auto",
         maxWeight: 20000,
       }
     );
@@ -273,24 +276,32 @@ function LabelForm({
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="service">Service code</Label>
-            <Input
-              id="service"
-              list="rm-service-codes"
-              value={serviceCode}
-              onChange={(e) => setServiceCode(e.target.value.toUpperCase())}
-              placeholder="e.g. TRM48"
-              maxLength={10}
-              autoComplete="off"
-              required
-            />
-            <datalist id="rm-service-codes">
-              {RM_SERVICES.map((s) => (
-                <option key={s.code} value={s.code}>{s.label}</option>
-              ))}
-            </datalist>
+            <Label htmlFor="service">Service</Label>
+            <Select value={serviceMode} onValueChange={setServiceMode}>
+              <SelectTrigger id="service"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
+                {RM_SERVICES.map((s) => (
+                  <SelectItem key={s.code} value={s.code}>
+                    {s.label} ({s.code})
+                  </SelectItem>
+                ))}
+                <SelectItem value="custom">Custom code…</SelectItem>
+              </SelectContent>
+            </Select>
+            {serviceMode === "custom" && (
+              <Input
+                id="custom-service"
+                value={customServiceCode}
+                onChange={(e) => setCustomServiceCode(e.target.value.toUpperCase())}
+                placeholder="Enter code from Click & Drop"
+                maxLength={10}
+                autoComplete="off"
+                required
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Use the code from your Click &amp; Drop account (max weight {service.maxWeight.toLocaleString()} g).
+              Choose Auto if a code is rejected; otherwise use a service enabled on your account.
             </p>
           </div>
           <div className="space-y-2">

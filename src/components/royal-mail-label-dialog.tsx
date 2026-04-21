@@ -477,10 +477,18 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
             className="w-full h-full"
           />
         ) : (
-          <div className="text-sm text-muted-foreground p-6 text-center">
-            No PDF was returned by Royal Mail for this shipment.
+          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-2">
+            <p>
+              No printable PDF was returned by Royal Mail for this shipment.
+            </p>
+            <p>
+              The order was created in Click &amp; Drop, but PDF retrieval is only available for some account/service combinations. Open Click &amp; Drop to buy/generate the label there.
+            </p>
+            {shipment.royal_mail_shipment_id && (
+              <p>Click &amp; Drop order ID: <span className="font-mono">{shipment.royal_mail_shipment_id}</span></p>
+            )}
             {shipment.tracking_number && (
-              <> Tracking: <span className="font-mono">{shipment.tracking_number}</span></>
+              <p>Tracking: <span className="font-mono">{shipment.tracking_number}</span></p>
             )}
           </div>
         )}

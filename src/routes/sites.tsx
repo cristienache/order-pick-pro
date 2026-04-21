@@ -16,8 +16,24 @@ export const Route = createFileRoute("/sites")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,
 });
 
-type FormState = { name: string; store_url: string; consumer_key: string; consumer_secret: string };
-const empty: FormState = { name: "", store_url: "", consumer_key: "", consumer_secret: "" };
+type FormState = {
+  name: string;
+  store_url: string;
+  consumer_key: string;
+  consumer_secret: string;
+  return_name: string;
+  return_company: string;
+  return_line1: string;
+  return_line2: string;
+  return_city: string;
+  return_postcode: string;
+  return_country: string;
+};
+const empty: FormState = {
+  name: "", store_url: "", consumer_key: "", consumer_secret: "",
+  return_name: "", return_company: "", return_line1: "", return_line2: "",
+  return_city: "", return_postcode: "", return_country: "",
+};
 
 function SitesPage() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -42,7 +58,21 @@ function SitesPage() {
   const openCreate = () => { setEditing(null); setForm(empty); setOpen(true); };
   const openEdit = (s: Site) => {
     setEditing(s);
-    setForm({ name: s.name, store_url: s.store_url, consumer_key: "", consumer_secret: "" });
+    // Consumer key/secret are write-only (encrypted at rest, never returned).
+    // The user must re-enter them every time they edit a site.
+    setForm({
+      name: s.name,
+      store_url: s.store_url,
+      consumer_key: "",
+      consumer_secret: "",
+      return_name: s.return_name ?? "",
+      return_company: s.return_company ?? "",
+      return_line1: s.return_line1 ?? "",
+      return_line2: s.return_line2 ?? "",
+      return_city: s.return_city ?? "",
+      return_postcode: s.return_postcode ?? "",
+      return_country: s.return_country ?? "",
+    });
     setOpen(true);
   };
 

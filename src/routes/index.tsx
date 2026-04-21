@@ -116,6 +116,21 @@ function PicklistPage() {
     if (!open) { setDrawerSiteId(null); setDrawerOrderId(null); }
   };
 
+  // FX rates (GBP base). Rates are "1 GBP = N <code>" -> divide to convert.
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ GBP: 1 });
+  useEffect(() => {
+    api<{ rates: Record<string, number> }>("/api/fx")
+      .then((r) => setFxRates({ GBP: 1, ...r.rates }))
+      .catch(() => { /* fallback handled server-side; ignore here */ });
+  }, []);
+  const toGbp = useCallback((amount: number, currency: string): number | null => {
+    const code = (currency || "GBP").toUpperCase();
+    if (code === "GBP") return amount;
+    const r = fxRates[code];
+    if (!r || !Number.isFinite(r) || r <= 0) return null;
+    return amount / r;
+  }, [fxRates]);
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {
@@ -272,12 +287,13 @@ function PicklistPage() {
       .reduce((a, o) => a + o.itemCount, 0);
   }, 0);
 
-  // ---------- Daily stats ----------
+  // ---------- Daily stats (revenue normalised to GBP) ----------
   const stats = useMemo(() => {
     let backlog = 0;     // processing orders shown
     let aging = 0;       // processing > 24h
     let todayCount = 0;  // orders dated today (any status shown)
-    let todayRevenue = 0;
+    let todayRevenueGbp = 0;
+    let unconvertedCount = 0; // orders we couldn't convert (missing rate)
     let totalItemsAll = 0;
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     for (const sid of activeSites) {
@@ -289,12 +305,16 @@ function PicklistPage() {
         if (Number.isFinite(t) && t >= startOfDay.getTime()) {
           todayCount++;
           const v = parseFloat(o.total);
-          if (Number.isFinite(v)) todayRevenue += v;
+          if (Number.isFinite(v)) {
+            const gbp = toGbp(v, o.currency);
+            if (gbp !== null) todayRevenueGbp += gbp;
+            else unconvertedCount++;
+          }
         }
       }
     }
-    return { backlog, aging, todayCount, todayRevenue, totalItemsAll };
-  }, [ordersBySite, activeSites]);
+    return { backlog, aging, todayCount, todayRevenueGbp, unconvertedCount, totalItemsAll };
+  }, [ordersBySite, activeSites, toGbp]);
 
   // ---------- Generate ----------
   const generate = async () => {
@@ -450,8 +470,10 @@ function PicklistPage() {
             tone={stats.aging > 0 ? "warn" : "default"} />
           <StatCard label="Today's orders" value={stats.todayCount}
             hint="placed today" />
-          <StatCard label="Today's revenue" value={stats.todayRevenue.toFixed(2)}
-            hint="all selected sites" />
+          <StatCard label="Today's revenue" value={`£${stats.todayRevenueGbp.toFixed(2)}`}
+            hint={stats.unconvertedCount > 0
+              ? `GBP equivalent — ${stats.unconvertedCount} order(s) skipped (no rate)`
+              : "GBP equivalent across currencies"} />
         </div>
       )}
 
@@ -707,8 +729,17 @@ function PicklistPage() {
                             {o.itemCount}
                             <span className="text-muted-foreground text-xs ml-1">({o.lineCount})</span>
                           </div>
-                          <div className="w-24 text-right tabular-nums text-muted-foreground">
-                            {o.currency} {o.total}
+                          <div className="w-24 text-right tabular-nums text-muted-foreground flex flex-col items-end leading-tight">
+                            <span>{o.currency} {o.total}</span>
+                            {o.currency?.toUpperCase() !== "GBP" && (() => {
+                              const v = parseFloat(o.total);
+                              const gbp = Number.isFinite(v) ? toGbp(v, o.currency) : null;
+                              return gbp !== null ? (
+                                <span className="text-[10px] text-muted-foreground/70">
+                                  ≈ £{gbp.toFixed(2)}
+                                </span>
+                              ) : null;
+                            })()}
                           </div>
                           <div className="w-28 text-right text-muted-foreground text-sm">
                             {new Date(o.date_created).toLocaleDateString("en-GB")}

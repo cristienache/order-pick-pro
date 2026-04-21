@@ -116,6 +116,21 @@ function PicklistPage() {
     if (!open) { setDrawerSiteId(null); setDrawerOrderId(null); }
   };
 
+  // FX rates (GBP base). Rates are "1 GBP = N <code>" -> divide to convert.
+  const [fxRates, setFxRates] = useState<Record<string, number>>({ GBP: 1 });
+  useEffect(() => {
+    api<{ rates: Record<string, number> }>("/api/fx")
+      .then((r) => setFxRates({ GBP: 1, ...r.rates }))
+      .catch(() => { /* fallback handled server-side; ignore here */ });
+  }, []);
+  const toGbp = useCallback((amount: number, currency: string): number | null => {
+    const code = (currency || "GBP").toUpperCase();
+    if (code === "GBP") return amount;
+    const r = fxRates[code];
+    if (!r || !Number.isFinite(r) || r <= 0) return null;
+    return amount / r;
+  }, [fxRates]);
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {

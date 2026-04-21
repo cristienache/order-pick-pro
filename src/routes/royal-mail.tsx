@@ -24,10 +24,9 @@ export const Route = createFileRoute("/royal-mail")({
   ),
 });
 
-// Mirror of server-side rmRowToPublic shape.
+// Mirror of server-side rmRowToPublic shape (Click & Drop API).
 type RmSettings = {
-  has_client_id: boolean;
-  has_client_secret: boolean;
+  has_api_key: boolean;
   use_sandbox: boolean;
   sender_name: string | null;
   sender_company: string | null;
@@ -71,7 +70,7 @@ function RoyalMailPage() {
         <div>
           <h1 className="text-2xl font-bold leading-tight">Royal Mail</h1>
           <p className="text-sm text-muted-foreground">
-            Connect your OBA account to generate shipping labels from inside Ultrax.
+            Connect your Click &amp; Drop account to generate shipping labels from inside Ultrax.
           </p>
         </div>
       </header>
@@ -85,8 +84,7 @@ function RoyalMailPage() {
 // ---------- Credentials ----------
 
 function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChanged: () => Promise<void> }) {
-  const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
+  const [apiKey, setApiKey] = useState("");
   const [useSandbox, setUseSandbox] = useState(settings.use_sandbox);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -100,11 +98,9 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
     try {
       // Send only fields the user actually typed; empty string means "leave alone".
       const payload: Record<string, unknown> = { use_sandbox: useSandbox };
-      if (clientId.trim()) payload.client_id = clientId.trim();
-      if (clientSecret.trim()) payload.client_secret = clientSecret.trim();
+      if (apiKey.trim()) payload.api_key = apiKey.trim();
       await api("/api/royal-mail/credentials", { method: "PUT", body: payload });
-      setClientId("");
-      setClientSecret("");
+      setApiKey("");
       await onChanged();
       toast.success("Credentials saved");
     } catch (err) {
@@ -114,12 +110,12 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
     }
   };
 
-  const clearField = async (field: "client_id" | "client_secret") => {
-    if (!confirm(`Remove the saved ${field === "client_id" ? "Client ID" : "Client Secret"}?`)) return;
+  const clearKey = async () => {
+    if (!confirm("Remove the saved API key?")) return;
     try {
       await api("/api/royal-mail/credentials", {
         method: "PUT",
-        body: { [field]: "__clear__", use_sandbox: useSandbox },
+        body: { api_key: "__clear__", use_sandbox: useSandbox },
       });
       await onChanged();
       toast.success("Removed");
@@ -145,8 +141,6 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
     }
   };
 
-  const hasBoth = settings.has_client_id && settings.has_client_secret;
-
   return (
     <Card>
       <CardHeader>
@@ -154,18 +148,20 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
           <div className="flex items-start gap-3">
             <KeyRound className="h-5 w-5 text-muted-foreground mt-0.5" />
             <div>
-              <CardTitle>API credentials</CardTitle>
+              <CardTitle>API key</CardTitle>
               <CardDescription>
-                Get these from{" "}
+                Generate a key in your Click &amp; Drop account under{" "}
+                <span className="font-medium">Settings → Integrations → Create new API key</span>.
+                See the{" "}
                 <a
-                  href="https://developer.royalmail.net"
+                  href="https://api.parcel.royalmail.com/"
                   target="_blank"
                   rel="noreferrer"
                   className="underline hover:text-foreground"
                 >
-                  developer.royalmail.net
+                  Click &amp; Drop API portal
                 </a>{" "}
-                after your OBA account is approved for Shipping API v3.
+                for details.
               </CardDescription>
             </div>
           </div>
@@ -173,19 +169,19 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
         </div>
       </CardHeader>
       <CardContent>
-        {/* autoComplete=off + honeypot keeps Chrome from clobbering these fields
+        {/* autoComplete=off + honeypot keeps Chrome from clobbering this field
             (same trick we use on the WooCommerce site form). */}
         <form onSubmit={save} className="space-y-4" autoComplete="off">
           <input type="text" name="prevent-autofill" className="hidden" tabIndex={-1} aria-hidden />
           <input type="password" name="prevent-autofill-pw" className="hidden" tabIndex={-1} aria-hidden />
 
           <div className="space-y-2">
-            <Label htmlFor="rm-client-id" className="flex items-center justify-between">
-              <span>Client ID</span>
-              {settings.has_client_id && (
+            <Label htmlFor="rm-api-key" className="flex items-center justify-between">
+              <span>Click &amp; Drop API key</span>
+              {settings.has_api_key && (
                 <button
                   type="button"
-                  onClick={() => clearField("client_id")}
+                  onClick={clearKey}
                   className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1"
                 >
                   <Trash2 className="h-3 w-3" /> Remove
@@ -193,36 +189,11 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
               )}
             </Label>
             <Input
-              id="rm-client-id"
-              type="text"
-              value={clientId}
-              onChange={(e) => setClientId(e.target.value)}
-              placeholder={settings.has_client_id ? "•••••••• (saved — leave blank to keep)" : "Paste your X-IBM-Client-Id"}
-              autoComplete="off"
-              data-lpignore="true"
-              data-1p-ignore="true"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="rm-client-secret" className="flex items-center justify-between">
-              <span>Client Secret</span>
-              {settings.has_client_secret && (
-                <button
-                  type="button"
-                  onClick={() => clearField("client_secret")}
-                  className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1"
-                >
-                  <Trash2 className="h-3 w-3" /> Remove
-                </button>
-              )}
-            </Label>
-            <Input
-              id="rm-client-secret"
+              id="rm-api-key"
               type="password"
-              value={clientSecret}
-              onChange={(e) => setClientSecret(e.target.value)}
-              placeholder={settings.has_client_secret ? "•••••••• (saved — leave blank to keep)" : "Paste your X-IBM-Client-Secret"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder={settings.has_api_key ? "•••••••• (saved — leave blank to keep)" : "Paste your Click & Drop API key"}
               autoComplete="new-password"
               data-lpignore="true"
               data-1p-ignore="true"
@@ -231,9 +202,9 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
 
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>
-              <Label htmlFor="rm-sandbox" className="font-medium">Use sandbox endpoints</Label>
+              <Label htmlFor="rm-sandbox" className="font-medium">Sandbox key</Label>
               <p className="text-xs text-muted-foreground">
-                Calls go to the Royal Mail test environment instead of production.
+                Tick this if you pasted a Click &amp; Drop sandbox key rather than a live one.
               </p>
             </div>
             <Switch id="rm-sandbox" checked={useSandbox} onCheckedChange={setUseSandbox} />
@@ -247,7 +218,7 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
             <Button
               type="button"
               variant="secondary"
-              disabled={!hasBoth || testing}
+              disabled={!settings.has_api_key || testing}
               onClick={test}
             >
               {testing && <Loader2 className="h-4 w-4 animate-spin" />}
@@ -268,7 +239,7 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
 }
 
 function ConnectionBadge({ settings }: { settings: RmSettings }) {
-  if (!settings.has_client_id || !settings.has_client_secret) {
+  if (!settings.has_api_key) {
     return <Badge variant="outline">Not configured</Badge>;
   }
   if (settings.last_test_ok === true) {

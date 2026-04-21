@@ -365,22 +365,47 @@ async function generateShippingLabelPdf(groups, { size }) {
       y -= 16;
     }
 
-    // ---- Footer: order summary ----
-    const itemTotal = order.line_items.reduce((s, li) => s + li.quantity, 0);
-    const footerY = margin + 14;
+    // ---- Footer: SENDER (return address) ----
+    // Replaces the old "Order # - N lines - N items - date" summary. Couriers
+    // and customers need the return address far more than that summary, and
+    // the order ref is already in the top-right header ("Ref: #...").
+    const ra = site.return_address || {};
+    const senderLines = [
+      sanitize(ra.name || ""),
+      sanitize(ra.company || ""),
+      sanitize(ra.line1 || ""),
+      sanitize(ra.line2 || ""),
+      sanitize([ra.city, ra.postcode].filter(Boolean).join(", ")),
+      sanitize((ra.country || "").toUpperCase()),
+    ].filter(Boolean);
+
+    // Block height: label + 1pt gap + (lines * 9pt line-height) + bottom pad
+    const senderLabelSize = 7;
+    const senderLineHeight = 9;
+    const senderBlockHeight =
+      senderLabelSize + 2 + senderLines.length * senderLineHeight + 6;
+    const senderTop = margin + senderBlockHeight;
+
+    // Divider line above the sender block
     page.drawLine({
-      start: { x: margin, y: footerY + 14 }, end: { x: margin + usableWidth, y: footerY + 14 },
+      start: { x: margin, y: senderTop }, end: { x: margin + usableWidth, y: senderTop },
       thickness: 0.4, color: rgb(0.7, 0.7, 0.7),
     });
-    const left = `Order #${order.number}  -  ${order.line_items.length} lines  -  ${itemTotal} items`;
-    page.drawText(sanitize(left), {
-      x: margin, y: footerY, size: 8, font, color: rgb(0.4, 0.4, 0.4),
+
+    // "RETURN TO" label
+    page.drawText("RETURN TO", {
+      x: margin, y: senderTop - senderLabelSize - 2,
+      size: senderLabelSize, font: fontBold, color: rgb(0.45, 0.45, 0.5),
     });
-    const dateStr = new Date(order.date_created).toLocaleDateString("en-GB");
-    const dw = font.widthOfTextAtSize(dateStr, 8);
-    page.drawText(dateStr, {
-      x: margin + usableWidth - dw, y: footerY, size: 8, font, color: rgb(0.4, 0.4, 0.4),
-    });
+
+    // Sender lines
+    let sy = senderTop - senderLabelSize - 2 - senderLineHeight;
+    for (const line of senderLines) {
+      page.drawText(line, {
+        x: margin, y: sy, size: 8, font, color: rgb(0.25, 0.25, 0.3),
+      });
+      sy -= senderLineHeight;
+    }
   }
 
   return Buffer.from(await pdf.save());

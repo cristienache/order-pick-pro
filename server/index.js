@@ -69,11 +69,22 @@ const inviteSchema = z.object({
   email: z.string().email().max(255),
   role: z.enum(["user", "admin"]).default("user"),
 });
+// Return-address fields are optional at save time (lets users add them later),
+// but the picklist endpoint enforces them when generating shipping_4x6 labels.
+const optAddrField = (max) =>
+  z.string().trim().max(max).optional().or(z.literal("")).transform((v) => v || null);
 const siteSchema = z.object({
   name: z.string().trim().min(1).max(100),
   store_url: z.string().url().max(500),
   consumer_key: z.string().min(1).max(200),
   consumer_secret: z.string().min(1).max(200),
+  return_name: optAddrField(100),
+  return_company: optAddrField(100),
+  return_line1: optAddrField(150),
+  return_line2: optAddrField(150),
+  return_city: optAddrField(80),
+  return_postcode: optAddrField(20),
+  return_country: optAddrField(60),
 });
 const generateSchema = z.object({
   selections: z.array(z.object({
@@ -87,6 +98,16 @@ const generateSchema = z.object({
     "a4", "label4x6",
   ]).optional().default("picking_a4"),
 });
+
+// Minimum required fields for a printable return address (sender block on
+// the 4x6 shipping label). Country is recommended but not strictly required
+// because most labels are domestic.
+function returnAddressIsComplete(s) {
+  return Boolean(
+    s && (s.return_name || s.return_company) &&
+    s.return_line1 && s.return_city && s.return_postcode,
+  );
+}
 
 const presetSchema = z.object({
   site_id: z.number().int().positive(),
@@ -258,18 +279,16 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, (req, res) => {
 });
 
 // ---------- Sites (per-user) ----------
-function siteToPublic(row) {
-  return {
-    id: row.id,
-    name: row.name,
-    store_url: row.store_url,
-    created_at: row.created_at,
-  };
-}
+// All "return_*" columns are nullable — the user can fill them in later via
+// the Edit dialog. They're required only when generating a 4x6 shipping label.
+const SITE_PUBLIC_COLS =
+  "id, name, store_url, created_at, " +
+  "return_name, return_company, return_line1, return_line2, " +
+  "return_city, return_postcode, return_country";
 
 app.get("/api/sites", requireAuth, (req, res) => {
   const rows = db.prepare(
-    "SELECT id, name, store_url, created_at FROM sites WHERE user_id = ? ORDER BY name ASC",
+    `SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE user_id = ? ORDER BY name ASC`,
   ).all(req.user.id);
   res.json({ sites: rows });
 });
@@ -277,12 +296,20 @@ app.get("/api/sites", requireAuth, (req, res) => {
 app.post("/api/sites", requireAuth, (req, res) => {
   const parsed = siteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
-  const { name, store_url, consumer_key, consumer_secret } = parsed.data;
+  const d = parsed.data;
   const result = db.prepare(`
-    INSERT INTO sites (user_id, name, store_url, consumer_key_enc, consumer_secret_enc)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(req.user.id, name, store_url.replace(/\/+$/, ""), encrypt(consumer_key), encrypt(consumer_secret));
-  const row = db.prepare("SELECT id, name, store_url, created_at FROM sites WHERE id = ?").get(result.lastInsertRowid);
+    INSERT INTO sites (
+      user_id, name, store_url, consumer_key_enc, consumer_secret_enc,
+      return_name, return_company, return_line1, return_line2,
+      return_city, return_postcode, return_country
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    req.user.id, d.name, d.store_url.replace(/\/+$/, ""),
+    encrypt(d.consumer_key), encrypt(d.consumer_secret),
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+  );
+  const row = db.prepare(`SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE id = ?`).get(result.lastInsertRowid);
   res.json({ site: row });
 });
 
@@ -292,12 +319,21 @@ app.put("/api/sites/:id", requireAuth, (req, res) => {
   if (!owned) return res.status(404).json({ error: "Not found" });
   const parsed = siteSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
-  const { name, store_url, consumer_key, consumer_secret } = parsed.data;
+  const d = parsed.data;
   db.prepare(`
-    UPDATE sites SET name = ?, store_url = ?, consumer_key_enc = ?, consumer_secret_enc = ?
+    UPDATE sites SET
+      name = ?, store_url = ?, consumer_key_enc = ?, consumer_secret_enc = ?,
+      return_name = ?, return_company = ?, return_line1 = ?, return_line2 = ?,
+      return_city = ?, return_postcode = ?, return_country = ?
     WHERE id = ? AND user_id = ?
-  `).run(name, store_url.replace(/\/+$/, ""), encrypt(consumer_key), encrypt(consumer_secret), id, req.user.id);
-  const row = db.prepare("SELECT id, name, store_url, created_at FROM sites WHERE id = ?").get(id);
+  `).run(
+    d.name, d.store_url.replace(/\/+$/, ""),
+    encrypt(d.consumer_key), encrypt(d.consumer_secret),
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+    id, req.user.id,
+  );
+  const row = db.prepare(`SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE id = ?`).get(id);
   res.json({ site: row });
 });
 
@@ -316,6 +352,15 @@ function loadSiteWithKeys(siteId, userId) {
     store_url: row.store_url,
     consumer_key: decrypt(row.consumer_key_enc),
     consumer_secret: decrypt(row.consumer_secret_enc),
+    return_address: {
+      name: row.return_name,
+      company: row.return_company,
+      line1: row.return_line1,
+      line2: row.return_line2,
+      city: row.return_city,
+      postcode: row.return_postcode,
+      country: row.return_country,
+    },
   };
 }
 
@@ -463,11 +508,29 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
   const parsed = generateSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
 
+  const requiresReturnAddress = parsed.data.format === "shipping_4x6";
+
   try {
     const groups = [];
     for (const sel of parsed.data.selections) {
       const site = loadSiteWithKeys(sel.site_id, req.user.id);
       if (!site) return res.status(404).json({ error: `Site ${sel.site_id} not found` });
+
+      // Block shipping-label generation for sites without a complete return
+      // address — the label literally has nowhere to print "from", and Royal
+      // Mail / couriers reject labels missing a sender.
+      if (requiresReturnAddress && !returnAddressIsComplete({
+        return_name: site.return_address.name,
+        return_company: site.return_address.company,
+        return_line1: site.return_address.line1,
+        return_city: site.return_address.city,
+        return_postcode: site.return_address.postcode,
+      })) {
+        return res.status(400).json({
+          error: `"${site.name}" is missing a return address. Add it under Sites → Edit → Return address before printing 4x6 shipping labels.`,
+        });
+      }
+
       const orders = [];
       const chunkSize = 5;
       for (let i = 0; i < sel.order_ids.length; i += chunkSize) {
@@ -475,7 +538,14 @@ app.post("/api/picklist", requireAuth, async (req, res) => {
         const results = await Promise.all(chunk.map((id) => fetchOrderById(site, id)));
         orders.push(...results);
       }
-      groups.push({ site: { name: site.name, store_url: site.store_url }, orders });
+      groups.push({
+        site: {
+          name: site.name,
+          store_url: site.store_url,
+          return_address: site.return_address,
+        },
+        orders,
+      });
     }
     const pdf = await generatePicklistPdf(groups, { format: parsed.data.format });
     const fmt = parsed.data.format;

@@ -555,12 +555,21 @@ function PicklistPage() {
                   </DropdownMenuContent>
                 </DropdownMenu>
 
-                <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset)}>
+                <Select
+                  value={datePreset}
+                  onValueChange={(v) => setDatePreset(v as DatePreset)}
+                >
                   <SelectTrigger className="w-[150px] h-9">
                     <CalendarIcon className="h-3.5 w-3.5" />
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
+                    {/* "All dates" is only meaningful for the live processing
+                        backlog — for completed/cancelled/etc. it would pull
+                        the entire WooCommerce history, so we hide it. */}
+                    {statuses.length === 1 && statuses[0] === "processing" && (
+                      <SelectItem value="all">All dates</SelectItem>
+                    )}
                     <SelectItem value="today">Today</SelectItem>
                     <SelectItem value="24h">Last 24h</SelectItem>
                     <SelectItem value="7d">Last 7 days</SelectItem>

@@ -69,11 +69,22 @@ const inviteSchema = z.object({
   email: z.string().email().max(255),
   role: z.enum(["user", "admin"]).default("user"),
 });
+// Return-address fields are optional at save time (lets users add them later),
+// but the picklist endpoint enforces them when generating shipping_4x6 labels.
+const optAddrField = (max) =>
+  z.string().trim().max(max).optional().or(z.literal("")).transform((v) => v || null);
 const siteSchema = z.object({
   name: z.string().trim().min(1).max(100),
   store_url: z.string().url().max(500),
   consumer_key: z.string().min(1).max(200),
   consumer_secret: z.string().min(1).max(200),
+  return_name: optAddrField(100),
+  return_company: optAddrField(100),
+  return_line1: optAddrField(150),
+  return_line2: optAddrField(150),
+  return_city: optAddrField(80),
+  return_postcode: optAddrField(20),
+  return_country: optAddrField(60),
 });
 const generateSchema = z.object({
   selections: z.array(z.object({
@@ -87,6 +98,16 @@ const generateSchema = z.object({
     "a4", "label4x6",
   ]).optional().default("picking_a4"),
 });
+
+// Minimum required fields for a printable return address (sender block on
+// the 4x6 shipping label). Country is recommended but not strictly required
+// because most labels are domestic.
+function returnAddressIsComplete(s) {
+  return Boolean(
+    s && (s.return_name || s.return_company) &&
+    s.return_line1 && s.return_city && s.return_postcode,
+  );
+}
 
 const presetSchema = z.object({
   site_id: z.number().int().positive(),

@@ -238,6 +238,17 @@ async function generateA4Pdf(groups) {
           thickness: 0.25, color: rgb(0.88, 0.88, 0.88),
         });
       }
+      const addrLines = formatAddress(order);
+      if (addrLines.length) {
+        const addrHeight = addrLines.length * 11 + 18;
+        ensureSpace(addrHeight);
+        page.drawText("Ship to:", { x: marginX, y: y - 2, size: 8, font: fontBold, color: rgb(0.4, 0.4, 0.4) });
+        y -= 12;
+        for (const line of addrLines) {
+          page.drawText(sanitize(line), { x: marginX, y, size: 9, font, color: rgb(0.2, 0.2, 0.2) });
+          y -= 11;
+        }
+      }
       y -= 14;
     }
   }

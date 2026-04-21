@@ -53,6 +53,53 @@ db.exec(`
     UNIQUE (user_id, site_id, name)
   );
   CREATE INDEX IF NOT EXISTS idx_presets_user_site ON filter_presets(user_id, site_id);
+
+  -- Royal Mail OBA credentials + sender address (one row per user).
+  -- Credentials are encrypted at rest with the same AES-256-GCM helper used
+  -- for WooCommerce keys. Sender fields are stored in plain text.
+  CREATE TABLE IF NOT EXISTS royal_mail_credentials (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    client_id_enc TEXT,
+    client_secret_enc TEXT,
+    -- Optional: use sandbox endpoints instead of production. Defaults to 0 (prod).
+    use_sandbox INTEGER NOT NULL DEFAULT 0,
+    -- Sender address printed on the label
+    sender_name TEXT,
+    sender_company TEXT,
+    sender_address_line1 TEXT,
+    sender_address_line2 TEXT,
+    sender_city TEXT,
+    sender_postcode TEXT,
+    sender_country TEXT NOT NULL DEFAULT 'GB',
+    sender_phone TEXT,
+    sender_email TEXT,
+    -- Last successful "Test Connection" result so the UI can show status
+    last_tested_at TEXT,
+    last_test_ok INTEGER,
+    last_test_message TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Phase 1 stub for shipments. Columns will be populated in Phase 2.
+  -- Created now so foreign-key wiring and history queries don't need a
+  -- second migration later.
+  CREATE TABLE IF NOT EXISTS shipments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    site_id INTEGER REFERENCES sites(id) ON DELETE SET NULL,
+    woocommerce_order_id INTEGER NOT NULL,
+    woocommerce_store_url TEXT,
+    royal_mail_shipment_id TEXT,
+    tracking_number TEXT,
+    service_code TEXT,
+    label_pdf_base64 TEXT,
+    manifested INTEGER NOT NULL DEFAULT 0,
+    manifest_id TEXT,
+    voided INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_shipments_user ON shipments(user_id);
+  CREATE INDEX IF NOT EXISTS idx_shipments_order ON shipments(user_id, woocommerce_order_id);
 `);
 
 // ---- Idempotent schema migrations ----

@@ -1080,10 +1080,14 @@ app.post("/api/royal-mail/shipments", requireAuth, async (req, res) => {
     shippingCostCharged: 0,
     total: 0,
     currencyCode: "GBP",
-    postageDetails: {
-      serviceCode: d.service_code,
-      ...(d.safe_place ? { safePlace: d.safe_place } : {}),
-    },
+    ...(d.service_code ? {
+      postageDetails: {
+        serviceCode: d.service_code,
+        ...(d.safe_place ? { safePlace: d.safe_place } : {}),
+      },
+    } : d.safe_place ? {
+      postageDetails: { safePlace: d.safe_place },
+    } : {}),
     label: {
       includeLabelInResponse: false,
       includeCN: false,

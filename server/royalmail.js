@@ -161,11 +161,15 @@ export async function testRmConnection({ apiKey, useSandbox }) {
   if (!apiKey) {
     return { ok: false, status: 0, message: "API key is required" };
   }
+  // Probe with an authenticated endpoint. /version is unauthenticated on
+  // Click & Drop and will return 200 even with a bogus key, which gives a
+  // false-positive. /orders requires the Bearer token, so a valid key
+  // returns 200 (with an order list) and an invalid key returns 401.
   try {
     const res = await rmJson({
       apiKey, useSandbox,
       method: "GET",
-      path: "/version",
+      path: "/orders?pageSize=1",
     });
     if (res.ok) {
       return {
@@ -174,14 +178,15 @@ export async function testRmConnection({ apiKey, useSandbox }) {
         message: useSandbox
           ? "Connected to Royal Mail Click & Drop (sandbox key)."
           : "Connected to Royal Mail Click & Drop.",
-        detail: res.body,
+        detail: { keyPrefix: apiKey.slice(0, 6), keyLength: apiKey.length },
       };
     }
     if (res.status === 401 || res.status === 403) {
       return {
         ok: false,
         status: res.status,
-        message: "Royal Mail rejected the API key. Generate a new one in Click & Drop.",
+        message:
+          "Royal Mail rejected the API key (401). Generate a new key in Click & Drop → Settings → Integrations, paste it here (no spaces), and save.",
         detail: res.body,
       };
     }

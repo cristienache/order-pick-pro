@@ -132,6 +132,18 @@ const siteSchema = z.object({
   return_postcode: optAddrField(20),
   return_country: optAddrField(60),
 });
+// Return-address-only update — used by the standalone "Edit return address"
+// dialog so the user can change shipping label info without ever touching
+// (and never risking accidental autofill of) the WooCommerce API keys.
+const returnAddressSchema = z.object({
+  return_name: optAddrField(100),
+  return_company: optAddrField(100),
+  return_line1: optAddrField(150),
+  return_line2: optAddrField(150),
+  return_city: optAddrField(80),
+  return_postcode: optAddrField(20),
+  return_country: optAddrField(60),
+});
 const generateSchema = z.object({
   selections: z.array(z.object({
     site_id: z.number().int().positive(),
@@ -375,6 +387,30 @@ app.put("/api/sites/:id", requireAuth, (req, res) => {
   `).run(
     d.name, d.store_url.replace(/\/+$/, ""),
     encrypt(d.consumer_key), encrypt(d.consumer_secret),
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+    id, req.user.id,
+  );
+  const row = db.prepare(`SELECT ${SITE_PUBLIC_COLS} FROM sites WHERE id = ?`).get(id);
+  res.json({ site: row });
+});
+
+// Update ONLY the return address. Keeps WooCommerce keys completely out of
+// this code path so browser autofill on the address form can never overwrite
+// them.
+app.patch("/api/sites/:id/return-address", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const owned = db.prepare("SELECT id FROM sites WHERE id = ? AND user_id = ?").get(id, req.user.id);
+  if (!owned) return res.status(404).json({ error: "Not found" });
+  const parsed = returnAddressSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  const d = parsed.data;
+  db.prepare(`
+    UPDATE sites SET
+      return_name = ?, return_company = ?, return_line1 = ?, return_line2 = ?,
+      return_city = ?, return_postcode = ?, return_country = ?
+    WHERE id = ? AND user_id = ?
+  `).run(
     d.return_name, d.return_company, d.return_line1, d.return_line2,
     d.return_city, d.return_postcode, d.return_country,
     id, req.user.id,

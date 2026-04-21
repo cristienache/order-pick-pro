@@ -177,10 +177,12 @@ function shippingMethodTitle(order) {
 }
 
 /**
- * Generate a PDF in one of three formats:
- *  - "picking_a4": warehouse picking slip (SKUs + attributes + qty), A4
- *  - "packing_a4": customer-facing packing slip, A4 (no SKUs)
- *  - "packing_4x6": customer-facing packing slip, 4x6" labels (one per order)
+ * Generate a PDF in one of these formats:
+ *  - "picking_a4":   warehouse picking slip (SKUs + attributes + qty), A4
+ *  - "packing_a4":   customer-facing packing slip, A4 (no SKUs)
+ *  - "packing_4x6":  customer-facing packing slip, 4x6" labels (one per order)
+ *  - "shipping_4x6": Royal Mail-style shipping label, 4x6" (102x152 mm), one per order
+ *  - "shipping_a6":  Royal Mail-style shipping label, A6 (105x148 mm), one per order
  *
  * Backwards-compat aliases:
  *  - "a4"       -> "picking_a4"
@@ -189,9 +191,167 @@ function shippingMethodTitle(order) {
 export async function generatePicklistPdf(groups, opts = {}) {
   const raw = opts.format || "picking_a4";
   const format = raw === "a4" ? "picking_a4" : raw === "label4x6" ? "packing_4x6" : raw;
+  if (format === "shipping_4x6") return generateShippingLabelPdf(groups, { size: "4x6" });
+  if (format === "shipping_a6") return generateShippingLabelPdf(groups, { size: "a6" });
   if (format === "packing_4x6") return generate4x6Pdf(groups, { mode: "packing" });
   if (format === "packing_a4") return generateA4Pdf(groups, { mode: "packing" });
   return generateA4Pdf(groups, { mode: "picking" });
+}
+
+/**
+ * Royal Mail-style shipping label. One label per page.
+ * Sizes:
+ *  - "4x6": 102 x 152 mm (288 x 432 pt)
+ *  - "a6":  105 x 148 mm (297.64 x 419.53 pt) -- next smallest RM-approved size
+ *
+ * Layout: large recipient name + address (zoned, scannable from a distance),
+ * sender block, postcode in oversized text, order ref + service.
+ * NOTE: This is NOT a Royal Mail-issued label with their carrier barcode.
+ * It is a clear shipping-address label suitable for hand-applied 2D barcodes
+ * or use alongside a Click & Drop barcode sticker.
+ */
+async function generateShippingLabelPdf(groups, { size }) {
+  const pdf = await PDFDocument.create();
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const wrapText = wrapTextFactory(font);
+
+  // Page dimensions
+  const pageWidth = size === "a6" ? 297.64 : 288;
+  const pageHeight = size === "a6" ? 419.53 : 432;
+  const margin = 14;
+  const usableWidth = pageWidth - margin * 2;
+
+  const flat = [];
+  for (const group of groups) {
+    const sortedOrders = [...group.orders].sort((a, b) => Number(a.number) - Number(b.number));
+    for (const order of sortedOrders) flat.push({ site: group.site, order });
+  }
+
+  for (const { site, order } of flat) {
+    const page = pdf.addPage([pageWidth, pageHeight]);
+
+    // Outer border (helps cutting / alignment)
+    page.drawRectangle({
+      x: 4, y: 4, width: pageWidth - 8, height: pageHeight - 8,
+      borderColor: rgb(0.85, 0.85, 0.85), borderWidth: 0.5,
+    });
+
+    // ---- Header strip: site (sender) + service ----
+    const headerHeight = 38;
+    let y = pageHeight - margin;
+    page.drawRectangle({
+      x: margin, y: y - headerHeight, width: usableWidth, height: headerHeight,
+      color: rgb(0.1, 0.1, 0.12),
+    });
+    page.drawText("FROM", {
+      x: margin + 8, y: y - 12, size: 7, font: fontBold, color: rgb(0.65, 0.65, 0.7),
+    });
+    const senderName = sanitize(site.name).slice(0, 40);
+    page.drawText(senderName, {
+      x: margin + 8, y: y - 24, size: 11, font: fontBold, color: rgb(1, 1, 1),
+    });
+    const ship = sanitize(shippingMethodTitle(order)) || "Standard delivery";
+    const shipShort = ship.length > 28 ? ship.slice(0, 27) + "..." : ship;
+    const sw = font.widthOfTextAtSize(shipShort, 9);
+    page.drawText(shipShort, {
+      x: margin + usableWidth - sw - 8, y: y - 14, size: 9, font, color: rgb(0.85, 0.85, 0.9),
+    });
+    const ref = `Ref: #${order.number}`;
+    const rw = font.widthOfTextAtSize(ref, 8);
+    page.drawText(ref, {
+      x: margin + usableWidth - rw - 8, y: y - 28, size: 8, font, color: rgb(0.7, 0.7, 0.75),
+    });
+    y -= headerHeight + 14;
+
+    // ---- "DELIVER TO" label ----
+    page.drawText("DELIVER TO", {
+      x: margin, y, size: 8, font: fontBold, color: rgb(0.4, 0.4, 0.4),
+    });
+    y -= 14;
+
+    // ---- Address block: name big, then lines, postcode oversized ----
+    const a = order.shipping && (order.shipping.address_1 || order.shipping.city || order.shipping.postcode)
+      ? order.shipping
+      : (order.billing || {});
+    const recipName = sanitize(`${a.first_name ?? ""} ${a.last_name ?? ""}`.trim()) || "Recipient";
+    const company = sanitize(a.company || "");
+    const line1 = sanitize(a.address_1 || "");
+    const line2 = sanitize(a.address_2 || "");
+    const cityState = sanitize([a.city, a.state].filter(Boolean).join(", "));
+    const postcode = sanitize((a.postcode || "").toUpperCase());
+    const country = sanitize(a.country || "");
+
+    // Recipient name (bold, large)
+    const nameLines = wrapText(recipName, usableWidth, 16, fontBold);
+    for (const nl of nameLines) {
+      page.drawText(nl, { x: margin, y: y - 14, size: 16, font: fontBold });
+      y -= 18;
+    }
+
+    if (company) {
+      const cl = wrapText(company, usableWidth, 11);
+      for (const l of cl) {
+        page.drawText(l, { x: margin, y: y - 11, size: 11, font, color: rgb(0.2, 0.2, 0.2) });
+        y -= 14;
+      }
+    }
+
+    for (const line of [line1, line2, cityState].filter(Boolean)) {
+      const wrapped = wrapText(line, usableWidth, 12);
+      for (const wl of wrapped) {
+        page.drawText(wl, { x: margin, y: y - 12, size: 12, font, color: rgb(0.1, 0.1, 0.1) });
+        y -= 15;
+      }
+    }
+
+    y -= 6;
+
+    // Postcode — oversized, bold (scannable / sortable)
+    if (postcode) {
+      const pcSize = postcode.length > 8 ? 22 : 26;
+      const pcWidth = fontBold.widthOfTextAtSize(postcode, pcSize);
+      // Light background bar behind postcode
+      page.drawRectangle({
+        x: margin, y: y - pcSize - 4, width: usableWidth, height: pcSize + 8,
+        color: rgb(0.96, 0.96, 0.98),
+      });
+      page.drawText(postcode, {
+        x: margin + (usableWidth - pcWidth) / 2,
+        y: y - pcSize + 2,
+        size: pcSize, font: fontBold, color: rgb(0, 0, 0),
+      });
+      y -= pcSize + 12;
+    }
+
+    if (country) {
+      const cw = fontBold.widthOfTextAtSize(country.toUpperCase(), 11);
+      page.drawText(country.toUpperCase(), {
+        x: margin + (usableWidth - cw) / 2, y: y - 11,
+        size: 11, font: fontBold, color: rgb(0.15, 0.15, 0.15),
+      });
+      y -= 16;
+    }
+
+    // ---- Footer: order summary ----
+    const itemTotal = order.line_items.reduce((s, li) => s + li.quantity, 0);
+    const footerY = margin + 14;
+    page.drawLine({
+      start: { x: margin, y: footerY + 14 }, end: { x: margin + usableWidth, y: footerY + 14 },
+      thickness: 0.4, color: rgb(0.7, 0.7, 0.7),
+    });
+    const left = `Order #${order.number}  -  ${order.line_items.length} lines  -  ${itemTotal} items`;
+    page.drawText(sanitize(left), {
+      x: margin, y: footerY, size: 8, font, color: rgb(0.4, 0.4, 0.4),
+    });
+    const dateStr = new Date(order.date_created).toLocaleDateString("en-GB");
+    const dw = font.widthOfTextAtSize(dateStr, 8);
+    page.drawText(dateStr, {
+      x: margin + usableWidth - dw, y: footerY, size: 8, font, color: rgb(0.4, 0.4, 0.4),
+    });
+  }
+
+  return Buffer.from(await pdf.save());
 }
 
 function wrapTextFactory(font) {

@@ -41,4 +41,16 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_sites_user ON sites(user_id);
   CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
+
+  -- Saved filter presets (per user, per site)
+  CREATE TABLE IF NOT EXISTS filter_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    payload TEXT NOT NULL, -- JSON: { statuses, datePreset, customFrom, customTo, search, sortOrder, highValueThreshold, computeRepeat }
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, site_id, name)
+  );
+  CREATE INDEX IF NOT EXISTS idx_presets_user_site ON filter_presets(user_id, site_id);
 `);

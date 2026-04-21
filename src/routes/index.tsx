@@ -577,7 +577,7 @@ function PicklistPage() {
                     {/* "All dates" is only meaningful for the live processing
                         backlog — for completed/cancelled/etc. it would pull
                         the entire WooCommerce history, so we hide it. */}
-                    {statuses.length === 1 && statuses[0] === "processing" && (
+                    {allowsAllDates && (
                       <SelectItem value="all">All dates</SelectItem>
                     )}
                     <SelectItem value="today">Today</SelectItem>

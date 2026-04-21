@@ -703,6 +703,14 @@ function PicklistPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Order detail drawer */}
+      <OrderDetailDrawer
+        siteId={drawerSiteId}
+        orderId={drawerOrderId}
+        storeUrl={sites.find((s) => s.id === drawerSiteId)?.store_url}
+        onOpenChange={closeDrawer}
+      />
     </div>
   );
 }

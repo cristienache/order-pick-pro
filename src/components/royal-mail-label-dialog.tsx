@@ -392,17 +392,27 @@ function LabelViewer({ shipment, onClose }: { shipment: RmShipment; onClose: () 
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   useEffect(() => {
-    if (!shipment.has_label) { setLoading(false); return; }
+    if (!shipment.has_label) {
+      setPdfUrl(null);
+      setLoading(false);
+      return;
+    }
     let url: string | null = null;
     let cancelled = false;
     apiBlob(`/api/royal-mail/shipments/${shipment.id}/label.pdf`)
       .then((blob) => {
         if (cancelled) return;
+        if (blob.type && blob.type !== "application/pdf") {
+          throw new Error("Royal Mail did not return a PDF for this shipment.");
+        }
         url = URL.createObjectURL(blob);
         setPdfUrl(url);
       })
       .catch((e) => {
-        if (!cancelled) toast.error(e instanceof Error ? e.message : "Could not load label");
+        if (!cancelled) {
+          setPdfUrl(null);
+          toast.error(e instanceof Error ? e.message : "Could not load label");
+        }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => {

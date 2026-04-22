@@ -102,6 +102,9 @@ function LoginPage() {
               {needsBootstrap ? "Create master admin" : "Sign in"}
             </Button>
           </form>
+          <p className="text-center text-xs text-muted-foreground mt-6">
+            Need help? <Link to="/contact" className="text-foreground font-medium hover:underline">Contact us</Link>
+          </p>
         </CardContent>
       </Card>
     </div>

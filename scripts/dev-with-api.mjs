@@ -1,12 +1,14 @@
 import { spawn } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 
 const children = [];
 
-function start(name, command, args, env = process.env) {
+function start(name, command, args, env = process.env, cwd = process.cwd()) {
   const child = spawn(command, args, {
     stdio: "inherit",
     env,
     shell: false,
+    cwd,
   });
 
   child.on("exit", (code, signal) => {
@@ -39,9 +41,35 @@ function shutdown(exitCode = 0) {
 process.on("SIGINT", () => shutdown(0));
 process.on("SIGTERM", () => shutdown(0));
 
-start("api", "node", ["server/index.js"], {
-  ...process.env,
-  NODE_ENV: process.env.NODE_ENV || "development",
-});
+async function waitForApi(url, attempts = 40) {
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      const response = await fetch(url);
+      if (response.ok || response.status === 401 || response.status === 404) return;
+    } catch {}
+    await delay(500);
+  }
 
-start("vite", "vite", ["dev"], process.env);
+  throw new Error(`API did not become ready: ${url}`);
+}
+
+async function main() {
+  start(
+    "api",
+    "node",
+    ["index.js"],
+    {
+      ...process.env,
+      NODE_ENV: process.env.NODE_ENV || "development",
+    },
+    "server",
+  );
+
+  await waitForApi("http://127.0.0.1:3000/api/auth/status");
+  start("vite", "vite", ["dev"], process.env);
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : error);
+  shutdown(1);
+});

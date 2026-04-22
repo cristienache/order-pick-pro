@@ -326,26 +326,54 @@ function PicklistPage() {
       toast.info("Nothing to print — every label in view is already printed.");
       return;
     }
+    // Snapshot the IDs once so they can't shift mid-flight, then run the
+    // post-print bookkeeping (mark printed + refresh + reload) in the
+    // background. Awaiting `printPdfBlob` would keep the spinner stuck on
+    // the toolbar button until the user dismisses the print dialog (or up
+    // to 10 minutes if the browser never fires `afterprint`).
+    const ids = [...unprintedShipmentIds];
     setPrintingUnprinted(true);
     try {
       const blob = await apiBlob(
-        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${unprintedShipmentIds.join(",")}`,
+        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${ids.join(",")}`,
       );
-      await printPdfBlob(
+      // Fire-and-forget: opens the print dialog, resolves whenever the user
+      // closes it. We don't await — the spinner is cleared as soon as the
+      // dialog has been triggered.
+      void printPdfBlob(
         blob,
         `rm-unprinted-${new Date().toISOString().slice(0, 10)}.pdf`,
       );
-      toast.success(`Sent ${unprintedShipmentIds.length} label(s) to printer`);
-      try {
-        const r = await markShipmentsPrinted(unprintedShipmentIds);
-        if (r.completed > 0) {
-          toast.success(`Marked ${r.completed} order(s) as completed`);
+      toast.success(`Sent ${ids.length} label(s) to printer`);
+
+      // Run server-side completion + UI refresh in the background so the
+      // toolbar button is immediately interactive again.
+      void (async () => {
+        try {
+          const r = await markShipmentsPrinted(ids);
+          if (r.completed > 0) {
+            toast.success(`Marked ${r.completed} order(s) as completed`);
+          }
+          if (r.completionErrors && r.completionErrors.length > 0) {
+            toast.error(
+              `Couldn't auto-complete: ${r.completionErrors[0].error}`,
+              { description: r.completionErrors.length > 1
+                  ? `+${r.completionErrors.length - 1} more — check WooCommerce.`
+                  : undefined },
+            );
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Failed to mark printed");
         }
-        await refreshShipments();
-        loadOrders(true);
-      } catch {
-        /* silent */
-      }
+        // Refresh shipment badges, reload orders (temporarily including
+        // "completed" so the freshly-completed orders stay visible), and
+        // refresh today's stats so the revenue card jumps.
+        await Promise.allSettled([
+          refreshShipments(),
+          loadOrders(true, ["completed"]),
+        ]);
+        refreshTodayStats();
+      })();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {

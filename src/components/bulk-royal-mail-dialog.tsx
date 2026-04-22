@@ -169,6 +169,16 @@ export function BulkRoyalMailDialog({
         toast.warning(`Created ${res.succeeded}, failed ${res.failed}`);
       }
       onCreated?.();
+
+      // Auto-print: as soon as labels are created successfully, send the
+      // merged PDF to the browser's print dialog. The user can still re-print
+      // from the results screen if the dialog was dismissed.
+      const newPrintableIds = res.results
+        .filter((r) => r.ok && r.shipment?.has_label)
+        .map((r) => r.shipment!.id);
+      if (newPrintableIds.length > 0) {
+        await printIds(newPrintableIds);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bulk label creation failed");
     } finally {

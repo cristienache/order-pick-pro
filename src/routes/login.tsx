@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { api } from "@/lib/api";
@@ -102,6 +102,9 @@ function LoginPage() {
               {needsBootstrap ? "Create master admin" : "Sign in"}
             </Button>
           </form>
+          <p className="text-center text-xs text-muted-foreground mt-6">
+            Need help? <Link to="/contact" className="text-foreground font-medium hover:underline">Contact us</Link>
+          </p>
         </CardContent>
       </Card>
     </div>

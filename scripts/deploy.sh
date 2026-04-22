@@ -47,22 +47,19 @@ wait_for_ssr() {
 
 reload_ssr() {
   echo "--- reloading ${SSR_APP_NAME} via PM2"
-  if pm2 describe "$SSR_APP_NAME" >/dev/null 2>&1; then
-    if pm2 reload "$PM2_ECOSYSTEM" --only "$SSR_APP_NAME" --update-env; then
-      return 0
-    fi
-    echo "!!! PM2 reload failed; recreating ${SSR_APP_NAME} from ecosystem config"
-    pm2 delete "$SSR_APP_NAME" || true
+  if pm2 startOrReload "$PM2_ECOSYSTEM" --only "$SSR_APP_NAME" --update-env; then
+    return 0
   fi
+  echo "!!! PM2 startOrReload failed; recreating ${SSR_APP_NAME} from ecosystem config"
+  pm2 delete "$SSR_APP_NAME" || true
   pm2 start "$PM2_ECOSYSTEM" --only "$SSR_APP_NAME" --update-env
 }
 
 restore_previous_dist() {
   if [ -d "$DIST_BACKUP_DIR" ]; then
     echo "--- restoring previous dist/"
-    rm_tree "$PROJECT_DIR/dist"
-    rm_tree "$DIST_FAILED_DIR"
     if [ -d "$PROJECT_DIR/dist" ]; then
+      rm_tree "$DIST_FAILED_DIR"
       mv "$PROJECT_DIR/dist" "$DIST_FAILED_DIR"
     fi
     mv "$DIST_BACKUP_DIR" "$PROJECT_DIR/dist"

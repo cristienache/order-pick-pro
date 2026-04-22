@@ -16,11 +16,26 @@ export type OrderRow = {
   customer: string;
   email: string;
   shipping_method: string;
+  /** ISO-2 recipient country (from shipping address, falls back to billing). */
+  shipping_country: string;
   itemCount: number;
   lineCount: number;
   items?: OrderItem[];
   previous_completed: number | null;
 };
+
+// EU member states (ISO-2). Used to flag orders whose shipping labels must
+// be created outside Ultrax (different postage rules).
+export const EU_COUNTRIES = new Set<string>([
+  "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR",
+  "DE", "GR", "HU", "IE", "IT", "LV", "LT", "LU", "MT", "NL",
+  "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+]);
+
+export function isEuropeOrder(o: OrderRow): boolean {
+  const c = (o.shipping_country || "").trim().toUpperCase();
+  return c.length === 2 && EU_COUNTRIES.has(c);
+}
 
 export type Format =
   | "picking_a4"

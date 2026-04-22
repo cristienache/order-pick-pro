@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, apiBlob, markShipmentsPrinted, type RmShipment, type Site } from "@/lib/api";
+import { api, apiBlob, fetchTodayStats, markShipmentsPrinted, type RmShipment, type Site, type TodayStats } from "@/lib/api";
 import {
-  ALL_STATUSES, isAging, isExpedited, isHighValue, isRepeat,
+  ALL_STATUSES, isAging, isEuropeOrder, isExpedited, isHighValue, isRepeat,
   withinDateRange, type DatePreset, type Format, type OrderRow,
 } from "@/lib/orders";
 import { playChime } from "@/lib/chime";
@@ -149,6 +149,17 @@ function PicklistPage() {
     return amount / r;
   }, [fxRates]);
 
+  // Today's stats — count + revenue across processing AND completed orders
+  // for every site. Decoupled from the in-view rows so the user can filter
+  // to "processing only" without hiding completed-today revenue.
+  const [todayStats, setTodayStats] = useState<TodayStats | null>(null);
+  const refreshTodayStats = useCallback(() => {
+    fetchTodayStats()
+      .then(setTodayStats)
+      .catch(() => { /* silent — stats are best-effort */ });
+  }, []);
+  useEffect(() => { refreshTodayStats(); }, [refreshTodayStats]);
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {
@@ -171,14 +182,18 @@ function PicklistPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowsAllDates]);
 
-  const loadOrders = useCallback(async (silent = false) => {
+  const loadOrders = useCallback(async (silent = false, extraStatuses: string[] = []) => {
     if (activeSites.length === 0) return;
     setLoadingOrders(true);
     try {
       const results: Record<number, OrderRow[]> = {};
       const sel: Record<number, Set<number>> = {};
       const qs = new URLSearchParams();
-      qs.set("statuses", statuses.join(","));
+      // Union the user's selected statuses with any extra ones the caller
+      // wants temporarily included (e.g. "completed" right after a print, so
+      // freshly-completed orders don't disappear from view).
+      const mergedStatuses = Array.from(new Set([...statuses, ...extraStatuses]));
+      qs.set("statuses", mergedStatuses.join(","));
       if (computeRepeat) qs.set("repeat", "1");
 
       // Push date bounds to the server so WooCommerce filters at the source.
@@ -311,26 +326,54 @@ function PicklistPage() {
       toast.info("Nothing to print — every label in view is already printed.");
       return;
     }
+    // Snapshot the IDs once so they can't shift mid-flight, then run the
+    // post-print bookkeeping (mark printed + refresh + reload) in the
+    // background. Awaiting `printPdfBlob` would keep the spinner stuck on
+    // the toolbar button until the user dismisses the print dialog (or up
+    // to 10 minutes if the browser never fires `afterprint`).
+    const ids = [...unprintedShipmentIds];
     setPrintingUnprinted(true);
     try {
       const blob = await apiBlob(
-        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${unprintedShipmentIds.join(",")}`,
+        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${ids.join(",")}`,
       );
-      await printPdfBlob(
+      // Fire-and-forget: opens the print dialog, resolves whenever the user
+      // closes it. We don't await — the spinner is cleared as soon as the
+      // dialog has been triggered.
+      void printPdfBlob(
         blob,
         `rm-unprinted-${new Date().toISOString().slice(0, 10)}.pdf`,
       );
-      toast.success(`Sent ${unprintedShipmentIds.length} label(s) to printer`);
-      try {
-        const r = await markShipmentsPrinted(unprintedShipmentIds);
-        if (r.completed > 0) {
-          toast.success(`Marked ${r.completed} order(s) as completed`);
+      toast.success(`Sent ${ids.length} label(s) to printer`);
+
+      // Run server-side completion + UI refresh in the background so the
+      // toolbar button is immediately interactive again.
+      void (async () => {
+        try {
+          const r = await markShipmentsPrinted(ids);
+          if (r.completed > 0) {
+            toast.success(`Marked ${r.completed} order(s) as completed`);
+          }
+          if (r.completionErrors && r.completionErrors.length > 0) {
+            toast.error(
+              `Couldn't auto-complete: ${r.completionErrors[0].error}`,
+              { description: r.completionErrors.length > 1
+                  ? `+${r.completionErrors.length - 1} more — check WooCommerce.`
+                  : undefined },
+            );
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Failed to mark printed");
         }
-        await refreshShipments();
-        loadOrders(true);
-      } catch {
-        /* silent */
-      }
+        // Refresh shipment badges, reload orders (temporarily including
+        // "completed" so the freshly-completed orders stay visible), and
+        // refresh today's stats so the revenue card jumps.
+        await Promise.allSettled([
+          refreshShipments(),
+          loadOrders(true, ["completed"]),
+        ]);
+        refreshTodayStats();
+      })();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {
@@ -384,34 +427,37 @@ function PicklistPage() {
       .reduce((a, o) => a + o.itemCount, 0);
   }, 0);
 
-  // ---------- Daily stats (revenue normalised to GBP) ----------
+  // ---------- Queue stats (sourced from in-view processing rows) ----------
+  // Backlog + aging are queue indicators driven by what the user has loaded.
+  // Today-wide stats (count + revenue) come from the dedicated /api/stats/today
+  // endpoint so they include completed orders even when the filter is
+  // "processing only".
   const stats = useMemo(() => {
-    let backlog = 0;     // processing orders shown
-    let aging = 0;       // processing > 24h
-    let todayCount = 0;  // orders dated today (any status shown)
-    let todayRevenueGbp = 0;
-    let unconvertedCount = 0; // orders we couldn't convert (missing rate)
+    let backlog = 0;
+    let aging = 0;
     let totalItemsAll = 0;
-    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     for (const sid of activeSites) {
       for (const o of (ordersBySite[sid] || [])) {
         totalItemsAll += o.itemCount;
         if (o.status === "processing") backlog++;
         if (isAging(o)) aging++;
-        const t = new Date(o.date_created).getTime();
-        if (Number.isFinite(t) && t >= startOfDay.getTime()) {
-          todayCount++;
-          const v = parseFloat(o.total);
-          if (Number.isFinite(v)) {
-            const gbp = toGbp(v, o.currency);
-            if (gbp !== null) todayRevenueGbp += gbp;
-            else unconvertedCount++;
-          }
-        }
       }
     }
-    return { backlog, aging, todayCount, todayRevenueGbp, unconvertedCount, totalItemsAll };
-  }, [ordersBySite, activeSites, toGbp]);
+    return { backlog, aging, totalItemsAll };
+  }, [ordersBySite, activeSites]);
+
+  // Convert today's per-currency revenue to a single GBP figure for display.
+  const todaySummary = useMemo(() => {
+    if (!todayStats) return { count: 0, revenueGbp: 0, unconverted: 0 };
+    let revenueGbp = 0;
+    let unconverted = 0;
+    for (const [code, total] of Object.entries(todayStats.revenue_by_currency)) {
+      const gbp = toGbp(total, code);
+      if (gbp !== null) revenueGbp += gbp;
+      else unconverted++;
+    }
+    return { count: todayStats.count, revenueGbp, unconverted };
+  }, [todayStats, toGbp]);
 
   // ---------- Generate ----------
   const generate = async () => {
@@ -456,7 +502,8 @@ function PicklistPage() {
       const fail = r.results.reduce((s, x) => s + x.failed, 0);
       if (fail === 0) toast.success(`Marked ${ok} order(s) as completed`);
       else toast.warning(`Completed ${ok}, failed ${fail}`);
-      loadOrders(true);
+      loadOrders(true, ["completed"]);
+      refreshTodayStats();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bulk complete failed");
     } finally { setBulkBusy(false); }
@@ -598,11 +645,11 @@ function PicklistPage() {
           <StatCard label="Aging > 24h" value={stats.aging}
             hint="needs attention"
             tone={stats.aging > 0 ? "warn" : "default"} />
-          <StatCard label="Today's orders" value={stats.todayCount}
-            hint="placed today" />
-          <StatCard label="Today's revenue" value={`£${stats.todayRevenueGbp.toFixed(2)}`}
-            hint={stats.unconvertedCount > 0
-              ? `GBP equivalent — ${stats.unconvertedCount} order(s) skipped (no rate)`
+          <StatCard label="Today's orders" value={todaySummary.count}
+            hint="processing + completed today" />
+          <StatCard label="Today's revenue" value={`£${todaySummary.revenueGbp.toFixed(2)}`}
+            hint={todaySummary.unconverted > 0
+              ? `GBP equivalent — ${todaySummary.unconverted} currency(ies) skipped (no rate)`
               : "GBP equivalent across currencies"} />
         </div>
       )}
@@ -894,6 +941,14 @@ function PicklistPage() {
                                 {o.status.replace("-", " ")}
                               </Badge>
                             )}
+                            {isEuropeOrder(o) && (
+                              <Badge
+                                className="bg-indigo-600 text-white border-0 text-[10px] px-1.5 py-0"
+                                title="EU destination — print this label outside Ultrax"
+                              >
+                                Europe
+                              </Badge>
+                            )}
                             <PriorityBadges order={o} highValueThreshold={highValueThreshold} />
                           </div>
                           <div className="flex-[1.4] min-w-0 text-xs text-muted-foreground leading-tight">
@@ -988,7 +1043,12 @@ function PicklistPage() {
         mode={rmBulkMode || "create"}
         selections={rmBulkSelections}
         onOpenChange={(o) => { if (!o) setRmBulkMode(null); }}
-        onCreated={() => loadOrders(true)}
+        onCreated={() => {
+          // After create or print, completed orders should re-appear in
+          // view and the revenue card should jump.
+          loadOrders(true, ["completed"]);
+          refreshTodayStats();
+        }}
       />
     </div>
   );

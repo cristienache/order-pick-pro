@@ -212,31 +212,41 @@ export function BulkRoyalMailDialog({
       const blob = await apiBlob(
         `/api/royal-mail/shipments/bulk/labels.pdf?ids=${ids.join(",")}`,
       );
-      // Open the print dialog directly. printPdfBlob falls back to a
-      // download if the browser blocks printing.
-      await printPdfBlob(
+      // Fire-and-forget the print dialog. Awaiting `printPdfBlob` would keep
+      // `busy` true until the user dismissed the print dialog (or up to 10
+      // minutes if `afterprint` never fires), freezing this dialog and the
+      // entire orders toolbar.
+      void printPdfBlob(
         blob,
         `rm-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
       );
       toast.success(`Sent ${ids.length} label(s) to printer`);
       // Mark printed server-side: stamps printed_at + auto-completes the
-      // matching WooCommerce orders. Best-effort; don't block on failures.
-      try {
-        const r = await markShipmentsPrinted(ids);
-        if (r.completed > 0) {
-          toast.success(
-            `Marked ${r.completed} order${r.completed === 1 ? "" : "s"} as completed in WooCommerce`,
-          );
+      // matching WooCommerce orders. Run in the background so we can release
+      // the spinner immediately.
+      void (async () => {
+        try {
+          const r = await markShipmentsPrinted(ids);
+          if (r.completed > 0) {
+            toast.success(
+              `Marked ${r.completed} order${r.completed === 1 ? "" : "s"} as completed in WooCommerce`,
+            );
+          }
+          if (r.completionErrors && r.completionErrors.length > 0) {
+            // Surface the actual error from WooCommerce — not just a count —
+            // so the user knows which call failed and why.
+            toast.error(
+              `Couldn't auto-complete: ${r.completionErrors[0].error}`,
+              { description: r.completionErrors.length > 1
+                  ? `+${r.completionErrors.length - 1} more — check WooCommerce.`
+                  : undefined },
+            );
+          }
+          onCreated?.();
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Failed to mark printed");
         }
-        if (r.completionErrors && r.completionErrors.length > 0) {
-          toast.warning(
-            `${r.completionErrors.length} order(s) couldn't be auto-completed — check WooCommerce.`,
-          );
-        }
-        onCreated?.();
-      } catch {
-        /* silent — print already succeeded */
-      }
+      })();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {

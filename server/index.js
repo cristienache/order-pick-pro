@@ -504,6 +504,7 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
           customer: `${o.billing?.first_name ?? ""} ${o.billing?.last_name ?? ""}`.trim(),
           email,
           shipping_method: ship,
+          shipping_country: (o.shipping?.country || o.billing?.country || "").toUpperCase(),
           itemCount: o.line_items.reduce((s, li) => s + li.quantity, 0),
           lineCount: o.line_items.length,
           // Compact item summary for the orders list — lets the picker see
@@ -519,6 +520,48 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
     });
   } catch (e) {
     res.status(502).json({ error: e.message || "Upstream error" });
+  }
+});
+
+// Today's order stats — count + revenue grouped by currency, across every
+// site the user owns and including BOTH "processing" and "completed" so the
+// dashboard total reflects fully-shipped revenue, not just live backlog.
+// Lightweight: only fetches today's orders (date-bounded server-side).
+app.get("/api/stats/today", requireAuth, async (req, res) => {
+  try {
+    const sites = db.prepare(
+      "SELECT id FROM sites WHERE user_id = ?",
+    ).all(req.user.id);
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const afterIso = start.toISOString();
+
+    const revenue = {};
+    let count = 0;
+
+    await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return;
+      try {
+        const orders = await fetchOrders(site, {
+          statuses: ["processing", "completed"],
+          after: afterIso,
+        });
+        for (const o of orders) {
+          count++;
+          const v = parseFloat(o.total);
+          if (!Number.isFinite(v)) continue;
+          const code = (o.currency || "GBP").toUpperCase();
+          revenue[code] = (revenue[code] || 0) + v;
+        }
+      } catch {
+        /* one site failing should not poison the entire stats payload */
+      }
+    }));
+
+    res.json({ count, revenue_by_currency: revenue });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Stats unavailable" });
   }
 });
 

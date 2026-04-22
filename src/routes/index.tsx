@@ -338,19 +338,17 @@ function PicklistPage() {
     setGenerating(true);
     try {
       const blob = await apiBlob("/api/picklist", { body: { selections, format } });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
       const meta = FORMATS.find((f) => f.value === format)!;
       const stem =
         format === "picking_a4" ? "picking-slip"
         : format === "packing_a4" ? "packing-slip"
         : format === "packing_4x6" ? "packing-labels"
         : "shipping-labels";
-      a.download = `${stem}-${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      toast.success(`${meta.label} generated (${totalSelected} orders)`);
+      const filename = `${stem}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      // Open the print dialog directly instead of downloading. Falls back
+      // to a normal download if the browser blocks print.
+      await printPdfBlob(blob, filename);
+      toast.success(`${meta.label} ready to print (${totalSelected} orders)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to generate");
     } finally { setGenerating(false); }

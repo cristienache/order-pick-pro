@@ -936,7 +936,7 @@ function PicklistPage() {
                               if (sh && sh.printed_at) {
                                 return (
                                   <Badge
-                                    className="bg-brand-emerald text-white border-0 text-[10px] px-1.5 py-0 gap-1"
+                                    className="bg-slate-500 text-white border-0 text-[10px] px-1.5 py-0 gap-1 hover:bg-slate-500/90"
                                     title={`Printed ${new Date(sh.printed_at).toLocaleString()}`}
                                   >
                                     <Printer className="h-2.5 w-2.5" /> Printed

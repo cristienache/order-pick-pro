@@ -384,7 +384,7 @@ export function BulkRoyalMailDialog({
               {printableIds.length > 0 && (
                 <Button onClick={downloadMerged} disabled={busy}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                  Download {printableIds.length} label{printableIds.length === 1 ? "" : "s"} PDF
+                  Print {printableIds.length} label{printableIds.length === 1 ? "" : "s"}
                 </Button>
               )}
             </>
@@ -394,7 +394,7 @@ export function BulkRoyalMailDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Close</Button>
               <Button onClick={downloadMerged} disabled={busy || loadingExisting || printableIds.length === 0}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                Download merged PDF
+                Print labels
               </Button>
             </>
           )}

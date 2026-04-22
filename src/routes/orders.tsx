@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Download, RefreshCw, Package, Store, MoreHorizontal,
   CheckCircle2, MessageSquarePlus, Filter, Calendar as CalendarIcon, Bell, BellOff, ChevronDown,
-  Truck, Printer,
+  Truck, Printer, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -811,8 +811,24 @@ function PicklistPage() {
                   </PopoverContent>
                 </Popover>
 
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setSearch("");
+                    setStatuses(["processing"]);
+                    setDatePreset("today");
+                    setCustomFrom("");
+                    setCustomTo("");
+                  }}
+                  className="gap-1.5 ml-auto"
+                  title="Clear search, reset status to Processing only, and set date to Today"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Reset
+                </Button>
                 <Button size="sm" onClick={() => loadOrders(false)} disabled={loadingOrders}
-                  className="gap-1.5 ml-auto">
+                  className="gap-1.5">
                   {loadingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   Show
                 </Button>

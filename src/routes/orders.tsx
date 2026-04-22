@@ -1042,7 +1042,12 @@ function PicklistPage() {
         mode={rmBulkMode || "create"}
         selections={rmBulkSelections}
         onOpenChange={(o) => { if (!o) setRmBulkMode(null); }}
-        onCreated={() => loadOrders(true)}
+        onCreated={() => {
+          // After create or print, completed orders should re-appear in
+          // view and the revenue card should jump.
+          loadOrders(true, ["completed"]);
+          refreshTodayStats();
+        }}
       />
     </div>
   );

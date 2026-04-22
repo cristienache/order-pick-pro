@@ -149,6 +149,17 @@ function PicklistPage() {
     return amount / r;
   }, [fxRates]);
 
+  // Today's stats — count + revenue across processing AND completed orders
+  // for every site. Decoupled from the in-view rows so the user can filter
+  // to "processing only" without hiding completed-today revenue.
+  const [todayStats, setTodayStats] = useState<TodayStats | null>(null);
+  const refreshTodayStats = useCallback(() => {
+    fetchTodayStats()
+      .then(setTodayStats)
+      .catch(() => { /* silent — stats are best-effort */ });
+  }, []);
+  useEffect(() => { refreshTodayStats(); }, [refreshTodayStats]);
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {

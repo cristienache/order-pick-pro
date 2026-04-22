@@ -141,21 +141,12 @@ export type RmServiceDef = {
   code: string; label: string; maxWeight: number; formats: RmFormat[];
 };
 export const RM_SERVICES: RmServiceDef[] = [
-  { code: "STL1",  label: "1st Class",                  maxWeight: 750,    formats: ["L"] },
-  { code: "STL2",  label: "2nd Class",                  maxWeight: 750,    formats: ["L"] },
-  { code: "CRL24", label: "Tracked 24",                 maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "CRL48", label: "Tracked 48",                 maxWeight: 20000,  formats: ["F", "P"] },
-  // Legacy / OBA / Special Delivery — kept for accounts already using them
-  { code: "TRM24", label: "Tracked 24 (legacy)",        maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "TRM48", label: "Tracked 48 (legacy)",        maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "SD1",   label: "Special Delivery (£1k)",     maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "SD2",   label: "Special Delivery (£2.5k)",   maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "CRL1",  label: "1st Class (OBA)",            maxWeight: 20000,  formats: ["L", "F", "P"] },
-  { code: "CRL2",  label: "2nd Class (OBA)",            maxWeight: 20000,  formats: ["L", "F", "P"] },
-  { code: "TPN",   label: "Tracked 24 (OBA)",           maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "TPM",   label: "Tracked 48 (OBA)",           maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "TPLN",  label: "Tracked 24 Signed (OBA)",    maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "TPLM",  label: "Tracked 48 Signed (OBA)",    maxWeight: 20000,  formats: ["F", "P"] },
+  // Letter
+  { code: "STL1",  label: "1st Class",   maxWeight: 750,    formats: ["L"] },
+  { code: "STL2",  label: "2nd Class",   maxWeight: 750,    formats: ["L"] },
+  // Large Letter + Parcel
+  { code: "CRL24", label: "Tracked 24",  maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "CRL48", label: "Tracked 48",  maxWeight: 20000,  formats: ["F", "P"] },
 ];
 
 export function rmServicesForFormat(format: RmFormat): RmServiceDef[] {

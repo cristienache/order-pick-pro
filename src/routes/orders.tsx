@@ -427,34 +427,37 @@ function PicklistPage() {
       .reduce((a, o) => a + o.itemCount, 0);
   }, 0);
 
-  // ---------- Daily stats (revenue normalised to GBP) ----------
+  // ---------- Queue stats (sourced from in-view processing rows) ----------
+  // Backlog + aging are queue indicators driven by what the user has loaded.
+  // Today-wide stats (count + revenue) come from the dedicated /api/stats/today
+  // endpoint so they include completed orders even when the filter is
+  // "processing only".
   const stats = useMemo(() => {
-    let backlog = 0;     // processing orders shown
-    let aging = 0;       // processing > 24h
-    let todayCount = 0;  // orders dated today (any status shown)
-    let todayRevenueGbp = 0;
-    let unconvertedCount = 0; // orders we couldn't convert (missing rate)
+    let backlog = 0;
+    let aging = 0;
     let totalItemsAll = 0;
-    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
     for (const sid of activeSites) {
       for (const o of (ordersBySite[sid] || [])) {
         totalItemsAll += o.itemCount;
         if (o.status === "processing") backlog++;
         if (isAging(o)) aging++;
-        const t = new Date(o.date_created).getTime();
-        if (Number.isFinite(t) && t >= startOfDay.getTime()) {
-          todayCount++;
-          const v = parseFloat(o.total);
-          if (Number.isFinite(v)) {
-            const gbp = toGbp(v, o.currency);
-            if (gbp !== null) todayRevenueGbp += gbp;
-            else unconvertedCount++;
-          }
-        }
       }
     }
-    return { backlog, aging, todayCount, todayRevenueGbp, unconvertedCount, totalItemsAll };
-  }, [ordersBySite, activeSites, toGbp]);
+    return { backlog, aging, totalItemsAll };
+  }, [ordersBySite, activeSites]);
+
+  // Convert today's per-currency revenue to a single GBP figure for display.
+  const todaySummary = useMemo(() => {
+    if (!todayStats) return { count: 0, revenueGbp: 0, unconverted: 0 };
+    let revenueGbp = 0;
+    let unconverted = 0;
+    for (const [code, total] of Object.entries(todayStats.revenue_by_currency)) {
+      const gbp = toGbp(total, code);
+      if (gbp !== null) revenueGbp += gbp;
+      else unconverted++;
+    }
+    return { count: todayStats.count, revenueGbp, unconverted };
+  }, [todayStats, toGbp]);
 
   // ---------- Generate ----------
   const generate = async () => {

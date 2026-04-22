@@ -688,34 +688,6 @@ function PicklistPage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle className="text-base">Sites</CardTitle>
-              <CardDescription>
-                Click a site to toggle it on or off. All sites are selected by default.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {sites.map((s) => {
-              const active = activeSites.includes(s.id);
-              return (
-                <button key={s.id} onClick={() => toggleSiteActive(s.id)}
-                  className={`px-3 py-2 rounded-md border text-sm transition-colors ${
-                    active ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"
-                  }`}>
-                  {s.name}
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
       {Object.keys(ordersBySite).length > 0 && (
         <>
           {/* Filters */}

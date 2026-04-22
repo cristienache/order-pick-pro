@@ -1007,6 +1007,7 @@ function rmShipmentToPublic(s) {
     manifested: Boolean(s.manifested),
     manifest_id: s.manifest_id,
     voided: Boolean(s.voided),
+    printed_at: s.printed_at || null,
     created_at: s.created_at,
   };
 }

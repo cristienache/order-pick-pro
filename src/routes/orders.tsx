@@ -14,6 +14,9 @@ import { PriorityBadges } from "@/components/priority-badges";
 import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { OrderDetailDrawer } from "@/components/order-detail-drawer";
 import { BulkRoyalMailDialog, type BulkSelection } from "@/components/bulk-royal-mail-dialog";
+import {
+  WooCommerceLogo, ShopifyLogo, EtsyLogo, MagentoLogo, EbayLogo,
+} from "@/components/integration-logos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -677,26 +680,54 @@ function PicklistPage() {
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div>
-              <CardTitle className="text-base">Sites</CardTitle>
+              <CardTitle className="text-base">Integrations</CardTitle>
               <CardDescription>
-                Click a site to toggle it on or off. All sites are selected by default.
+                Click a WooCommerce site to toggle it on or off. More integrations are on the way.
               </CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-3">
+          {/* Active integration: WooCommerce — each connected site is a toggle. */}
           <div className="flex flex-wrap gap-2">
             {sites.map((s) => {
               const active = activeSites.includes(s.id);
               return (
                 <button key={s.id} onClick={() => toggleSiteActive(s.id)}
-                  className={`px-3 py-2 rounded-md border text-sm transition-colors ${
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors ${
                     active ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"
                   }`}>
-                  {s.name}
+                  <WooCommerceLogo />
+                  <span>{s.name}</span>
+                  <span className={`text-[10px] uppercase tracking-wide ${active ? "opacity-80" : "text-muted-foreground"}`}>
+                    WooCommerce
+                  </span>
                 </button>
               );
             })}
+          </div>
+
+          {/* Other integrations — visible so users know they're planned, but
+              disabled until the corresponding backend connectors ship. */}
+          <div className="flex flex-wrap gap-2 pt-1">
+            {[
+              { name: "Shopify", Logo: ShopifyLogo },
+              { name: "Etsy", Logo: EtsyLogo },
+              { name: "Magento", Logo: MagentoLogo },
+              { name: "eBay", Logo: EbayLogo },
+            ].map(({ name, Logo }) => (
+              <button
+                key={name}
+                type="button"
+                disabled
+                title={`${name} integration coming soon`}
+                className="flex items-center gap-2 px-3 py-2 rounded-md border border-dashed text-sm text-muted-foreground cursor-not-allowed opacity-70"
+              >
+                <Logo />
+                <span>{name}</span>
+                <span className="text-[10px] uppercase tracking-wide">Soon</span>
+              </button>
+            ))}
           </div>
         </CardContent>
       </Card>

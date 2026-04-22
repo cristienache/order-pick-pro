@@ -36,7 +36,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Loader2, Download, RefreshCw, Package, Store, MoreHorizontal,
   CheckCircle2, MessageSquarePlus, Filter, Calendar as CalendarIcon, Bell, BellOff, ChevronDown,
-  Truck, Printer,
+  Truck, Printer, RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 

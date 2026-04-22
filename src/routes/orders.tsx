@@ -700,14 +700,25 @@ function PicklistPage() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="outline" size="sm" className="gap-1.5">
                       <Filter className="h-3.5 w-3.5" />
-                      {statuses.length === 1
-                        ? ALL_STATUSES.find((s) => s.value === statuses[0])?.label
-                        : `${statuses.length} statuses`}
+                      {statuses.length === ALL_STATUSES.length
+                        ? "All orders"
+                        : statuses.length === 1
+                          ? ALL_STATUSES.find((s) => s.value === statuses[0])?.label
+                          : `${statuses.length} statuses`}
                       <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent>
                     <DropdownMenuLabel>Order status</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuCheckboxItem
+                      checked={statuses.length === ALL_STATUSES.length}
+                      onCheckedChange={(v) => {
+                        setStatuses(v ? ALL_STATUSES.map((s) => s.value) : ["processing"]);
+                      }}
+                    >
+                      All orders
+                    </DropdownMenuCheckboxItem>
                     <DropdownMenuSeparator />
                     {ALL_STATUSES.map((s) => (
                       <DropdownMenuCheckboxItem

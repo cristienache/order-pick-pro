@@ -586,92 +586,6 @@ function PicklistPage() {
         description="Pull orders from your sites and generate picking, packing or shipping labels."
       />
 
-      {/* Primary action bar — kept directly above the Sites picker so the
-          most-used CTAs (Generate / Print unprinted / Load) are always within
-          easy reach without scrolling past the site list. */}
-      <Card>
-        <CardContent className="p-3">
-          <div className="flex gap-2 items-center flex-wrap">
-            <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
-              <SelectTrigger className="w-[230px]" aria-label="Output format">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {FORMATS.map((f) => (
-                  <SelectItem key={f.value} value={f.value}>
-                    <div className="flex flex-col">
-                      <span>{f.label}</span>
-                      <span className="text-xs text-muted-foreground">{f.hint}</span>
-                    </div>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button onClick={() => loadOrders(false)} disabled={loadingOrders || activeSites.length === 0}
-              variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
-              {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {Object.keys(ordersBySite).length ? "Reload" : "Load orders"}
-            </Button>
-            <Button onClick={generate} disabled={generating || totalSelected === 0}>
-              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Generate ({totalSelected})
-            </Button>
-            {/* Dedicated Print-unprinted CTA: scans every loaded order, picks
-                the labels that haven't been printed, prints + auto-completes. */}
-            <Button
-              variant="secondary"
-              onClick={printUnprinted}
-              disabled={printingUnprinted || unprintedShipmentIds.length === 0}
-              title="Print every label in view that hasn't been printed yet"
-              className="bg-brand-emerald text-white hover:bg-brand-emerald/90 disabled:bg-brand-emerald/40"
-            >
-              {printingUnprinted ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-              Print unprinted ({unprintedShipmentIds.length})
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" aria-label="Bulk actions" disabled={totalSelected === 0}>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Bulk actions ({totalSelected})</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={bulkComplete} disabled={bulkBusy}>
-                  <CheckCircle2 className="h-4 w-4" /> Mark as completed
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => setNoteDialogOpen(true)} disabled={bulkBusy}>
-                  <MessageSquarePlus className="h-4 w-4" /> Add note to orders
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => {
-                    const sels = buildSelections();
-                    if (sels.length === 0) return;
-                    setRmBulkSelections(sels);
-                    setRmBulkMode("create");
-                  }}
-                  disabled={bulkBusy}
-                >
-                  <Truck className="h-4 w-4" /> Create Royal Mail labels
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => {
-                    const sels = buildSelections();
-                    if (sels.length === 0) return;
-                    setRmBulkSelections(sels);
-                    setRmBulkMode("print");
-                  }}
-                  disabled={bulkBusy}
-                >
-                  <Printer className="h-4 w-4" /> Print Royal Mail labels
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </CardContent>
-      </Card>
-
       {/* Daily stats */}
       {Object.keys(ordersBySite).length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -693,6 +607,102 @@ function PicklistPage() {
           {/* Filters */}
           <Card>
             <CardContent className="p-3 space-y-3">
+              {/* Row 0 — Actions (bulk ops + slip generation + reload/print) */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">
+                  Actions
+                </span>
+
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="gap-1.5">
+                      <MoreHorizontal className="h-3.5 w-3.5" />
+                      Actions{totalSelected > 0 ? ` (${totalSelected})` : ""}
+                      <ChevronDown className="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-64">
+                    <DropdownMenuLabel>Bulk actions</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={bulkComplete} disabled={bulkBusy || totalSelected === 0}>
+                      <CheckCircle2 className="h-4 w-4" /> Mark orders as completed
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setNoteDialogOpen(true)} disabled={bulkBusy || totalSelected === 0}>
+                      <MessageSquarePlus className="h-4 w-4" /> Add note to orders
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Packing / Shipping slips</DropdownMenuLabel>
+                    {FORMATS.map((f) => (
+                      <DropdownMenuCheckboxItem
+                        key={f.value}
+                        checked={format === f.value}
+                        onCheckedChange={() => setFormat(f.value)}
+                      >
+                        <div className="flex flex-col">
+                          <span>{f.label}</span>
+                          <span className="text-xs text-muted-foreground">{f.hint}</span>
+                        </div>
+                      </DropdownMenuCheckboxItem>
+                    ))}
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Postage</DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const sels = buildSelections();
+                        if (sels.length === 0) return;
+                        setRmBulkSelections(sels);
+                        setRmBulkMode("create");
+                      }}
+                      disabled={bulkBusy || totalSelected === 0}
+                    >
+                      <Truck className="h-4 w-4" /> Create Royal Mail labels
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => {
+                        const sels = buildSelections();
+                        if (sels.length === 0) return;
+                        setRmBulkSelections(sels);
+                        setRmBulkMode("print");
+                      }}
+                      disabled={bulkBusy || totalSelected === 0}
+                    >
+                      <Printer className="h-4 w-4" /> Print Royal Mail labels
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => loadOrders(false)}
+                  disabled={loadingOrders || activeSites.length === 0}
+                  className="gap-1.5"
+                >
+                  {loadingOrders ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  Reload
+                </Button>
+
+                <Button size="sm" onClick={generate} disabled={generating || totalSelected === 0} className="gap-1.5">
+                  {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                  Generate ({totalSelected})
+                </Button>
+
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={printUnprinted}
+                  disabled={printingUnprinted || unprintedShipmentIds.length === 0}
+                  title="Print every label in view that hasn't been printed yet"
+                  className="gap-1.5 bg-brand-emerald text-white hover:bg-brand-emerald/90 disabled:bg-brand-emerald/40"
+                >
+                  {printingUnprinted ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Printer className="h-3.5 w-3.5" />}
+                  Print unprinted ({unprintedShipmentIds.length})
+                </Button>
+              </div>
+
+              <div className="border-t" />
+
               {/* Row 1 — Filter (data fetching + narrowing) */}
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground w-14 shrink-0">

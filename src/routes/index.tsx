@@ -721,7 +721,8 @@ function PicklistPage() {
                       />
                       <div className="w-24">Order</div>
                       <div className="flex-1">Customer</div>
-                      <div className="w-20 text-right">Items</div>
+                      <div className="flex-[1.4] min-w-0">Items</div>
+                      <div className="w-16 text-right">Qty</div>
                       <div className="w-24 text-right">Total</div>
                       <div className="w-28 text-right">Date</div>
                     </div>

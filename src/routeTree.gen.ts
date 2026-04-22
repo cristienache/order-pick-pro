@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitesRouteImport } from './routes/sites'
 import { Route as RoyalMailRouteImport } from './routes/royal-mail'
+import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
@@ -26,6 +27,11 @@ const SitesRoute = SitesRouteImport.update({
 const RoyalMailRoute = RoyalMailRouteImport.update({
   id: '/royal-mail',
   path: '/royal-mail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrdersRoute = OrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -63,6 +69,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -73,6 +80,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -84,6 +92,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/login': typeof LoginRoute
+  '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -96,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/login'
+    | '/orders'
     | '/royal-mail'
     | '/sites'
     | '/admin/invites'
@@ -106,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/login'
+    | '/orders'
     | '/royal-mail'
     | '/sites'
     | '/admin/invites'
@@ -116,6 +127,7 @@ export interface FileRouteTypes {
     | '/'
     | '/accept-invite'
     | '/login'
+    | '/orders'
     | '/royal-mail'
     | '/sites'
     | '/admin/invites'
@@ -127,6 +139,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
   LoginRoute: typeof LoginRoute
+  OrdersRoute: typeof OrdersRoute
   RoyalMailRoute: typeof RoyalMailRoute
   SitesRoute: typeof SitesRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
@@ -148,6 +161,13 @@ declare module '@tanstack/react-router' {
       path: '/royal-mail'
       fullPath: '/royal-mail'
       preLoaderRoute: typeof RoyalMailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/orders': {
+      id: '/orders'
+      path: '/orders'
+      fullPath: '/orders'
+      preLoaderRoute: typeof OrdersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -199,6 +219,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
   LoginRoute: LoginRoute,
+  OrdersRoute: OrdersRoute,
   RoyalMailRoute: RoyalMailRoute,
   SitesRoute: SitesRoute,
   AdminInvitesRoute: AdminInvitesRoute,

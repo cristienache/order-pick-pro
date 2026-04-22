@@ -256,21 +256,30 @@ function PicklistPage() {
     return () => clearInterval(id);
   }, [activeSites, loadOrders]);
 
-  // 60s new-order polling (lightweight: just IDs + count, processing only)
+  // 60s new-order polling (lightweight: just IDs + count, processing only).
+  // The first cycle after activeSites changes seeds the ref silently — we
+  // never chime for orders that already existed before the user opened the
+  // page, even if they fall outside the current date filter (loadOrders only
+  // seeds what's in view, so historical processing orders would otherwise
+  // ping every minute).
   useEffect(() => {
     if (activeSites.length === 0 || !notify) return;
+    const seedKey = activeSites.slice().sort().join(",");
     const id = setInterval(async () => {
       try {
+        const isFirstSeed = pollSeededRef.current !== seedKey;
         const allNew: { siteName: string; ids: number[] }[] = [];
         for (const sid of activeSites) {
           const r = await api<{ orders: OrderRow[] }>(`/api/sites/${sid}/orders?statuses=processing`);
           const newOnes = r.orders.filter((o) => !lastSeenIdsRef.current.has(o.id));
-          if (newOnes.length > 0) {
+          // Always record what we've seen so they don't re-trigger.
+          r.orders.forEach((o) => lastSeenIdsRef.current.add(o.id));
+          if (newOnes.length > 0 && !isFirstSeed) {
             const site = sites.find((s) => s.id === sid);
             allNew.push({ siteName: site?.name || `Site ${sid}`, ids: newOnes.map((o) => o.id) });
-            newOnes.forEach((o) => lastSeenIdsRef.current.add(o.id));
           }
         }
+        pollSeededRef.current = seedKey;
         const totalNew = allNew.reduce((s, x) => s + x.ids.length, 0);
         if (totalNew > 0) {
           playChime();

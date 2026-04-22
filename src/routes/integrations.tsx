@@ -381,8 +381,11 @@ function SitesPage() {
         </div>
       )}
 
+      {/* eBay accounts (live OAuth) */}
+      <EbaySection />
+
       {/* Other channels — visible so users know they're planned, but not yet
-          wired to a backend connector. Real brand SVGs are bundled locally. */}
+          wired to a backend connector. */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Other channels</CardTitle>
@@ -391,12 +394,11 @@ function SitesPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-3">
             {[
               { name: "Shopify", logo: shopifyLogo },
               { name: "Etsy", logo: etsyLogo },
               { name: "Magento", logo: magentoLogo },
-              { name: "eBay", logo: ebayLogo },
             ].map((c) => (
               <div
                 key={c.name}

@@ -771,11 +771,7 @@ function PicklistPage() {
                                 {o.items.slice(0, 3).map((it, idx) => (
                                   <div key={idx} className="truncate" title={`${it.quantity}× ${it.name}${it.sku ? ` [${it.sku}]` : ""}`}>
                                     <span className="tabular-nums font-medium text-foreground">{it.quantity}×</span>{" "}
-                                    {it.sku ? (
-                                      <span className="tabular-nums">{it.sku}</span>
-                                    ) : (
-                                      <span>{it.name}</span>
-                                    )}
+                                    <span>{it.name}</span>
                                   </div>
                                 ))}
                                 {o.items.length > 3 && (

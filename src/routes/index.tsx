@@ -721,7 +721,8 @@ function PicklistPage() {
                       />
                       <div className="w-24">Order</div>
                       <div className="flex-1">Customer</div>
-                      <div className="w-20 text-right">Items</div>
+                      <div className="flex-[1.4] min-w-0">Items</div>
+                      <div className="w-16 text-right">Qty</div>
                       <div className="w-24 text-right">Total</div>
                       <div className="w-28 text-right">Date</div>
                     </div>
@@ -764,7 +765,28 @@ function PicklistPage() {
                             )}
                             <PriorityBadges order={o} highValueThreshold={highValueThreshold} />
                           </div>
-                          <div className="w-20 text-right tabular-nums">
+                          <div className="flex-[1.4] min-w-0 text-xs text-muted-foreground leading-tight">
+                            {o.items && o.items.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {o.items.slice(0, 3).map((it, idx) => (
+                                  <div key={idx} className="truncate" title={`${it.quantity}× ${it.name}${it.sku ? ` [${it.sku}]` : ""}`}>
+                                    <span className="tabular-nums font-medium text-foreground">{it.quantity}×</span>{" "}
+                                    {it.sku ? (
+                                      <span className="tabular-nums">{it.sku}</span>
+                                    ) : (
+                                      <span>{it.name}</span>
+                                    )}
+                                  </div>
+                                ))}
+                                {o.items.length > 3 && (
+                                  <div className="text-muted-foreground/70">+{o.items.length - 3} more</div>
+                                )}
+                              </div>
+                            ) : (
+                              <span>—</span>
+                            )}
+                          </div>
+                          <div className="w-16 text-right tabular-nums">
                             {o.itemCount}
                             <span className="text-muted-foreground text-xs ml-1">({o.lineCount})</span>
                           </div>

@@ -1,5 +1,11 @@
 // Order-related types and helpers shared by the picklist UI.
 
+export type OrderItem = {
+  sku: string;
+  name: string;
+  quantity: number;
+};
+
 export type OrderRow = {
   id: number;
   number: string;
@@ -12,6 +18,7 @@ export type OrderRow = {
   shipping_method: string;
   itemCount: number;
   lineCount: number;
+  items?: OrderItem[];
   previous_completed: number | null;
 };
 

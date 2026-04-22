@@ -506,6 +506,13 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
           shipping_method: ship,
           itemCount: o.line_items.reduce((s, li) => s + li.quantity, 0),
           lineCount: o.line_items.length,
+          // Compact item summary for the orders list — lets the picker see
+          // what postage applies without opening each order.
+          items: o.line_items.map((li) => ({
+            sku: String(li.sku || ""),
+            name: String(li.name || ""),
+            quantity: Number(li.quantity) || 0,
+          })),
           previous_completed: repeatMap.get(email) ?? null,
         };
       }),

@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
   Package, Truck, Store, Users, Settings, ArrowUpRight, Sparkles,
+  type LucideIcon,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -30,14 +31,30 @@ export const Route = createFileRoute("/")({
   }),
 });
 
+type Accent = "violet" | "emerald" | "amber" | "sky" | "rose";
 type Tool = {
   to: "/orders" | "/royal-mail" | "/sites" | "/admin/users" | "/admin/invites";
   label: string;
   caption: string;
   description: string;
-  icon: typeof Package;
-  accent: string; // tailwind bg/text class for the icon tile
+  icon: LucideIcon;
+  accent: Accent;
   adminOnly?: boolean;
+};
+
+const ACCENT_TILE: Record<Accent, string> = {
+  violet: "bg-brand-violet text-white",
+  emerald: "bg-brand-emerald text-white",
+  amber: "bg-brand-amber text-white",
+  sky: "bg-brand-sky text-white",
+  rose: "bg-brand-rose text-white",
+};
+const ACCENT_GLOW: Record<Accent, string> = {
+  violet: "shadow-[0_18px_40px_-22px_color-mix(in_oklab,var(--brand-violet)_70%,transparent)]",
+  emerald: "shadow-[0_18px_40px_-22px_color-mix(in_oklab,var(--brand-emerald)_70%,transparent)]",
+  amber: "shadow-[0_18px_40px_-22px_color-mix(in_oklab,var(--brand-amber)_70%,transparent)]",
+  sky: "shadow-[0_18px_40px_-22px_color-mix(in_oklab,var(--brand-sky)_70%,transparent)]",
+  rose: "shadow-[0_18px_40px_-22px_color-mix(in_oklab,var(--brand-rose)_70%,transparent)]",
 };
 
 const TOOLS: Tool[] = [
@@ -48,7 +65,7 @@ const TOOLS: Tool[] = [
     description:
       "Pull live orders from every store, filter by status or date, and generate picking, packing or shipping labels in one click.",
     icon: Package,
-    accent: "bg-violet-600 text-white",
+    accent: "violet",
   },
   {
     to: "/royal-mail",
@@ -57,7 +74,7 @@ const TOOLS: Tool[] = [
     description:
       "Create, reprint and manifest Royal Mail shipments without leaving the dashboard.",
     icon: Truck,
-    accent: "bg-emerald-600 text-white",
+    accent: "emerald",
   },
   {
     to: "/sites",
@@ -66,7 +83,7 @@ const TOOLS: Tool[] = [
     description:
       "Connect new WooCommerce stores or rotate the API keys on the ones you already run.",
     icon: Store,
-    accent: "bg-amber-500 text-white",
+    accent: "amber",
   },
   {
     to: "/admin/users",
@@ -74,7 +91,7 @@ const TOOLS: Tool[] = [
     caption: "Team access",
     description: "Manage who can sign in to Ultrax and what they can do.",
     icon: Users,
-    accent: "bg-sky-600 text-white",
+    accent: "sky",
     adminOnly: true,
   },
   {
@@ -83,7 +100,7 @@ const TOOLS: Tool[] = [
     caption: "Onboard teammates",
     description: "Send a one-time invite link so a new teammate can join.",
     icon: Settings,
-    accent: "bg-rose-600 text-white",
+    accent: "rose",
     adminOnly: true,
   },
 ];
@@ -105,19 +122,19 @@ function HomePage() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <section className="relative overflow-hidden rounded-3xl border bg-gradient-to-br from-violet-50 via-background to-sky-50 dark:from-violet-950/40 dark:via-background dark:to-sky-950/40 px-6 py-12 md:px-12 md:py-16">
-        <div className="grid md:grid-cols-[1.4fr_1fr] gap-8 items-center">
+      <section className="surface-hero relative overflow-hidden rounded-3xl border border-border/60 px-6 py-12 md:px-12 md:py-16">
+        <div className="grid md:grid-cols-[1.4fr_1fr] gap-10 items-center">
           <div className="space-y-6">
             <Badge
               variant="secondary"
-              className="rounded-full px-3 py-1 uppercase tracking-wider text-[10px] font-semibold"
+              className="rounded-full px-3 py-1 uppercase tracking-[0.18em] text-[10px] font-semibold bg-card border border-border/60"
             >
-              <Sparkles className="h-3 w-3" />
+              <Sparkles className="h-3 w-3 text-brand-violet" />
               {firstName ? `Welcome back, ${firstName}` : "Multi-store order ops"}
             </Badge>
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.05]">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight leading-[1.04]">
               One calm place for{" "}
-              <span className="text-violet-600 dark:text-violet-400">
+              <span className="bg-gradient-to-r from-brand-violet via-primary to-brand-sky bg-clip-text text-transparent">
                 multi-store
               </span>{" "}
               order operations.
@@ -129,7 +146,7 @@ function HomePage() {
                 <>
                   {" "}
                   Currently connected to{" "}
-                  <span className="font-medium text-foreground">
+                  <span className="font-semibold text-foreground">
                     {sites.length} {sites.length === 1 ? "store" : "stores"}
                   </span>
                   .
@@ -139,14 +156,14 @@ function HomePage() {
             <div className="flex flex-wrap gap-3">
               <Link
                 to="/orders"
-                className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-5 py-2.5 text-sm font-medium hover:opacity-90 transition"
+                className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-5 py-2.5 text-sm font-semibold hover:opacity-90 transition shadow-lg shadow-foreground/10"
               >
                 Open the picklist
                 <ArrowUpRight className="h-4 w-4" />
               </Link>
               <Link
                 to="/sites"
-                className="inline-flex items-center gap-2 rounded-full border bg-background px-5 py-2.5 text-sm font-medium hover:bg-accent transition"
+                className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-medium hover:bg-accent transition"
               >
                 Manage stores
               </Link>
@@ -157,28 +174,28 @@ function HomePage() {
           {featured && (
             <Link
               to={featured.to}
-              className="group relative block rounded-2xl bg-foreground text-background p-6 shadow-2xl shadow-violet-900/10 hover:scale-[1.01] transition-transform"
+              className={`group relative block rounded-3xl bg-foreground text-background p-6 hover:scale-[1.015] transition-transform ${ACCENT_GLOW[featured.accent]}`}
             >
               <div className="flex items-center gap-3">
                 <div
-                  className={`h-10 w-10 rounded-xl flex items-center justify-center ${featured.accent}`}
+                  className={`h-11 w-11 rounded-2xl flex items-center justify-center ${ACCENT_TILE[featured.accent]}`}
                 >
-                  <featured.icon className="h-5 w-5" />
+                  <featured.icon className="h-5 w-5" strokeWidth={2.25} />
                 </div>
                 <div>
-                  <div className="text-xs uppercase tracking-wider opacity-70">
-                    Current tool
+                  <div className="text-[10px] uppercase tracking-[0.2em] opacity-60">
+                    Featured tool
                   </div>
                   <div className="text-sm font-medium opacity-90">
                     {featured.caption}
                   </div>
                 </div>
               </div>
-              <div className="mt-8 flex items-end justify-between">
+              <div className="mt-10 flex items-end justify-between">
                 <div className="text-3xl md:text-4xl font-bold tracking-tight">
                   {featured.label}
                 </div>
-                <Package className="h-8 w-8 opacity-60 group-hover:opacity-100 transition-opacity" />
+                <ArrowUpRight className="h-7 w-7 opacity-50 group-hover:opacity-100 group-hover:-translate-y-1 group-hover:translate-x-1 transition-all" />
               </div>
             </Link>
           )}
@@ -189,8 +206,8 @@ function HomePage() {
       <section className="space-y-4">
         <div className="flex items-end justify-between">
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-semibold">
-              Tools
+            <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
+              Workspace
             </div>
             <h2 className="text-2xl font-bold tracking-tight mt-1">
               Jump straight in
@@ -208,18 +225,18 @@ function HomePage() {
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleTools.map((t) => (
             <Link key={t.to} to={t.to} className="group block">
-              <Card className="h-full border transition-all hover:border-foreground/20 hover:shadow-lg hover:-translate-y-0.5">
-                <CardContent className="p-6 space-y-4">
+              <Card className="h-full border border-border/60 transition-all hover:border-foreground/20 hover:shadow-xl hover:-translate-y-0.5">
+                <CardContent className="p-6 space-y-5">
                   <div className="flex items-start justify-between">
                     <div
-                      className={`h-11 w-11 rounded-xl flex items-center justify-center ${t.accent}`}
+                      className={`h-11 w-11 rounded-2xl flex items-center justify-center ${ACCENT_TILE[t.accent]}`}
                     >
-                      <t.icon className="h-5 w-5" />
+                      <t.icon className="h-5 w-5" strokeWidth={2.25} />
                     </div>
                     <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition" />
                   </div>
                   <div>
-                    <div className="text-xs uppercase tracking-wider text-muted-foreground font-semibold">
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground font-semibold">
                       {t.caption}
                     </div>
                     <div className="text-xl font-bold tracking-tight mt-1">
@@ -239,7 +256,7 @@ function HomePage() {
       {/* Connected stores strip */}
       {sites && sites.length > 0 && (
         <section className="space-y-3">
-          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-semibold">
+          <div className="text-[10px] uppercase tracking-[0.22em] text-muted-foreground font-semibold">
             Connected stores
           </div>
           <div className="flex flex-wrap gap-2">
@@ -247,7 +264,7 @@ function HomePage() {
               <Link
                 key={s.id}
                 to="/sites"
-                className="inline-flex items-center gap-2 rounded-full border bg-card px-3 py-1.5 text-sm hover:bg-accent transition"
+                className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1.5 text-sm hover:bg-accent transition"
               >
                 <Store className="h-3.5 w-3.5 text-muted-foreground" />
                 {s.name}

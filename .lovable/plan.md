@@ -1,68 +1,60 @@
 
-Goal: stop the 502 loop by aligning the server setup with how this app actually runs now: SSR on port 4173, API on port 3000, and a deployment script that only reports success when SSR is really healthy.
 
-Diagnosis
-- Your latest logs show the app is serving locally on `http://127.0.0.1:4173/` with HTTP 200 and full HTML.
-- That means the current app/runtime is not the thing returning 502.
-- The repeated `ERR_MODULE_NOT_FOUND dist/server/server.js` entries are old PM2 error history from earlier failed boots, not proof of the current request path failing.
-- The remaining failure is the web-server/proxy layer or deployment verification path, not the React app itself.
+## Fixes for orders workspace
 
-Implementation plan
-1. Unify the self-hosting architecture in code and docs
-- Treat the app as:
-  - SSR app on `127.0.0.1:4173`
-  - API on `127.0.0.1:3000`
-- Remove the outdated “static frontend in `public/client`” deployment guidance from `DEPLOY.md`.
-- Replace it with one canonical CloudPanel/nginx setup:
-  - `/api/*` -> `127.0.0.1:3000`
-  - all other traffic -> `127.0.0.1:4173`
+Five distinct issues, all in the orders flow. Brief and tightly scoped.
 
-2. Harden the SSR launcher so failures are explicit and cheap to detect
-- Update `scripts/ssr-server.mjs` to expose a dedicated lightweight health endpoint such as `/_health`.
-- Return a tiny `200 OK` response without invoking full app rendering.
-- Add a startup file-existence check for the server bundle before PM2 readiness is signaled, with a clear fatal error message if the bundle is missing.
+### 1. "Print unprinted" stuck in loading state
 
-3. Tighten deployment health checks and rollback behavior
-- Update `scripts/deploy.sh` to health-check `http://127.0.0.1:4173/_health` instead of `/`.
-- Only mark deployment successful when that endpoint returns 200.
-- Keep rollback logic, but make rollback health-check the same endpoint for consistency.
-- Ensure deploy logs clearly distinguish:
-  - build failure
-  - missing SSR bundle
-  - SSR boot failure
-  - reverse-proxy issue
+**Cause**: `printPdfBlob` only resolves when the user closes the print dialog (`afterprint`) or after a 10-minute safety timeout. Because `printUnprinted` awaits it before clearing `printingUnprinted`, the button spins until then.
 
-4. Align PM2 config with the hardened SSR flow
-- Keep PM2 using `scripts/ssr-server.mjs`.
-- Keep `wait_ready: true`.
-- Ensure readiness is only emitted after the HTTP server is listening and the bundle has been loaded successfully.
-- Add small operational hardening if needed (consistent env names, clearer process naming/logging).
+**Fix** (`src/routes/orders.tsx`):
+- Reset `setPrintingUnprinted(false)` immediately after `apiBlob` returns and the print dialog has been triggered — don't await `printPdfBlob`'s settle.
+- Run `markShipmentsPrinted` + `refreshShipments` + `loadOrders(true)` in parallel without holding the spinner.
+- Apply the same fix in `bulk-royal-mail-dialog.tsx` `printIds` (same bug pattern with `busy`).
 
-5. Fix the self-hosting guide so future edits do not re-break production
-- Rewrite `DEPLOY.md` so it no longer mixes old static hosting instructions with the newer SSR setup.
-- Document the exact nginx/CloudPanel reverse proxy needed for this project.
-- Document the one-time PM2 bootstrap command and the expected health checks.
+### 2. & 5. Printed orders not marked Completed in UI
 
-6. Verify end-to-end after implementation
-- Rebuild locally and confirm `/_health` returns 200.
-- Confirm `/` returns 200 locally.
-- After deploy, verify:
-  - `curl -I http://127.0.0.1:4173/_health`
-  - `curl -I http://127.0.0.1:4173/`
-  - `curl -I https://www.ultrax.work`
-- Check fresh PM2 logs after restart to confirm there are no new bundle-resolution errors.
+**Cause**: After `markShipmentsPrinted`, the server PUTs WooCommerce to `status: "completed"`, but `loadOrders(true)` re-fetches with the current `statuses` filter (default `["processing"]`). The completed order either drops out of view or shows stale `processing` from cache before refresh finishes.
 
-Expected outcome
-- App boots deterministically.
-- Deploy script can detect broken SSR before declaring success.
-- Rollbacks become reliable.
-- Future Lovable changes won’t trigger the same 502 confusion caused by outdated deployment assumptions.
+Additionally, individual WC `updateOrder` failures are only returned in `completionErrors` and silently warned about. We need surfaced visibility.
 
-Technical details
-- Files to update:
-  - `scripts/ssr-server.mjs`
-  - `scripts/deploy.sh`
-  - `DEPLOY.md`
-  - possibly `ecosystem.config.cjs` if readiness/logging needs a small adjustment
-- No app-route refactor is needed for the current 502 issue.
-- The key production correction is nginx/CloudPanel routing root traffic to port 4173, because the app is already proven healthy there.
+**Fix**:
+- After `markShipmentsPrinted` resolves, if `completionErrors.length > 0`, toast the first error message (not just a count) so the user knows which order failed and why.
+- In `loadOrders` after a print: temporarily union `["completed"]` into the fetch statuses so the just-completed orders re-appear with their new status. Implementation: pass an optional `extraStatuses` arg to `loadOrders`, called as `loadOrders(true, ["completed"])` from the print handlers. The user-facing status filter UI is unchanged.
+- The "Completed" badge already renders when `o.status === "completed"`, so the row will visibly flip once reloaded.
+
+### 3. "Europe" badge for EU orders
+
+**Cause**: `OrderRow` doesn't carry the recipient country.
+
+**Fix**:
+- `server/index.js` `/api/sites/:id/orders`: add `shipping_country: o.shipping?.country || o.billing?.country || ""` to the row mapper.
+- `src/lib/orders.ts`: add `shipping_country: string` to `OrderRow`. Add an `EU_COUNTRIES` set (27 ISO-2 codes) and `isEuropeOrder(o)` helper. Domestic GB excluded.
+- `src/routes/orders.tsx`: render an indigo "Europe" badge next to the Printed/Label-ready badges when `isEuropeOrder(o)` is true, with tooltip "Print this label outside Ultrax".
+
+### 4. Today's revenue must include Completed orders
+
+**Cause**: Stats are computed from `ordersBySite`, which only contains the statuses the user loaded (default processing).
+
+**Fix**:
+- Add a dedicated lightweight endpoint `GET /api/stats/today` in `server/index.js` that, for every site the user owns, fetches today's processing + completed orders (date-bounded, current day), returns `{ count, revenue_by_currency }`.
+- `src/routes/orders.tsx`: fetch this on mount and after every `loadOrders` / `markShipmentsPrinted` call. Convert each currency to GBP via existing `toGbp` and feed the "Today's orders" + "Today's revenue" stat cards from this dataset instead of the in-view rows.
+- "Backlog" and "Aging > 24h" stay sourced from the in-view processing rows (they're queue indicators, not historical totals).
+
+### Files touched
+
+- `server/index.js` — add `shipping_country` to orders mapper; add `/api/stats/today`; surface first completion error message.
+- `src/lib/orders.ts` — `shipping_country` field, EU helper.
+- `src/lib/api.ts` — type the new stats endpoint response.
+- `src/routes/orders.tsx` — fix spinner, EU badge, stats wiring, post-print reload includes completed.
+- `src/components/bulk-royal-mail-dialog.tsx` — same spinner fix in `printIds`.
+
+### Acceptance
+
+- Click "Print unprinted" → print dialog opens, button stops spinning within ~1s, table reloads showing those orders as Completed (green badge).
+- Bulk create + auto-print → same behaviour.
+- An order shipping to FR/DE/IT shows an indigo "Europe" badge.
+- Today's revenue card shows the sum of today's processing + completed orders even when the status filter is "processing only".
+- If WC fails to mark an order completed, the toast shows the actual error (not just a count).
+

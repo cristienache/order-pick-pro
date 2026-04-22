@@ -502,7 +502,8 @@ function PicklistPage() {
       const fail = r.results.reduce((s, x) => s + x.failed, 0);
       if (fail === 0) toast.success(`Marked ${ok} order(s) as completed`);
       else toast.warning(`Completed ${ok}, failed ${fail}`);
-      loadOrders(true);
+      loadOrders(true, ["completed"]);
+      refreshTodayStats();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bulk complete failed");
     } finally { setBulkBusy(false); }

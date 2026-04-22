@@ -21,7 +21,7 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Printer, Truck, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, type RmShipment } from "@/lib/api";
+import { api, apiBlob, RM_SERVICES, rmServicesForFormat, markShipmentsPrinted, type RmShipment } from "@/lib/api";
 import { printPdfBlob } from "@/lib/print-pdf";
 
 export type BulkSelection = { site_id: number; order_ids: number[] };
@@ -267,7 +267,7 @@ export function BulkRoyalMailDialog({
                   <SelectTrigger id="bulk-service"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                    {RM_SERVICES.map((s) => (
+                    {rmServicesForFormat(packageFormat).map((s) => (
                       <SelectItem key={s.code} value={s.code}>
                         {s.label} ({s.code})
                       </SelectItem>

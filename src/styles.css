@@ -5,17 +5,18 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
+ * Ultrax design system.
  *
- * The @theme inline block maps CSS custom properties to Tailwind utility
- * classes (e.g. --color-primary -> bg-primary, text-primary).
+ * Inspired by Linear / Salesforce Lightning / Shipstation:
+ *   - Deep indigo/violet primary as the signature brand colour.
+ *   - Soft, almost-white surface tones with a hint of cool.
+ *   - Vibrant accent palette (violet, emerald, amber, sky, rose) used
+ *     consistently for tool categories (Royal Mail = emerald,
+ *     Orders = violet, Sites = amber, Admin = sky/rose).
+ *   - Layered gradients + ring shadows to give depth without noise.
  *
- * The :root and .dark blocks define the actual color values using oklch.
- * All colors MUST use oklch format.
- *
- * To add a new semantic color:
- * 1. Add the variable to :root (light value) and .dark (dark value)
- * 2. Register it in @theme inline as --color-<name>: var(--<name>)
+ * Usage rule: never hard-code colours in components. Always reach for
+ * tokens (`bg-background`, `text-primary`, `bg-brand-violet/10` etc.).
  */
 
 @theme inline {
@@ -26,6 +27,7 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -59,77 +61,133 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Brand palette — used for tool categories and accent surfaces */
+  --color-brand-violet: var(--brand-violet);
+  --color-brand-violet-soft: var(--brand-violet-soft);
+  --color-brand-emerald: var(--brand-emerald);
+  --color-brand-emerald-soft: var(--brand-emerald-soft);
+  --color-brand-amber: var(--brand-amber);
+  --color-brand-amber-soft: var(--brand-amber-soft);
+  --color-brand-sky: var(--brand-sky);
+  --color-brand-sky-soft: var(--brand-sky-soft);
+  --color-brand-rose: var(--brand-rose);
+  --color-brand-rose-soft: var(--brand-rose-soft);
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
+  --radius: 0.75rem;
+
+  /* Cool, paper-like surfaces with the faintest indigo undertone. */
+  --background: oklch(0.99 0.005 270);
+  --foreground: oklch(0.18 0.04 270);
+
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
+  --card-foreground: oklch(0.18 0.04 270);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --popover-foreground: oklch(0.18 0.04 270);
+
+  /* Signature violet — strong but not neon. Foreground is near-white. */
+  --primary: oklch(0.5 0.22 285);
+  --primary-foreground: oklch(0.99 0.005 285);
+
+  --secondary: oklch(0.965 0.012 270);
+  --secondary-foreground: oklch(0.22 0.04 270);
+
+  --muted: oklch(0.965 0.012 270);
+  --muted-foreground: oklch(0.5 0.03 265);
+
+  --accent: oklch(0.94 0.03 285);
+  --accent-foreground: oklch(0.32 0.12 285);
+
+  --destructive: oklch(0.6 0.23 27);
+  --destructive-foreground: oklch(0.99 0.003 0);
+
+  --border: oklch(0.92 0.012 270);
+  --input: oklch(0.92 0.012 270);
+  --ring: oklch(0.62 0.18 285);
+
+  --chart-1: oklch(0.55 0.22 285);  /* violet */
+  --chart-2: oklch(0.62 0.17 162);  /* emerald */
+  --chart-3: oklch(0.72 0.16 75);   /* amber */
+  --chart-4: oklch(0.6 0.18 230);   /* sky */
+  --chart-5: oklch(0.62 0.22 18);   /* rose */
+
+  --sidebar: oklch(0.985 0.005 270);
+  --sidebar-foreground: oklch(0.18 0.04 270);
+  --sidebar-primary: oklch(0.5 0.22 285);
+  --sidebar-primary-foreground: oklch(0.99 0.005 285);
+  --sidebar-accent: oklch(0.94 0.03 285);
+  --sidebar-accent-foreground: oklch(0.32 0.12 285);
+  --sidebar-border: oklch(0.92 0.012 270);
+  --sidebar-ring: oklch(0.62 0.18 285);
+
+  /* Brand accent palette (light mode) */
+  --brand-violet: oklch(0.55 0.22 285);
+  --brand-violet-soft: oklch(0.96 0.04 285);
+  --brand-emerald: oklch(0.62 0.17 162);
+  --brand-emerald-soft: oklch(0.95 0.05 162);
+  --brand-amber: oklch(0.72 0.16 75);
+  --brand-amber-soft: oklch(0.96 0.05 80);
+  --brand-sky: oklch(0.62 0.16 230);
+  --brand-sky-soft: oklch(0.95 0.04 230);
+  --brand-rose: oklch(0.62 0.22 18);
+  --brand-rose-soft: oklch(0.96 0.04 18);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
+  --background: oklch(0.16 0.02 270);
+  --foreground: oklch(0.97 0.005 270);
+
+  --card: oklch(0.2 0.025 270);
+  --card-foreground: oklch(0.97 0.005 270);
+  --popover: oklch(0.2 0.025 270);
+  --popover-foreground: oklch(0.97 0.005 270);
+
+  --primary: oklch(0.7 0.2 285);
+  --primary-foreground: oklch(0.16 0.02 270);
+
+  --secondary: oklch(0.27 0.03 270);
+  --secondary-foreground: oklch(0.97 0.005 270);
+
+  --muted: oklch(0.25 0.025 270);
+  --muted-foreground: oklch(0.7 0.02 270);
+
+  --accent: oklch(0.32 0.06 285);
+  --accent-foreground: oklch(0.94 0.04 285);
+
+  --destructive: oklch(0.7 0.19 22);
+  --destructive-foreground: oklch(0.99 0.003 0);
+
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
+  --input: oklch(1 0 0 / 14%);
+  --ring: oklch(0.7 0.2 285);
+
+  --chart-1: oklch(0.7 0.2 285);
+  --chart-2: oklch(0.72 0.17 162);
+  --chart-3: oklch(0.78 0.16 75);
+  --chart-4: oklch(0.7 0.18 230);
+  --chart-5: oklch(0.7 0.22 18);
+
+  --sidebar: oklch(0.18 0.02 270);
+  --sidebar-foreground: oklch(0.97 0.005 270);
+  --sidebar-primary: oklch(0.7 0.2 285);
+  --sidebar-primary-foreground: oklch(0.16 0.02 270);
+  --sidebar-accent: oklch(0.32 0.06 285);
+  --sidebar-accent-foreground: oklch(0.94 0.04 285);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --sidebar-ring: oklch(0.7 0.2 285);
+
+  --brand-violet: oklch(0.7 0.2 285);
+  --brand-violet-soft: oklch(0.32 0.08 285);
+  --brand-emerald: oklch(0.72 0.17 162);
+  --brand-emerald-soft: oklch(0.32 0.08 162);
+  --brand-amber: oklch(0.78 0.16 75);
+  --brand-amber-soft: oklch(0.32 0.08 75);
+  --brand-sky: oklch(0.7 0.18 230);
+  --brand-sky-soft: oklch(0.3 0.08 230);
+  --brand-rose: oklch(0.7 0.22 18);
+  --brand-rose-soft: oklch(0.32 0.08 18);
 }
 
 @layer base {
@@ -140,5 +198,35 @@
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Subtle ambient gradient blobs for hero/page-header surfaces.
+     Use with .surface-hero on a `position: relative; overflow: hidden`
+     container.  Keeps the brand feel consistent across every page. */
+  .surface-hero {
+    position: relative;
+    overflow: hidden;
+    background:
+      radial-gradient(60% 80% at 0% 0%, color-mix(in oklab, var(--brand-violet) 18%, transparent) 0%, transparent 60%),
+      radial-gradient(50% 80% at 100% 0%, color-mix(in oklab, var(--brand-sky) 14%, transparent) 0%, transparent 60%),
+      linear-gradient(180deg, var(--card), var(--background));
+  }
+
+  .surface-glow {
+    background:
+      radial-gradient(120% 100% at 50% 0%, color-mix(in oklab, var(--primary) 9%, transparent) 0%, transparent 60%),
+      var(--card);
+  }
+
+  /* Pretty focus ring used by the navigation pills */
+  .focus-ring {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+  }
+  .focus-ring:focus-visible {
+    outline-color: color-mix(in oklab, var(--ring) 70%, transparent);
   }
 }

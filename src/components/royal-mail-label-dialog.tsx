@@ -25,7 +25,7 @@ import {
   Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, type RmShipment } from "@/lib/api";
+import { api, apiBlob, RM_SERVICES, rmServicesForFormat, markShipmentsPrinted, type RmShipment } from "@/lib/api";
 
 // Just enough of the WooCommerce order shape to prefill the recipient.
 type WCAddress = {
@@ -288,7 +288,7 @@ function LabelForm({
               <SelectTrigger id="service"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                {RM_SERVICES.map((s) => (
+                {rmServicesForFormat(packageFormat).map((s) => (
                   <SelectItem key={s.code} value={s.code}>
                     {s.label} ({s.code})
                   </SelectItem>

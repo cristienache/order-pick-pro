@@ -109,35 +109,51 @@ export type RmShipment = {
   manifested: boolean;
   manifest_id: string | null;
   voided: boolean;
+  /** ISO timestamp set the first time this label was sent to a printer. */
+  printed_at: string | null;
   created_at: string;
 };
 
-// Suggested Royal Mail Click & Drop service codes shown in the dialog as a
-// datalist. The valid codes for any given account depend on its contract
-// (OBA, OLP, Tracked Returns, etc.), so this is just a starter list — users
-// can type any code their Click & Drop account is enabled for.
-//   OBA contract  : CRL1 / CRL2 (1st / 2nd Class), TPN / TPM (Tracked 24 / 48),
-//                   TPLN / TPLM (Tracked 24 / 48 Signed)
-//   OLP / pay-as-you-go (more common for small senders):
-//     STL1 / STL2 — Standard 1st / 2nd Class
-//     TRM24 / TRM48 — Tracked 24 / 48
-//     SD1 / SD2 / SD5 — Special Delivery Guaranteed (£1k / £2.5k / £500)
-export const RM_SERVICES: Array<{
-  code: string; label: string; maxWeight: number;
-}> = [
-  // OLP (pay-as-you-go) — what most personal/small business accounts use
-  { code: "STL1",  label: "1st Class",                maxWeight: 20000 },
-  { code: "STL2",  label: "2nd Class",                maxWeight: 20000 },
-  { code: "TRM24", label: "Tracked 24",               maxWeight: 20000 },
-  { code: "TRM48", label: "Tracked 48",               maxWeight: 20000 },
-  { code: "SD1",   label: "Special Delivery (£1k)",   maxWeight: 20000 },
-  { code: "SD2",   label: "Special Delivery (£2.5k)", maxWeight: 20000 },
-  // OBA (contract account)
-  { code: "CRL1",  label: "1st Class (OBA)",          maxWeight: 20000 },
-  { code: "CRL2",  label: "2nd Class (OBA)",          maxWeight: 20000 },
-  { code: "TPN",   label: "Tracked 24 (OBA)",         maxWeight: 20000 },
-  { code: "TPM",   label: "Tracked 48 (OBA)",         maxWeight: 20000 },
-  { code: "TPLN",  label: "Tracked 24 Signed (OBA)",  maxWeight: 20000 },
-  { code: "TPLM",  label: "Tracked 48 Signed (OBA)",  maxWeight: 20000 },
+// Royal Mail Click & Drop services. `formats` restricts the dropdown so the
+// user can't pick e.g. a Letter service for a Parcel:
+//   Letter        -> STL1, STL2
+//   Large Letter  -> CRL24, CRL48
+//   Parcel        -> CRL24, CRL48
+export type RmFormat = "L" | "F" | "P";
+export type RmServiceDef = {
+  code: string; label: string; maxWeight: number; formats: RmFormat[];
+};
+export const RM_SERVICES: RmServiceDef[] = [
+  { code: "STL1",  label: "1st Class",                  maxWeight: 750,    formats: ["L"] },
+  { code: "STL2",  label: "2nd Class",                  maxWeight: 750,    formats: ["L"] },
+  { code: "CRL24", label: "Tracked 24",                 maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "CRL48", label: "Tracked 48",                 maxWeight: 20000,  formats: ["F", "P"] },
+  // Legacy / OBA / Special Delivery — kept for accounts already using them
+  { code: "TRM24", label: "Tracked 24 (legacy)",        maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "TRM48", label: "Tracked 48 (legacy)",        maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "SD1",   label: "Special Delivery (£1k)",     maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "SD2",   label: "Special Delivery (£2.5k)",   maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "CRL1",  label: "1st Class (OBA)",            maxWeight: 20000,  formats: ["L", "F", "P"] },
+  { code: "CRL2",  label: "2nd Class (OBA)",            maxWeight: 20000,  formats: ["L", "F", "P"] },
+  { code: "TPN",   label: "Tracked 24 (OBA)",           maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "TPM",   label: "Tracked 48 (OBA)",           maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "TPLN",  label: "Tracked 24 Signed (OBA)",    maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "TPLM",  label: "Tracked 48 Signed (OBA)",    maxWeight: 20000,  formats: ["F", "P"] },
 ];
+
+export function rmServicesForFormat(format: RmFormat): RmServiceDef[] {
+  return RM_SERVICES.filter((s) => s.formats.includes(format));
+}
+
+/** Tell the server these labels were just printed; auto-completes WC orders. */
+export async function markShipmentsPrinted(ids: number[]): Promise<{
+  printed: number; completed: number;
+  completionErrors?: { site_id?: number; order_id?: number; error: string }[];
+}> {
+  if (ids.length === 0) return { printed: 0, completed: 0 };
+  return api("/api/royal-mail/shipments/mark-printed", {
+    method: "POST",
+    body: { ids },
+  });
+}
 

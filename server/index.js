@@ -1007,6 +1007,7 @@ function rmShipmentToPublic(s) {
     manifested: Boolean(s.manifested),
     manifest_id: s.manifest_id,
     voided: Boolean(s.voided),
+    printed_at: s.printed_at || null,
     created_at: s.created_at,
   };
 }
@@ -1030,6 +1031,127 @@ app.get("/api/royal-mail/shipments/by-order/:siteId/:orderId", requireAuth, (req
     ORDER BY created_at DESC LIMIT 1
   `).get(req.user.id, siteId, orderId);
   res.json({ shipment: row ? rmShipmentToPublic(row) : null });
+});
+
+// Bulk lookup: shipments for many Woo orders at once. Powers the "Printed"
+// badge on the orders list — one round-trip instead of N. Body shape:
+//   { selections: [{ site_id, order_ids: [...] }] }
+// Response: { shipments: { [`${site_id}:${order_id}`]: RmShipment | null } }
+app.post("/api/royal-mail/shipments/by-orders", requireAuth, (req, res) => {
+  const Schema = z.object({
+    selections: z.array(z.object({
+      site_id: z.number().int().positive(),
+      order_ids: z.array(z.number().int().positive()).min(1).max(500),
+    })).min(1).max(20),
+  });
+  const parsed = Schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+
+  const out = {};
+  for (const sel of parsed.data.selections) {
+    if (sel.order_ids.length === 0) continue;
+    const placeholders = sel.order_ids.map(() => "?").join(",");
+    const rows = db.prepare(`
+      SELECT * FROM shipments
+      WHERE user_id = ? AND site_id = ? AND voided = 0
+        AND woocommerce_order_id IN (${placeholders})
+      ORDER BY created_at DESC
+    `).all(req.user.id, sel.site_id, ...sel.order_ids);
+    // Newest row wins per order.
+    const seen = new Set();
+    for (const r of rows) {
+      const key = `${sel.site_id}:${r.woocommerce_order_id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out[key] = rmShipmentToPublic(r);
+    }
+  }
+  res.json({ shipments: out });
+});
+
+// List unprinted (non-voided, has-label, printed_at IS NULL) shipments for
+// the current user. Used by the orders toolbar's "Print all unprinted" CTA.
+app.get("/api/royal-mail/shipments/unprinted", requireAuth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT * FROM shipments
+    WHERE user_id = ?
+      AND voided = 0
+      AND printed_at IS NULL
+      AND label_pdf_base64 IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT 500
+  `).all(req.user.id);
+  res.json({ shipments: rows.map(rmShipmentToPublic) });
+});
+
+// Mark a batch of shipments as printed. Side-effects:
+//   1. shipments.printed_at = now()
+//   2. The associated WooCommerce order is moved to "completed" (best-effort —
+//      individual failures are logged and reported back so the user can fix
+//      them, but never fail the whole batch).
+// Body: { ids: number[] }
+// Response: { printed: number, completed: number, completionErrors: [...] }
+app.post("/api/royal-mail/shipments/mark-printed", requireAuth, async (req, res) => {
+  const Schema = z.object({
+    ids: z.array(z.number().int().positive()).min(1).max(500),
+  });
+  const parsed = Schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+
+  const { ids } = parsed.data;
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT id, site_id, woocommerce_order_id FROM shipments
+     WHERE user_id = ? AND id IN (${placeholders})`
+  ).all(req.user.id, ...ids);
+
+  if (rows.length === 0) {
+    return res.status(404).json({ error: "No shipments found" });
+  }
+
+  const now = new Date().toISOString();
+  const update = db.prepare(
+    "UPDATE shipments SET printed_at = ? WHERE id = ? AND user_id = ?"
+  );
+  let printed = 0;
+  for (const r of rows) {
+    const result = update.run(now, r.id, req.user.id);
+    if (result.changes > 0) printed++;
+  }
+
+  // Best-effort: mark each WooCommerce order as completed. Group by site to
+  // avoid loading credentials more than once.
+  const bySite = new Map();
+  for (const r of rows) {
+    if (!r.site_id || !r.woocommerce_order_id) continue;
+    const arr = bySite.get(r.site_id) || [];
+    arr.push(r.woocommerce_order_id);
+    bySite.set(r.site_id, arr);
+  }
+
+  let completed = 0;
+  const completionErrors = [];
+  for (const [siteId, orderIds] of bySite.entries()) {
+    const site = loadSiteWithKeys(siteId, req.user.id);
+    if (!site) {
+      completionErrors.push({ site_id: siteId, order_ids: orderIds, error: "Site not found" });
+      continue;
+    }
+    for (const orderId of orderIds) {
+      try {
+        await updateOrder(site, orderId, { status: "completed" });
+        completed++;
+      } catch (e) {
+        completionErrors.push({
+          site_id: siteId,
+          order_id: orderId,
+          error: e.message || "Update failed",
+        });
+      }
+    }
+  }
+
+  res.json({ printed, completed, completionErrors });
 });
 
 // Stream a saved label PDF.

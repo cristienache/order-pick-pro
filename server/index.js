@@ -31,6 +31,15 @@ import {
   normalizeCndCreateResponse,
   normalizeRmApiKey,
 } from "./royalmail.js";
+import {
+  ebayConfig,
+  buildAuthorizeUrl,
+  exchangeCodeForTokens,
+  getAccessToken,
+  fetchEbayUserId,
+  fetchOrders as fetchEbayOrders,
+  normalizeEbayOrder,
+} from "./ebay.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
@@ -1674,6 +1683,233 @@ app.delete("/api/royal-mail/shipments/:id", requireAuth, async (req, res) => {
   res.json({ ok: true, ...(remoteWarning ? { remoteWarning } : {}) });
 });
 
+
+
+// ============================================================================
+// eBay (per-user OAuth 2.0)
+// ----------------------------------------------------------------------------
+// The app owner registers ONE production eBay developer app and provides:
+//   EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, EBAY_RUNAME
+// in env vars. End-users click "Connect eBay" on the integrations page; we
+// redirect them to eBay, exchange the authorization code for a refresh
+// token, and store it AES-GCM encrypted in `ebay_accounts.refresh_token_enc`.
+// Access tokens are minted lazily by server/ebay.js and cached on the row.
+// ============================================================================
+
+const ebayCreateAccountSchema = z.object({
+  // Display name shown in the integrations list and orders toggle.
+  name: z.string().trim().min(1).max(100),
+});
+const ebayUpdateAddressSchema = z.object({
+  return_name: optAddrField(100),
+  return_company: optAddrField(100),
+  return_line1: optAddrField(150),
+  return_line2: optAddrField(150),
+  return_city: optAddrField(80),
+  return_postcode: optAddrField(20),
+  return_country: optAddrField(60),
+});
+
+const EBAY_PUBLIC_COLS =
+  "id, name, ebay_user_id, scopes, created_at, " +
+  "return_name, return_company, return_line1, return_line2, " +
+  "return_city, return_postcode, return_country";
+
+// Public-safe view: NEVER returns the encrypted token blob.
+function ebayRowToPublic(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    ebay_user_id: row.ebay_user_id,
+    scopes: row.scopes,
+    created_at: row.created_at,
+    return_name: row.return_name,
+    return_company: row.return_company,
+    return_line1: row.return_line1,
+    return_line2: row.return_line2,
+    return_city: row.return_city,
+    return_postcode: row.return_postcode,
+    return_country: row.return_country,
+  };
+}
+
+// ----- Configuration check (used by the UI to enable/disable Connect btn) -----
+app.get("/api/ebay/config", requireAuth, (_req, res) => {
+  const cfg = ebayConfig();
+  res.json({ configured: cfg.configured });
+});
+
+// ----- List the user's connected eBay accounts -----
+app.get("/api/ebay/accounts", requireAuth, (req, res) => {
+  const rows = db.prepare(
+    `SELECT ${EBAY_PUBLIC_COLS} FROM ebay_accounts WHERE user_id = ? ORDER BY name ASC`,
+  ).all(req.user.id);
+  res.json({ accounts: rows });
+});
+
+// ----- Start OAuth: returns the eBay authorize URL the browser should open -----
+// We pre-create a placeholder ebay_oauth_states row keyed by a random `state`
+// token. eBay echoes that token back on the callback so we can match the
+// response to the requesting user and the chosen account display name.
+app.post("/api/ebay/oauth/authorize", requireAuth, (req, res) => {
+  const cfg = ebayConfig();
+  if (!cfg.configured) {
+    return res.status(503).json({
+      error: "eBay is not configured on the server. Ask an admin to set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and EBAY_RUNAME.",
+    });
+  }
+  const parsed = ebayCreateAccountSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const state = crypto.randomBytes(24).toString("hex");
+  const expiresAt = new Date(Date.now() + 15 * 60_000).toISOString();
+  db.prepare(`
+    INSERT INTO ebay_oauth_states (state, user_id, name, expires_at)
+    VALUES (?, ?, ?, ?)
+  `).run(state, req.user.id, parsed.data.name, expiresAt);
+
+  // Garbage-collect expired states so the table doesn't grow forever.
+  db.prepare("DELETE FROM ebay_oauth_states WHERE expires_at < datetime('now')").run();
+
+  try {
+    const url = buildAuthorizeUrl(state);
+    res.json({ url, state });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to build authorize URL" });
+  }
+});
+
+// ----- OAuth callback (eBay redirects the BROWSER here) -----
+// eBay's redirect URL is configured to the RuName, which resolves on their
+// end to whatever URL the developer entered ("Auth Accepted URL"). That URL
+// must point here. We exchange the code, save the refresh token, and bounce
+// the user back to /integrations with a result query param.
+//
+// NOTE: This route is intentionally NOT behind requireAuth — the user's
+// browser arrives here from eBay without our JWT in the header. Authorization
+// is enforced by validating the `state` token against ebay_oauth_states.
+app.get("/api/ebay/oauth/callback", async (req, res) => {
+  const code = typeof req.query.code === "string" ? req.query.code : "";
+  const state = typeof req.query.state === "string" ? req.query.state : "";
+  const errorParam = typeof req.query.error === "string" ? req.query.error : "";
+
+  // Helper: build a redirect back to /integrations with a status query.
+  const back = (params) => {
+    const qs = new URLSearchParams({ ebay: "callback", ...params }).toString();
+    return res.redirect(302, `/integrations?${qs}`);
+  };
+
+  if (errorParam) return back({ status: "declined", error: errorParam });
+  if (!code || !state) return back({ status: "error", error: "Missing code or state" });
+
+  const stateRow = db.prepare(
+    "SELECT * FROM ebay_oauth_states WHERE state = ?",
+  ).get(state);
+  if (!stateRow) return back({ status: "error", error: "Unknown OAuth state" });
+  if (new Date(stateRow.expires_at) < new Date()) {
+    db.prepare("DELETE FROM ebay_oauth_states WHERE state = ?").run(state);
+    return back({ status: "error", error: "OAuth state expired" });
+  }
+
+  try {
+    const tokens = await exchangeCodeForTokens(code);
+    const ebayUserId = await fetchEbayUserId(tokens.accessToken);
+    const now = Date.now();
+    const accessExp = new Date(now + tokens.accessTokenExpiresIn * 1000).toISOString();
+    const refreshExp = new Date(now + tokens.refreshTokenExpiresIn * 1000).toISOString();
+
+    db.prepare(`
+      INSERT INTO ebay_accounts (
+        user_id, name, ebay_user_id,
+        refresh_token_enc, refresh_token_expires_at,
+        access_token_enc, access_token_expires_at,
+        scopes
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      stateRow.user_id,
+      stateRow.name,
+      ebayUserId,
+      encrypt(tokens.refreshToken),
+      refreshExp,
+      encrypt(tokens.accessToken),
+      accessExp,
+      // Persist the scopes we asked for so the UI can show what's authorized.
+      "fulfillment.readonly fulfillment",
+    );
+
+    db.prepare("DELETE FROM ebay_oauth_states WHERE state = ?").run(state);
+    return back({ status: "connected", name: stateRow.name });
+  } catch (e) {
+    console.error("[ebay] OAuth callback failed:", e);
+    return back({ status: "error", error: e.message || "Token exchange failed" });
+  }
+});
+
+// ----- Update the return address used when shipping eBay orders -----
+app.patch("/api/ebay/accounts/:id/return-address", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const owned = db.prepare(
+    "SELECT id FROM ebay_accounts WHERE id = ? AND user_id = ?",
+  ).get(id, req.user.id);
+  if (!owned) return res.status(404).json({ error: "Not found" });
+
+  const parsed = ebayUpdateAddressSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  db.prepare(`
+    UPDATE ebay_accounts SET
+      return_name = ?, return_company = ?, return_line1 = ?, return_line2 = ?,
+      return_city = ?, return_postcode = ?, return_country = ?,
+      updated_at = datetime('now')
+    WHERE id = ? AND user_id = ?
+  `).run(
+    d.return_name, d.return_company, d.return_line1, d.return_line2,
+    d.return_city, d.return_postcode, d.return_country,
+    id, req.user.id,
+  );
+  const row = db.prepare(
+    `SELECT ${EBAY_PUBLIC_COLS} FROM ebay_accounts WHERE id = ?`,
+  ).get(id);
+  res.json({ account: row });
+});
+
+// ----- Delete a connected account (revokes our local copy of the token) -----
+app.delete("/api/ebay/accounts/:id", requireAuth, (req, res) => {
+  db.prepare("DELETE FROM ebay_accounts WHERE id = ? AND user_id = ?")
+    .run(Number(req.params.id), req.user.id);
+  res.json({ ok: true });
+});
+
+// ----- Fetch orders for one eBay account -----
+// Mirrors GET /api/sites/:id/orders so the frontend can use the same code
+// path. Same query params: ?statuses=... &after=... &before=...
+app.get("/api/ebay/accounts/:id/orders", requireAuth, async (req, res) => {
+  const id = Number(req.params.id);
+  const account = db.prepare(
+    "SELECT * FROM ebay_accounts WHERE id = ? AND user_id = ?",
+  ).get(id, req.user.id);
+  if (!account) return res.status(404).json({ error: "Not found" });
+
+  const requested = String(req.query.statuses || "processing")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  const statuses = requested.filter((s) => VALID_STATUSES.includes(s));
+  if (statuses.length === 0) statuses.push("processing");
+
+  const after = typeof req.query.after === "string" && req.query.after ? req.query.after : null;
+  const before = typeof req.query.before === "string" && req.query.before ? req.query.before : null;
+
+  try {
+    const accessToken = await getAccessToken(db, account);
+    const orders = await fetchEbayOrders(account, { statuses, after, before, accessToken });
+    res.json({ orders: orders.map(normalizeEbayOrder) });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "eBay error" });
+  }
+});
 
 
 // ---------- GitHub deploy webhook ----------

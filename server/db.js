@@ -157,3 +157,50 @@ db.exec(
   `CREATE INDEX IF NOT EXISTS idx_shipments_printed
    ON shipments(user_id, printed_at)`,
 );
+
+// ---- eBay accounts (per user, OAuth 2.0) ----
+// Each row is one connected eBay seller account. Tokens are encrypted at rest
+// with the same AES-256-GCM helper used for WooCommerce keys.
+//   - refresh_token_enc: long-lived (~18 months), used to mint access tokens.
+//   - access_token_enc + access_token_expires_at: short-lived (~2 hours),
+//     refreshed lazily by server/ebay.js whenever they're within 60s of expiry.
+//   - ebay_user_id: the seller's eBay username, captured during OAuth so the
+//     user can tell two connected accounts apart.
+//   - return_*: same shape as sites.return_* — used when generating shipping
+//     labels for an eBay order. Optional at save time.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ebay_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    ebay_user_id TEXT,
+    refresh_token_enc TEXT NOT NULL,
+    refresh_token_expires_at TEXT,
+    access_token_enc TEXT,
+    access_token_expires_at TEXT,
+    scopes TEXT,
+    return_name TEXT,
+    return_company TEXT,
+    return_line1 TEXT,
+    return_line2 TEXT,
+    return_city TEXT,
+    return_postcode TEXT,
+    return_country TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_ebay_accounts_user ON ebay_accounts(user_id);
+
+  -- Short-lived OAuth state tokens. The state value is signed into the
+  -- redirect URL when we send the user to eBay; eBay echoes it back on the
+  -- callback so we can prove the response is for *this* user's flow and pick
+  -- the right account name to save.
+  CREATE TABLE IF NOT EXISTS ebay_oauth_states (
+    state TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_ebay_states_user ON ebay_oauth_states(user_id);
+`);

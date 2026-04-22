@@ -84,6 +84,23 @@ export type Site = {
   return_postcode: string | null;
   return_country: string | null;
 };
+
+// One connected eBay seller account. Refresh tokens never leave the server;
+// the public view exposes only display metadata + the optional return address.
+export type EbayAccount = {
+  id: number;
+  name: string;
+  ebay_user_id: string | null;
+  scopes: string | null;
+  created_at: string;
+  return_name: string | null;
+  return_company: string | null;
+  return_line1: string | null;
+  return_line2: string | null;
+  return_city: string | null;
+  return_postcode: string | null;
+  return_country: string | null;
+};
 export type Invite = {
   id: number; email: string; role: string; used_at: string | null;
   expires_at: string; created_at: string; token: string;

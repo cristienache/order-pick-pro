@@ -169,6 +169,16 @@ export function BulkRoyalMailDialog({
         toast.warning(`Created ${res.succeeded}, failed ${res.failed}`);
       }
       onCreated?.();
+
+      // Auto-print: as soon as labels are created successfully, send the
+      // merged PDF to the browser's print dialog. The user can still re-print
+      // from the results screen if the dialog was dismissed.
+      const newPrintableIds = res.results
+        .filter((r) => r.ok && r.shipment?.has_label)
+        .map((r) => r.shipment!.id);
+      if (newPrintableIds.length > 0) {
+        await printIds(newPrintableIds);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Bulk label creation failed");
     } finally {
@@ -192,15 +202,15 @@ export function BulkRoyalMailDialog({
     ? existing.filter((r) => r.shipment && !r.shipment.has_label).length
     : 0;
 
-  const downloadMerged = async () => {
-    if (printableIds.length === 0) {
+  const printIds = async (ids: number[]) => {
+    if (ids.length === 0) {
       toast.error("No printable labels available");
       return;
     }
     setBusy(true);
     try {
       const blob = await apiBlob(
-        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${printableIds.join(",")}`,
+        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${ids.join(",")}`,
       );
       // Open the print dialog directly. printPdfBlob falls back to a
       // download if the browser blocks printing.
@@ -208,13 +218,15 @@ export function BulkRoyalMailDialog({
         blob,
         `rm-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
       );
-      toast.success(`Sent ${printableIds.length} label(s) to printer`);
+      toast.success(`Sent ${ids.length} label(s) to printer`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {
       setBusy(false);
     }
   };
+
+  const downloadMerged = () => printIds(printableIds);
 
   // ---------- Render ----------
   return (

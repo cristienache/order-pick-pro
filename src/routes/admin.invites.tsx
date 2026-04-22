@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type Invite } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,11 +11,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Plus, Trash2, Copy, Check } from "lucide-react";
+import { Loader2, Plus, Trash2, Copy, Check, Mail } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/invites")({
   component: () => <RequireAuth adminOnly><AppShell><InvitesPage /></AppShell></RequireAuth>,
+  head: () => ({
+    meta: [
+      { title: "Invitations | Ultrax" },
+      { name: "description", content: "Invite teammates to Ultrax." },
+    ],
+  }),
 });
 
 function InvitesPage() {
@@ -70,13 +77,18 @@ function InvitesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Invitations</h1>
-          <p className="text-muted-foreground text-sm">Invite users by generating a link they can use to set their password.</p>
-        </div>
-        <Button onClick={() => { setOpen(true); setCreatedLink(null); }}><Plus className="h-4 w-4" /> New invite</Button>
-      </div>
+      <PageHeader
+        icon={Mail}
+        accent="rose"
+        eyebrow="Onboarding"
+        title="Invitations"
+        description="Invite users by generating a link they can use to set their password."
+        actions={
+          <Button onClick={() => { setOpen(true); setCreatedLink(null); }}>
+            <Plus className="h-4 w-4" /> New invite
+          </Button>
+        }
+      />
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

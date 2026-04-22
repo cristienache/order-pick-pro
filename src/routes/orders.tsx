@@ -555,7 +555,7 @@ function PicklistPage() {
           <Store className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
           <CardTitle>No sites configured</CardTitle>
           <CardDescription className="mb-4">Add a WooCommerce site to start generating picklists.</CardDescription>
-          <Link to="/sites"><Button>Add your first site</Button></Link>
+          <Link to="/integrations"><Button>Add your first site</Button></Link>
         </CardHeader>
       </Card>
     );

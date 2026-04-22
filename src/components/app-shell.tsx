@@ -35,7 +35,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <nav className="flex items-center gap-0.5 text-sm">
               <NavLink to="/" icon={<Home className="h-4 w-4" />} exact>Home</NavLink>
               <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>Orders</NavLink>
-              <NavLink to="/sites" icon={<Store className="h-4 w-4" />}>Sites</NavLink>
+              <NavLink to="/integrations" icon={<Store className="h-4 w-4" />}>Integrations</NavLink>
               <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>Royal Mail</NavLink>
               {user?.role === "admin" && (
                 <>

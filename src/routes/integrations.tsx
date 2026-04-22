@@ -12,13 +12,18 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus, Trash2, Loader2, Store, MapPin, KeyRound } from "lucide-react";
 import { toast } from "sonner";
+import wooLogo from "@/assets/integrations/woocommerce.svg";
+import shopifyLogo from "@/assets/integrations/shopify.svg";
+import etsyLogo from "@/assets/integrations/etsy.svg";
+import magentoLogo from "@/assets/integrations/magento.svg";
+import ebayLogo from "@/assets/integrations/ebay.svg";
 
 export const Route = createFileRoute("/integrations")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,
   head: () => ({
     meta: [
-      { title: "My Sites | Ultrax" },
-      { name: "description", content: "Manage your connected WooCommerce stores and return addresses." },
+      { title: "Integrations | Ultrax" },
+      { name: "description", content: "Connect WooCommerce stores and other sales channels." },
     ],
   }),
 });
@@ -171,8 +176,8 @@ function SitesPage() {
         icon={Store}
         accent="amber"
         eyebrow="Connections"
-        title="My WooCommerce Sites"
-        description="Add stores and their REST API keys. Keys are encrypted at rest and never shown after saving."
+        title="Integrations"
+        description="Connect your sales channels. WooCommerce stores can be added today — more platforms coming soon."
         actions={
           <Dialog open={credsOpen} onOpenChange={setCredsOpen}>
             <DialogTrigger asChild>
@@ -315,8 +320,8 @@ function SitesPage() {
       ) : sites.length === 0 ? (
         <Card>
           <CardHeader className="text-center py-12">
-            <Store className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
-            <CardTitle>No sites yet</CardTitle>
+            <img src={wooLogo} alt="WooCommerce logo" className="h-10 w-10 mx-auto mb-2" />
+            <CardTitle>No WooCommerce sites yet</CardTitle>
             <CardDescription>Add your first WooCommerce store to start generating picklists.</CardDescription>
           </CardHeader>
         </Card>
@@ -330,6 +335,7 @@ function SitesPage() {
             return (
               <Card key={s.id}>
                 <CardContent className="p-4 flex items-start justify-between gap-3">
+                  <img src={wooLogo} alt="WooCommerce" className="h-8 w-8 mt-0.5 shrink-0" />
                   <div className="min-w-0 flex-1">
                     <div className="font-semibold truncate">{s.name}</div>
                     <div className="text-sm text-muted-foreground truncate">{s.store_url}</div>
@@ -374,6 +380,41 @@ function SitesPage() {
           })}
         </div>
       )}
+
+      {/* Other channels — visible so users know they're planned, but not yet
+          wired to a backend connector. Real brand SVGs are bundled locally. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Other channels</CardTitle>
+          <CardDescription>
+            We're building connectors for these platforms. Let us know which one you need next.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { name: "Shopify", logo: shopifyLogo },
+              { name: "Etsy", logo: etsyLogo },
+              { name: "Magento", logo: magentoLogo },
+              { name: "eBay", logo: ebayLogo },
+            ].map((c) => (
+              <div
+                key={c.name}
+                className="flex items-center gap-3 rounded-lg border border-dashed p-3 opacity-80"
+                title={`${c.name} integration coming soon`}
+              >
+                <img src={c.logo} alt={`${c.name} logo`} className="h-8 w-8 object-contain" />
+                <div className="min-w-0">
+                  <div className="font-medium text-sm truncate">{c.name}</div>
+                  <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                    Coming soon
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <AlertDialog open={deleteId !== null} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>

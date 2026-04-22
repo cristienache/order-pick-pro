@@ -433,3 +433,188 @@ function SitesPage() {
     </div>
   );
 }
+
+// ---------- eBay accounts (live OAuth) ----------
+// Lists the user's connected eBay seller accounts and offers a "Connect"
+// flow that redirects to eBay. The Connect button is disabled with an
+// explanatory tooltip when the server is missing EBAY_CLIENT_ID/SECRET/RUNAME.
+function EbaySection() {
+  const [accounts, setAccounts] = useState<EbayAccount[]>([]);
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectName, setConnectName] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [deleteId, setDeleteId] = useState<number | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [cfg, list] = await Promise.all([
+        api<{ configured: boolean }>("/api/ebay/config"),
+        api<{ accounts: EbayAccount[] }>("/api/ebay/accounts"),
+      ]);
+      setConfigured(cfg.configured);
+      setAccounts(list.accounts);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load eBay");
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  // Surface the OAuth callback result (the server redirects here with
+  // ?ebay=callback&status=connected|declined|error&...).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const qs = new URLSearchParams(window.location.search);
+    if (qs.get("ebay") !== "callback") return;
+    const status = qs.get("status");
+    if (status === "connected") {
+      toast.success(`Connected eBay account: ${qs.get("name") || ""}`);
+      load();
+    } else if (status === "declined") {
+      toast.warning("eBay connection was declined.");
+    } else {
+      toast.error(qs.get("error") || "eBay connection failed");
+    }
+    window.history.replaceState({}, "", "/integrations");
+  }, []);
+
+  const startConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!connectName.trim()) return;
+    setConnecting(true);
+    try {
+      const r = await api<{ url: string }>("/api/ebay/oauth/authorize", {
+        body: { name: connectName.trim() },
+      });
+      // Full-page redirect to eBay — they'll bounce the browser back to the
+      // server callback, which redirects here with the result.
+      window.location.href = r.url;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to start eBay OAuth");
+      setConnecting(false);
+    }
+  };
+
+  const remove = async () => {
+    if (deleteId == null) return;
+    try {
+      await api(`/api/ebay/accounts/${deleteId}`, { method: "DELETE" });
+      toast.success("eBay account removed");
+      setDeleteId(null);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to remove");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <img src={ebayLogo} alt="eBay" className="h-8 w-8" />
+            <div>
+              <CardTitle className="text-base">eBay</CardTitle>
+              <CardDescription>
+                Connect your eBay seller account to import orders alongside WooCommerce.
+              </CardDescription>
+            </div>
+          </div>
+          <Dialog open={connectOpen} onOpenChange={setConnectOpen}>
+            <DialogTrigger asChild>
+              <Button
+                size="sm"
+                disabled={configured === false}
+                title={configured === false
+                  ? "eBay isn't configured on the server yet. An admin needs to set EBAY_CLIENT_ID, EBAY_CLIENT_SECRET and EBAY_RUNAME."
+                  : "Connect a new eBay seller account"}
+              >
+                <Link2 className="h-4 w-4" /> Connect eBay
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Connect an eBay account</DialogTitle>
+                <DialogDescription>
+                  Give this connection a name (you'll see it in the orders toggle),
+                  then sign in to eBay to authorize Ultrax to read your orders.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={startConnect} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ebay_name">Display name</Label>
+                  <Input id="ebay_name" autoFocus required maxLength={100}
+                    value={connectName}
+                    onChange={(e) => setConnectName(e.target.value)}
+                    placeholder="Ultraskins eBay UK" />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setConnectOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={connecting || !connectName.trim()}>
+                    {connecting && <Loader2 className="h-4 w-4 animate-spin" />}
+                    Continue to eBay
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {configured === false && (
+          <div className="text-sm text-muted-foreground border border-dashed rounded-md p-3 mb-3">
+            eBay OAuth isn't configured on the server yet. Once the server has
+            <code className="mx-1">EBAY_CLIENT_ID</code>,
+            <code className="mx-1">EBAY_CLIENT_SECRET</code> and
+            <code className="mx-1">EBAY_RUNAME</code> set, the Connect button will activate.
+          </div>
+        )}
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+        ) : accounts.length === 0 ? (
+          <div className="text-sm text-muted-foreground">No eBay accounts connected yet.</div>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2">
+            {accounts.map((a) => (
+              <Card key={a.id}>
+                <CardContent className="p-4 flex items-start justify-between gap-3">
+                  <img src={ebayLogo} alt="eBay" className="h-8 w-8 mt-0.5 shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <div className="font-semibold truncate">{a.name}</div>
+                    <div className="text-sm text-muted-foreground truncate">
+                      {a.ebay_user_id ? `@${a.ebay_user_id}` : "eBay seller"}
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Connected {new Date(a.created_at).toLocaleDateString()}
+                    </div>
+                  </div>
+                  <Button size="icon" variant="ghost" onClick={() => setDeleteId(a.id)}
+                    title="Disconnect">
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+      </CardContent>
+
+      <AlertDialog open={deleteId !== null} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Disconnect this eBay account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Ultrax will stop fetching orders from this account. You can reconnect any time.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={remove}>Disconnect</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </Card>
+  );
+}

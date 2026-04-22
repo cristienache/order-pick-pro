@@ -345,6 +345,10 @@ function PicklistPage() {
       const q = search.trim().toLowerCase();
       const filtered = arr.filter((o) => {
         if (!withinDateRange(o, datePreset, customFrom, customTo)) return false;
+        if (showOnlyUnprinted) {
+          const sh = shipmentsByOrder[`${sid}:${o.id}`];
+          if (!sh || !sh.has_label || sh.printed_at || sh.voided) return false;
+        }
         if (!q) return true;
         return o.number.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q)
           || o.email.toLowerCase().includes(q);
@@ -356,7 +360,7 @@ function PicklistPage() {
       });
     }
     return out;
-  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo]);
+  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
 
   const toggleOne = (sid: number, oid: number, checked: boolean) => {
     setSelected((prev) => {

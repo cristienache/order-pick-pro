@@ -319,9 +319,9 @@ function PicklistPage() {
 
   useEffect(() => { refreshShipments(); }, [refreshShipments]);
 
-  const toggleSiteActive = (id: number) => {
-    setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  };
+  // Site toggling removed — all sites are always active. Orders from every
+  // site are merged into a single sortable table, with a "Store" column on
+  // each row to identify the source.
 
   // ---------- Unprinted helpers ----------
   const unprintedShipmentIds = useMemo(() => {

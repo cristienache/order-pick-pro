@@ -419,6 +419,21 @@ function PicklistPage() {
     return out;
   }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
 
+  // Flat, globally-sorted list of every visible order across all sites.
+  // Each entry carries its siteId so the unified table can render the
+  // "Store" column and selection bookkeeping still routes per-site.
+  const flatOrders = useMemo(() => {
+    const all: { sid: number; order: OrderRow }[] = [];
+    for (const sid of activeSites) {
+      for (const o of (filteredBySite[sid] || [])) all.push({ sid, order: o });
+    }
+    return all.sort((a, b) => {
+      const ta = new Date(a.order.date_created).getTime();
+      const tb = new Date(b.order.date_created).getTime();
+      return sortOrder === "recent" ? tb - ta : ta - tb;
+    });
+  }, [filteredBySite, activeSites, sortOrder]);
+
   const toggleOne = (sid: number, oid: number, checked: boolean) => {
     setSelected((prev) => {
       const next = new Set(prev[sid] || []);

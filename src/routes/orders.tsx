@@ -569,7 +569,13 @@ function PicklistPage() {
         eyebrow="Workspace"
         title="Orders"
         description="Pull orders from your sites and generate picking, packing or shipping labels."
-        actions={
+      />
+
+      {/* Primary action bar — kept directly above the Sites picker so the
+          most-used CTAs (Generate / Print unprinted / Load) are always within
+          easy reach without scrolling past the site list. */}
+      <Card>
+        <CardContent className="p-3">
           <div className="flex gap-2 items-center flex-wrap">
             <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
               <SelectTrigger className="w-[230px]" aria-label="Output format">
@@ -648,9 +654,8 @@ function PicklistPage() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
-        }
-      />
-
+        </CardContent>
+      </Card>
 
       {/* Daily stats */}
       {Object.keys(ordersBySite).length > 0 && (

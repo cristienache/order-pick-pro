@@ -229,10 +229,9 @@ function PicklistPage() {
       }));
       setOrdersBySite(results);
       setSelected(sel);
-      // seed lastSeen for new-order detection
-      const seen = new Set<number>();
-      Object.values(results).forEach((arr) => arr.forEach((o) => seen.add(o.id)));
-      lastSeenIdsRef.current = seen;
+      // seed lastSeen for new-order detection — union with any IDs the poll
+      // has already discovered, so we don't wipe poll-tracked IDs each refresh.
+      Object.values(results).forEach((arr) => arr.forEach((o) => lastSeenIdsRef.current.add(o.id)));
       if (!silent) {
         const total = Object.values(results).reduce((s, arr) => s + arr.length, 0);
         toast.success(`Loaded ${total} orders across ${activeSites.length} site(s)`);

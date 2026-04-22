@@ -839,6 +839,7 @@ function PicklistPage() {
         mode={rmBulkMode || "create"}
         selections={rmBulkSelections}
         onOpenChange={(o) => { if (!o) setRmBulkMode(null); }}
+        onCreated={() => loadOrders(true)}
       />
     </div>
   );

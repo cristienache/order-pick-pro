@@ -644,11 +644,11 @@ function PicklistPage() {
           <StatCard label="Aging > 24h" value={stats.aging}
             hint="needs attention"
             tone={stats.aging > 0 ? "warn" : "default"} />
-          <StatCard label="Today's orders" value={stats.todayCount}
-            hint="placed today" />
-          <StatCard label="Today's revenue" value={`£${stats.todayRevenueGbp.toFixed(2)}`}
-            hint={stats.unconvertedCount > 0
-              ? `GBP equivalent — ${stats.unconvertedCount} order(s) skipped (no rate)`
+          <StatCard label="Today's orders" value={todaySummary.count}
+            hint="processing + completed today" />
+          <StatCard label="Today's revenue" value={`£${todaySummary.revenueGbp.toFixed(2)}`}
+            hint={todaySummary.unconverted > 0
+              ? `GBP equivalent — ${todaySummary.unconverted} currency(ies) skipped (no rate)`
               : "GBP equivalent across currencies"} />
         </div>
       )}

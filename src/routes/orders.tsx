@@ -319,9 +319,9 @@ function PicklistPage() {
 
   useEffect(() => { refreshShipments(); }, [refreshShipments]);
 
-  const toggleSiteActive = (id: number) => {
-    setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
-  };
+  // Site toggling removed — all sites are always active. Orders from every
+  // site are merged into a single sortable table, with a "Store" column on
+  // each row to identify the source.
 
   // ---------- Unprinted helpers ----------
   const unprintedShipmentIds = useMemo(() => {
@@ -418,6 +418,21 @@ function PicklistPage() {
     }
     return out;
   }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
+
+  // Flat, globally-sorted list of every visible order across all sites.
+  // Each entry carries its siteId so the unified table can render the
+  // "Store" column and selection bookkeeping still routes per-site.
+  const flatOrders = useMemo(() => {
+    const all: { sid: number; order: OrderRow }[] = [];
+    for (const sid of activeSites) {
+      for (const o of (filteredBySite[sid] || [])) all.push({ sid, order: o });
+    }
+    return all.sort((a, b) => {
+      const ta = new Date(a.order.date_created).getTime();
+      const tb = new Date(b.order.date_created).getTime();
+      return sortOrder === "recent" ? tb - ta : ta - tb;
+    });
+  }, [filteredBySite, activeSites, sortOrder]);
 
   const toggleOne = (sid: number, oid: number, checked: boolean) => {
     setSelected((prev) => {
@@ -673,34 +688,6 @@ function PicklistPage() {
         </div>
       )}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle className="text-base">Sites</CardTitle>
-              <CardDescription>
-                Click a site to toggle it on or off. All sites are selected by default.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-wrap gap-2">
-            {sites.map((s) => {
-              const active = activeSites.includes(s.id);
-              return (
-                <button key={s.id} onClick={() => toggleSiteActive(s.id)}
-                  className={`px-3 py-2 rounded-md border text-sm transition-colors ${
-                    active ? "bg-primary text-primary-foreground border-primary" : "hover:bg-accent"
-                  }`}>
-                  {s.name}
-                </button>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
-
       {Object.keys(ordersBySite).length > 0 && (
         <>
           {/* Filters */}
@@ -881,17 +868,37 @@ function PicklistPage() {
             </CardContent>
           </Card>
 
-          {activeSites.map((sid) => {
-            const site = sites.find((s) => s.id === sid);
-            const orders = filteredBySite[sid] || [];
-            const sel = selected[sid] || new Set();
-            const allSelected = orders.length > 0 && orders.every((o) => sel.has(o.id));
+          {(() => {
+            // Single merged table: every visible order across every site,
+            // globally sorted, with a "Store" column to identify the source.
+            const allSelected =
+              flatOrders.length > 0 &&
+              flatOrders.every(({ sid, order }) => (selected[sid] || new Set()).has(order.id));
+            const toggleAllVisible = (checked: boolean) => {
+              setSelected((prev) => {
+                const next: Record<number, Set<number>> = { ...prev };
+                if (checked) {
+                  for (const { sid, order } of flatOrders) {
+                    const s = new Set(next[sid] || []);
+                    s.add(order.id);
+                    next[sid] = s;
+                  }
+                } else {
+                  for (const { sid, order } of flatOrders) {
+                    const s = new Set(next[sid] || []);
+                    s.delete(order.id);
+                    next[sid] = s;
+                  }
+                }
+                return next;
+              });
+            };
             return (
-              <Card key={sid}>
+              <Card>
                 <CardHeader className="py-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <Store className="h-4 w-4" /> {site?.name}
-                    <Badge variant="outline" className="ml-2">{orders.length} orders</Badge>
+                    <Package className="h-4 w-4" /> Orders
+                    <Badge variant="outline" className="ml-2">{flatOrders.length} orders</Badge>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-0">
@@ -899,24 +906,26 @@ function PicklistPage() {
                     <div className="flex items-center gap-3 px-4 py-2 bg-muted/40 text-xs font-medium text-muted-foreground uppercase tracking-wide">
                       <Checkbox
                         checked={allSelected}
-                        onCheckedChange={(v) => toggleAllInSite(sid, Boolean(v))}
+                        onCheckedChange={(v) => toggleAllVisible(Boolean(v))}
                         aria-label="Select all visible"
                       />
                       <div className="w-24">Order</div>
+                      <div className="w-32">Store</div>
                       <div className="flex-1">Customer</div>
                       <div className="flex-[1.4] min-w-0">Items</div>
                       <div className="w-16 text-right">Qty</div>
                       <div className="w-24 text-right">Total</div>
                       <div className="w-28 text-right">Date</div>
                     </div>
-                    {orders.length === 0 && (
+                    {flatOrders.length === 0 && (
                       <div className="p-6 text-center text-muted-foreground text-sm">No orders match the current filters.</div>
                     )}
-                    {orders.map((o) => {
-                      const isSel = sel.has(o.id);
+                    {flatOrders.map(({ sid, order: o }) => {
+                      const site = sites.find((s) => s.id === sid);
+                      const isSel = (selected[sid] || new Set()).has(o.id);
                       const aging = isAging(o);
                       return (
-                        <div key={o.id} role="button" tabIndex={0}
+                        <div key={`${sid}:${o.id}`} role="button" tabIndex={0}
                           onClick={() => openOrder(sid, o.id)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter" || e.key === " ") {
@@ -933,6 +942,12 @@ function PicklistPage() {
                           </div>
                           <div className="w-24 font-medium">
                             <span>#{o.number}</span>
+                          </div>
+                          <div className="w-32 min-w-0">
+                            <Badge variant="outline" className="gap-1 max-w-full">
+                              <Store className="h-3 w-3 shrink-0" />
+                              <span className="truncate">{site?.name || `Site ${sid}`}</span>
+                            </Badge>
                           </div>
                           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{o.customer || "\u2014"}</span>
@@ -1024,7 +1039,7 @@ function PicklistPage() {
                 </CardContent>
               </Card>
             );
-          })}
+          })()}
         </>
       )}
 

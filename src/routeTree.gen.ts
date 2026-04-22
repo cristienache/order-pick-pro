@@ -9,21 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SitesRouteImport } from './routes/sites'
 import { Route as RoyalMailRouteImport } from './routes/royal-mail'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminInvitesRouteImport } from './routes/admin.invites'
 
-const SitesRoute = SitesRouteImport.update({
-  id: '/sites',
-  path: '/sites',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const RoyalMailRoute = RoyalMailRouteImport.update({
   id: '/royal-mail',
   path: '/royal-mail',
@@ -37,6 +32,11 @@ const OrdersRoute = OrdersRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const IntegrationsRoute = IntegrationsRouteImport.update({
+  id: '/integrations',
+  path: '/integrations',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcceptInviteRoute = AcceptInviteRouteImport.update({
@@ -68,10 +68,10 @@ const AdminInvitesRoute = AdminInvitesRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
-  '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -79,10 +79,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
-  '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -91,10 +91,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
-  '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -104,10 +104,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invite'
+    | '/integrations'
     | '/login'
     | '/orders'
     | '/royal-mail'
-    | '/sites'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -115,10 +115,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/accept-invite'
+    | '/integrations'
     | '/login'
     | '/orders'
     | '/royal-mail'
-    | '/sites'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -126,10 +126,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/accept-invite'
+    | '/integrations'
     | '/login'
     | '/orders'
     | '/royal-mail'
-    | '/sites'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -138,10 +138,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
+  IntegrationsRoute: typeof IntegrationsRoute
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
   RoyalMailRoute: typeof RoyalMailRoute
-  SitesRoute: typeof SitesRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   ApiSplatRoute: typeof ApiSplatRoute
@@ -149,13 +149,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/sites': {
-      id: '/sites'
-      path: '/sites'
-      fullPath: '/sites'
-      preLoaderRoute: typeof SitesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/royal-mail': {
       id: '/royal-mail'
       path: '/royal-mail'
@@ -175,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/integrations': {
+      id: '/integrations'
+      path: '/integrations'
+      fullPath: '/integrations'
+      preLoaderRoute: typeof IntegrationsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accept-invite': {
@@ -218,10 +218,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
+  IntegrationsRoute: IntegrationsRoute,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
   RoyalMailRoute: RoyalMailRoute,
-  SitesRoute: SitesRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,
   ApiSplatRoute: ApiSplatRoute,

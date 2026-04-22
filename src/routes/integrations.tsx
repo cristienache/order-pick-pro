@@ -13,7 +13,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Plus, Trash2, Loader2, Store, MapPin, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/sites")({
+export const Route = createFileRoute("/integrations")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,
   head: () => ({
     meta: [

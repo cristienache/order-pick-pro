@@ -122,6 +122,12 @@ function PicklistPage() {
 
   // Auto-refresh + polling timestamps
   const lastSeenIdsRef = useRef<Set<number>>(new Set());
+  // Tracks whether the new-order poll has done its initial silent seed for the
+  // current activeSites set. Without this, the very first poll (or any poll
+  // after activeSites changes) treats every processing order returned by the
+  // server — including historical ones outside the user's date filter — as
+  // "new" and chimes for them on every cycle.
+  const pollSeededRef = useRef<string>("");
 
   // Order detail drawer state (siteId + orderId, both null = closed)
   const [drawerSiteId, setDrawerSiteId] = useState<number | null>(null);

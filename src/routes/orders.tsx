@@ -784,6 +784,18 @@ function PicklistPage() {
                   {notify ? "Notifications on" : "Notifications off"}
                 </Button>
 
+                {/* Quick filter — show only orders with an unprinted RM label */}
+                <Button
+                  variant={showOnlyUnprinted ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowOnlyUnprinted((v) => !v)}
+                  className="gap-1.5"
+                  title="Toggle: show only orders with a label that hasn't been printed"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Unprinted only ({unprintedShipmentIds.length})
+                </Button>
+
                 <div className="ml-auto flex gap-2">
                   <Badge variant="secondary">{totalSelected} selected</Badge>
                   <Badge variant="secondary">{totalItems} items</Badge>

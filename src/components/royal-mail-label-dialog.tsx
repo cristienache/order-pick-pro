@@ -470,6 +470,18 @@ function LabelViewer({
     catch { toast.error("Print failed — try Download PDF instead."); }
   };
 
+  // Auto-open the print dialog as soon as the label PDF has rendered in the
+  // iframe. Saves the user from clicking Print every time. The iframe's
+  // onLoad handler triggers this once the embedded viewer is ready.
+  const handleIframeLoaded = () => {
+    // Small delay so Chrome/Edge mounts the PDF plugin before we ask it to print.
+    setTimeout(() => {
+      const win = iframeRef.current?.contentWindow;
+      if (!win) return;
+      try { win.focus(); win.print(); } catch { /* user can still click Print */ }
+    }, 250);
+  };
+
   return (
     <div className="space-y-4 mt-2">
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -517,6 +529,7 @@ function LabelViewer({
             src={pdfUrl}
             title="Royal Mail label"
             className="w-full h-full"
+            onLoad={handleIframeLoaded}
           />
         ) : (
           <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-2">

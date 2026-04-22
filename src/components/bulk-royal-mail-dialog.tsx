@@ -22,6 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, Printer, Truck, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { api, apiBlob, RM_SERVICES, type RmShipment } from "@/lib/api";
+import { printPdfBlob } from "@/lib/print-pdf";
 
 export type BulkSelection = { site_id: number; order_ids: number[] };
 
@@ -201,18 +202,15 @@ export function BulkRoyalMailDialog({
       const blob = await apiBlob(
         `/api/royal-mail/shipments/bulk/labels.pdf?ids=${printableIds.join(",")}`,
       );
-      if (blob.type && blob.type !== "application/pdf") {
-        throw new Error("Server did not return a PDF");
-      }
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `rm-labels-${new Date().toISOString().slice(0, 10)}.pdf`;
-      document.body.appendChild(a); a.click(); a.remove();
-      URL.revokeObjectURL(url);
-      toast.success(`Downloaded ${printableIds.length} label(s)`);
+      // Open the print dialog directly. printPdfBlob falls back to a
+      // download if the browser blocks printing.
+      await printPdfBlob(
+        blob,
+        `rm-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+      toast.success(`Sent ${printableIds.length} label(s) to printer`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Download failed");
+      toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {
       setBusy(false);
     }
@@ -386,7 +384,7 @@ export function BulkRoyalMailDialog({
               {printableIds.length > 0 && (
                 <Button onClick={downloadMerged} disabled={busy}>
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                  Download {printableIds.length} label{printableIds.length === 1 ? "" : "s"} PDF
+                  Print {printableIds.length} label{printableIds.length === 1 ? "" : "s"}
                 </Button>
               )}
             </>
@@ -396,7 +394,7 @@ export function BulkRoyalMailDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>Close</Button>
               <Button onClick={downloadMerged} disabled={busy || loadingExisting || printableIds.length === 0}>
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
-                Download merged PDF
+                Print labels
               </Button>
             </>
           )}

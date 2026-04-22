@@ -177,7 +177,7 @@ cd ~/htdocs/www.ultrax.work
 git pull
 
 # Frontend
-npm install
+npm install --include=dev
 npm run build
 rm -rf public && mv dist public
 
@@ -224,7 +224,7 @@ pm2 list   # should show ultrax-api and ultrax-ssr
 tail -f ~/deploy.log
 ```
 
-The script does: `git fetch && reset --hard origin/main`, `npm install`,
+The script does: `git fetch && reset --hard origin/main`, `npm install --include=dev`,
 `npm run build`, swaps `dist` → `public`, reinstalls server deps only when
 `server/` changed in the push, and restarts both pm2 processes.
 

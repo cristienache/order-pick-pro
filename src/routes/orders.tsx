@@ -940,6 +940,14 @@ function PicklistPage() {
                                 {o.status.replace("-", " ")}
                               </Badge>
                             )}
+                            {isEuropeOrder(o) && (
+                              <Badge
+                                className="bg-indigo-600 text-white border-0 text-[10px] px-1.5 py-0"
+                                title="EU destination — print this label outside Ultrax"
+                              >
+                                Europe
+                              </Badge>
+                            )}
                             <PriorityBadges order={o} highValueThreshold={highValueThreshold} />
                           </div>
                           <div className="flex-[1.4] min-w-0 text-xs text-muted-foreground leading-tight">

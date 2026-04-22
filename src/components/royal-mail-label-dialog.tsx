@@ -463,10 +463,34 @@ function LabelViewer({
     };
   }, [shipment.id, shipment.has_label]);
 
+  // Track whether we've already marked this shipment printed in this session
+  // so we don't fire it for every print click. The first print is what
+  // matters for "label was printed" tracking.
+  const markedRef = useRef(false);
+  const markPrintedOnce = async () => {
+    if (markedRef.current) return;
+    markedRef.current = true;
+    try {
+      const r = await markShipmentsPrinted([shipment.id]);
+      if (r.completed > 0) {
+        toast.success("Order marked as completed in WooCommerce");
+      }
+      if (r.completionErrors && r.completionErrors.length > 0) {
+        toast.warning("Order auto-complete failed — check WooCommerce.");
+      }
+    } catch {
+      /* silent — print already happened */
+    }
+  };
+
   const printLabel = () => {
     const win = iframeRef.current?.contentWindow;
     if (!win) { toast.error("Label still loading"); return; }
-    try { win.focus(); win.print(); }
+    try {
+      win.focus();
+      win.print();
+      markPrintedOnce();
+    }
     catch { toast.error("Print failed — try Download PDF instead."); }
   };
 
@@ -478,7 +502,11 @@ function LabelViewer({
     setTimeout(() => {
       const win = iframeRef.current?.contentWindow;
       if (!win) return;
-      try { win.focus(); win.print(); } catch { /* user can still click Print */ }
+      try {
+        win.focus();
+        win.print();
+        markPrintedOnce();
+      } catch { /* user can still click Print */ }
     }, 250);
   };
 

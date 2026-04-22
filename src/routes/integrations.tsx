@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Loader2, Store, MapPin, KeyRound } from "lucide-react";
+import { Plus, Trash2, Loader2, Store, MapPin, KeyRound, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import wooLogo from "@/assets/integrations/woocommerce.svg";
 import shopifyLogo from "@/assets/integrations/shopify.svg";

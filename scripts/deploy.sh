@@ -81,8 +81,8 @@ if [ -d "$PROJECT_DIR/dist" ]; then
   mv "$PROJECT_DIR/dist" "$DIST_BACKUP_DIR"
 fi
 
-echo "--- npm install (frontend)"
-npm install --no-audit --no-fund
+echo "--- npm install (frontend build deps included)"
+npm install --include=dev --no-audit --no-fund
 
 echo "--- npm run build"
 if ! npm run build; then

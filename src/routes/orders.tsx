@@ -265,8 +265,77 @@ function PicklistPage() {
     return () => clearInterval(id);
   }, [activeSites, sites, notify, loadOrders]);
 
+  // Fetch existing Royal Mail shipments for the orders currently in view, so
+  // we can decorate rows with a "Printed" badge and filter to the unprinted
+  // set. Best-effort — silently no-ops if Royal Mail isn't configured or the
+  // call fails. Re-runs whenever the loaded order set changes.
+  const refreshShipments = useCallback(async () => {
+    const selections: BulkSelection[] = activeSites
+      .map((sid) => ({ site_id: sid, order_ids: (ordersBySite[sid] || []).map((o) => o.id) }))
+      .filter((s) => s.order_ids.length > 0);
+    if (selections.length === 0) {
+      setShipmentsByOrder({});
+      return;
+    }
+    try {
+      const r = await api<{ shipments: Record<string, RmShipment> }>(
+        "/api/royal-mail/shipments/by-orders",
+        { body: { selections } },
+      );
+      setShipmentsByOrder(r.shipments || {});
+    } catch {
+      /* silent — RM not configured or transient failure */
+    }
+  }, [activeSites, ordersBySite]);
+
+  useEffect(() => { refreshShipments(); }, [refreshShipments]);
+
   const toggleSiteActive = (id: number) => {
     setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  };
+
+  // ---------- Unprinted helpers ----------
+  const unprintedShipmentIds = useMemo(() => {
+    const ids: number[] = [];
+    for (const sid of activeSites) {
+      for (const o of (ordersBySite[sid] || [])) {
+        const sh = shipmentsByOrder[`${sid}:${o.id}`];
+        if (sh && sh.has_label && !sh.printed_at && !sh.voided) ids.push(sh.id);
+      }
+    }
+    return ids;
+  }, [activeSites, ordersBySite, shipmentsByOrder]);
+
+  const printUnprinted = async () => {
+    if (unprintedShipmentIds.length === 0) {
+      toast.info("Nothing to print — every label in view is already printed.");
+      return;
+    }
+    setPrintingUnprinted(true);
+    try {
+      const blob = await apiBlob(
+        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${unprintedShipmentIds.join(",")}`,
+      );
+      await printPdfBlob(
+        blob,
+        `rm-unprinted-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+      toast.success(`Sent ${unprintedShipmentIds.length} label(s) to printer`);
+      try {
+        const r = await markShipmentsPrinted(unprintedShipmentIds);
+        if (r.completed > 0) {
+          toast.success(`Marked ${r.completed} order(s) as completed`);
+        }
+        await refreshShipments();
+        loadOrders(true);
+      } catch {
+        /* silent */
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Print failed");
+    } finally {
+      setPrintingUnprinted(false);
+    }
   };
 
   const filteredBySite = useMemo(() => {

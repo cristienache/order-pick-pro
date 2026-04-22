@@ -1,8 +1,14 @@
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const DB_PATH = process.env.DB_PATH || "./data/ultrax.db";
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const dbPathSetting = process.env.DB_PATH || "./data/ultrax.db";
+const DB_PATH = isAbsolute(dbPathSetting)
+  ? dbPathSetting
+  : resolve(__dirname, dbPathSetting);
 mkdirSync(dirname(DB_PATH), { recursive: true });
 
 export const db = new Database(DB_PATH);

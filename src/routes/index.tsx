@@ -6,6 +6,7 @@ import {
   withinDateRange, type DatePreset, type Format, type OrderRow,
 } from "@/lib/orders";
 import { playChime } from "@/lib/chime";
+import { printPdfBlob } from "@/lib/print-pdf";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PriorityBadges } from "@/components/priority-badges";

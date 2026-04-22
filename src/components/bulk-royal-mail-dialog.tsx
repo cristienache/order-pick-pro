@@ -219,6 +219,24 @@ export function BulkRoyalMailDialog({
         `rm-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
       );
       toast.success(`Sent ${ids.length} label(s) to printer`);
+      // Mark printed server-side: stamps printed_at + auto-completes the
+      // matching WooCommerce orders. Best-effort; don't block on failures.
+      try {
+        const r = await markShipmentsPrinted(ids);
+        if (r.completed > 0) {
+          toast.success(
+            `Marked ${r.completed} order${r.completed === 1 ? "" : "s"} as completed in WooCommerce`,
+          );
+        }
+        if (r.completionErrors && r.completionErrors.length > 0) {
+          toast.warning(
+            `${r.completionErrors.length} order(s) couldn't be auto-completed — check WooCommerce.`,
+          );
+        }
+        onCreated?.();
+      } catch {
+        /* silent — print already succeeded */
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Print failed");
     } finally {

@@ -14,6 +14,7 @@ import { Route as RoyalMailRouteImport } from './routes/royal-mail'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminInvitesRouteImport } from './routes/admin.invites'
 
@@ -42,6 +43,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiSplatRoute = ApiSplatRouteImport.update({
+  id: '/api/$',
+  path: '/api/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
@@ -61,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/$': typeof ApiSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +77,7 @@ export interface FileRoutesByTo {
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/$': typeof ApiSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +88,7 @@ export interface FileRoutesById {
   '/sites': typeof SitesRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
+  '/api/$': typeof ApiSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +100,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/admin/invites'
     | '/admin/users'
+    | '/api/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/admin/invites'
     | '/admin/users'
+    | '/api/$'
   id:
     | '__root__'
     | '/'
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/sites'
     | '/admin/invites'
     | '/admin/users'
+    | '/api/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +131,7 @@ export interface RootRouteChildren {
   SitesRoute: typeof SitesRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
+  ApiSplatRoute: typeof ApiSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -158,6 +171,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/$': {
+      id: '/api/$'
+      path: '/api/$'
+      fullPath: '/api/$'
+      preLoaderRoute: typeof ApiSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/admin/users'
@@ -183,6 +203,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitesRoute: SitesRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,
+  ApiSplatRoute: ApiSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -111,6 +111,15 @@ function PicklistPage() {
   const [rmBulkMode, setRmBulkMode] = useState<"create" | "print" | null>(null);
   const [rmBulkSelections, setRmBulkSelections] = useState<BulkSelection[]>([]);
 
+  // Map of `${siteId}:${orderId}` -> existing shipment, used to render the
+  // "Printed" / "Label" badges in the row and power the unprinted filter.
+  const [shipmentsByOrder, setShipmentsByOrder] = useState<Record<string, RmShipment>>({});
+  // When true, the table only shows orders that have a shipping label which
+  // hasn't been printed yet. Pairs with the toolbar "Print unprinted" button.
+  const [showOnlyUnprinted, setShowOnlyUnprinted] = useState(false);
+  // Busy state for the toolbar "Print unprinted labels" CTA.
+  const [printingUnprinted, setPrintingUnprinted] = useState(false);
+
   // Auto-refresh + polling timestamps
   const lastSeenIdsRef = useRef<Set<number>>(new Set());
 

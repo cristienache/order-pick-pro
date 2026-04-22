@@ -1,7 +1,7 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { LogOut, Package, Settings, Users, Store, Truck } from "lucide-react";
+import { LogOut, Package, Settings, Users, Store, Truck, Home } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -22,7 +22,8 @@ export function AppShell({ children }: { children: ReactNode }) {
               <Package className="h-5 w-5" /> Ultrax
             </Link>
             <nav className="flex items-center gap-1 text-sm">
-              <NavLink to="/" icon={<Package className="h-4 w-4" />}>Picklist</NavLink>
+              <NavLink to="/" icon={<Home className="h-4 w-4" />} exact>Home</NavLink>
+              <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>Orders</NavLink>
               <NavLink to="/sites" icon={<Store className="h-4 w-4" />}>My Sites</NavLink>
               <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>Royal Mail</NavLink>
               {user?.role === "admin" && (
@@ -51,10 +52,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavLink({ to, icon, children }: { to: string; icon: ReactNode; children: ReactNode }) {
+function NavLink({
+  to, icon, children, exact = false,
+}: { to: string; icon: ReactNode; children: ReactNode; exact?: boolean }) {
   return (
     <Link
       to={to}
+      activeOptions={{ exact }}
       className="px-3 py-1.5 rounded-md hover:bg-accent flex items-center gap-1.5 text-foreground/80"
       activeProps={{ className: "px-3 py-1.5 rounded-md bg-accent flex items-center gap-1.5 text-foreground font-medium" }}
     >

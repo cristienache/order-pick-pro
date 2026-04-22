@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, apiBlob, type Site } from "@/lib/api";
+import { api, apiBlob, markShipmentsPrinted, type RmShipment, type Site } from "@/lib/api";
 import {
   ALL_STATUSES, isAging, isExpedited, isHighValue, isRepeat,
   withinDateRange, type DatePreset, type Format, type OrderRow,
@@ -9,6 +9,7 @@ import { playChime } from "@/lib/chime";
 import { printPdfBlob } from "@/lib/print-pdf";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { PriorityBadges } from "@/components/priority-badges";
 import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { OrderDetailDrawer } from "@/components/order-detail-drawer";
@@ -109,6 +110,15 @@ function PicklistPage() {
   // snapshotted on open so a click on the dropdown freezes the working set.
   const [rmBulkMode, setRmBulkMode] = useState<"create" | "print" | null>(null);
   const [rmBulkSelections, setRmBulkSelections] = useState<BulkSelection[]>([]);
+
+  // Map of `${siteId}:${orderId}` -> existing shipment, used to render the
+  // "Printed" / "Label" badges in the row and power the unprinted filter.
+  const [shipmentsByOrder, setShipmentsByOrder] = useState<Record<string, RmShipment>>({});
+  // When true, the table only shows orders that have a shipping label which
+  // hasn't been printed yet. Pairs with the toolbar "Print unprinted" button.
+  const [showOnlyUnprinted, setShowOnlyUnprinted] = useState(false);
+  // Busy state for the toolbar "Print unprinted labels" CTA.
+  const [printingUnprinted, setPrintingUnprinted] = useState(false);
 
   // Auto-refresh + polling timestamps
   const lastSeenIdsRef = useRef<Set<number>>(new Set());
@@ -255,8 +265,77 @@ function PicklistPage() {
     return () => clearInterval(id);
   }, [activeSites, sites, notify, loadOrders]);
 
+  // Fetch existing Royal Mail shipments for the orders currently in view, so
+  // we can decorate rows with a "Printed" badge and filter to the unprinted
+  // set. Best-effort — silently no-ops if Royal Mail isn't configured or the
+  // call fails. Re-runs whenever the loaded order set changes.
+  const refreshShipments = useCallback(async () => {
+    const selections: BulkSelection[] = activeSites
+      .map((sid) => ({ site_id: sid, order_ids: (ordersBySite[sid] || []).map((o) => o.id) }))
+      .filter((s) => s.order_ids.length > 0);
+    if (selections.length === 0) {
+      setShipmentsByOrder({});
+      return;
+    }
+    try {
+      const r = await api<{ shipments: Record<string, RmShipment> }>(
+        "/api/royal-mail/shipments/by-orders",
+        { body: { selections } },
+      );
+      setShipmentsByOrder(r.shipments || {});
+    } catch {
+      /* silent — RM not configured or transient failure */
+    }
+  }, [activeSites, ordersBySite]);
+
+  useEffect(() => { refreshShipments(); }, [refreshShipments]);
+
   const toggleSiteActive = (id: number) => {
     setActiveSites((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
+  };
+
+  // ---------- Unprinted helpers ----------
+  const unprintedShipmentIds = useMemo(() => {
+    const ids: number[] = [];
+    for (const sid of activeSites) {
+      for (const o of (ordersBySite[sid] || [])) {
+        const sh = shipmentsByOrder[`${sid}:${o.id}`];
+        if (sh && sh.has_label && !sh.printed_at && !sh.voided) ids.push(sh.id);
+      }
+    }
+    return ids;
+  }, [activeSites, ordersBySite, shipmentsByOrder]);
+
+  const printUnprinted = async () => {
+    if (unprintedShipmentIds.length === 0) {
+      toast.info("Nothing to print — every label in view is already printed.");
+      return;
+    }
+    setPrintingUnprinted(true);
+    try {
+      const blob = await apiBlob(
+        `/api/royal-mail/shipments/bulk/labels.pdf?ids=${unprintedShipmentIds.join(",")}`,
+      );
+      await printPdfBlob(
+        blob,
+        `rm-unprinted-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+      toast.success(`Sent ${unprintedShipmentIds.length} label(s) to printer`);
+      try {
+        const r = await markShipmentsPrinted(unprintedShipmentIds);
+        if (r.completed > 0) {
+          toast.success(`Marked ${r.completed} order(s) as completed`);
+        }
+        await refreshShipments();
+        loadOrders(true);
+      } catch {
+        /* silent */
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Print failed");
+    } finally {
+      setPrintingUnprinted(false);
+    }
   };
 
   const filteredBySite = useMemo(() => {
@@ -266,6 +345,10 @@ function PicklistPage() {
       const q = search.trim().toLowerCase();
       const filtered = arr.filter((o) => {
         if (!withinDateRange(o, datePreset, customFrom, customTo)) return false;
+        if (showOnlyUnprinted) {
+          const sh = shipmentsByOrder[`${sid}:${o.id}`];
+          if (!sh || !sh.has_label || sh.printed_at || sh.voided) return false;
+        }
         if (!q) return true;
         return o.number.toLowerCase().includes(q) || o.customer.toLowerCase().includes(q)
           || o.email.toLowerCase().includes(q);
@@ -277,7 +360,7 @@ function PicklistPage() {
       });
     }
     return out;
-  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo]);
+  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
 
   const toggleOne = (sid: number, oid: number, checked: boolean) => {
     setSelected((prev) => {
@@ -419,82 +502,94 @@ function PicklistPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Package className="h-6 w-6" /> Picklist
-          </h1>
-          <p className="text-muted-foreground text-sm mt-1">
-            Pull orders from your sites and generate picking or packing slips.
-          </p>
-        </div>
-        <div className="flex gap-2 items-center flex-wrap">
-          <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
-            <SelectTrigger className="w-[230px]" aria-label="Output format">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {FORMATS.map((f) => (
-                <SelectItem key={f.value} value={f.value}>
-                  <div className="flex flex-col">
-                    <span>{f.label}</span>
-                    <span className="text-xs text-muted-foreground">{f.hint}</span>
-                  </div>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button onClick={() => loadOrders(false)} disabled={loadingOrders || activeSites.length === 0}
-            variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
-            {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {Object.keys(ordersBySite).length ? "Reload" : "Load orders"}
-          </Button>
-          <Button onClick={generate} disabled={generating || totalSelected === 0}>
-            {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Generate ({totalSelected})
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Bulk actions" disabled={totalSelected === 0}>
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Bulk actions ({totalSelected})</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={bulkComplete} disabled={bulkBusy}>
-                <CheckCircle2 className="h-4 w-4" /> Mark as completed
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setNoteDialogOpen(true)} disabled={bulkBusy}>
-                <MessageSquarePlus className="h-4 w-4" /> Add note to orders
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() => {
-                  const sels = buildSelections();
-                  if (sels.length === 0) return;
-                  setRmBulkSelections(sels);
-                  setRmBulkMode("create");
-                }}
-                disabled={bulkBusy}
-              >
-                <Truck className="h-4 w-4" /> Create Royal Mail labels
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => {
-                  const sels = buildSelections();
-                  if (sels.length === 0) return;
-                  setRmBulkSelections(sels);
-                  setRmBulkMode("print");
-                }}
-                disabled={bulkBusy}
-              >
-                <Printer className="h-4 w-4" /> Print Royal Mail labels
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+      <PageHeader
+        icon={Package}
+        accent="violet"
+        eyebrow="Workspace"
+        title="Orders"
+        description="Pull orders from your sites and generate picking, packing or shipping labels."
+        actions={
+          <div className="flex gap-2 items-center flex-wrap">
+            <Select value={format} onValueChange={(v) => setFormat(v as Format)}>
+              <SelectTrigger className="w-[230px]" aria-label="Output format">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {FORMATS.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>
+                    <div className="flex flex-col">
+                      <span>{f.label}</span>
+                      <span className="text-xs text-muted-foreground">{f.hint}</span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button onClick={() => loadOrders(false)} disabled={loadingOrders || activeSites.length === 0}
+              variant={Object.keys(ordersBySite).length ? "outline" : "default"}>
+              {loadingOrders ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {Object.keys(ordersBySite).length ? "Reload" : "Load orders"}
+            </Button>
+            <Button onClick={generate} disabled={generating || totalSelected === 0}>
+              {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              Generate ({totalSelected})
+            </Button>
+            {/* Dedicated Print-unprinted CTA: scans every loaded order, picks
+                the labels that haven't been printed, prints + auto-completes. */}
+            <Button
+              variant="secondary"
+              onClick={printUnprinted}
+              disabled={printingUnprinted || unprintedShipmentIds.length === 0}
+              title="Print every label in view that hasn't been printed yet"
+              className="bg-brand-emerald text-white hover:bg-brand-emerald/90 disabled:bg-brand-emerald/40"
+            >
+              {printingUnprinted ? <Loader2 className="h-4 w-4 animate-spin" /> : <Printer className="h-4 w-4" />}
+              Print unprinted ({unprintedShipmentIds.length})
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="icon" aria-label="Bulk actions" disabled={totalSelected === 0}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Bulk actions ({totalSelected})</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={bulkComplete} disabled={bulkBusy}>
+                  <CheckCircle2 className="h-4 w-4" /> Mark as completed
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setNoteDialogOpen(true)} disabled={bulkBusy}>
+                  <MessageSquarePlus className="h-4 w-4" /> Add note to orders
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => {
+                    const sels = buildSelections();
+                    if (sels.length === 0) return;
+                    setRmBulkSelections(sels);
+                    setRmBulkMode("create");
+                  }}
+                  disabled={bulkBusy}
+                >
+                  <Truck className="h-4 w-4" /> Create Royal Mail labels
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => {
+                    const sels = buildSelections();
+                    if (sels.length === 0) return;
+                    setRmBulkSelections(sels);
+                    setRmBulkMode("print");
+                  }}
+                  disabled={bulkBusy}
+                >
+                  <Printer className="h-4 w-4" /> Print Royal Mail labels
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        }
+      />
+
 
       {/* Daily stats */}
       {Object.keys(ordersBySite).length > 0 && (
@@ -689,6 +784,18 @@ function PicklistPage() {
                   {notify ? "Notifications on" : "Notifications off"}
                 </Button>
 
+                {/* Quick filter — show only orders with an unprinted RM label */}
+                <Button
+                  variant={showOnlyUnprinted ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setShowOnlyUnprinted((v) => !v)}
+                  className="gap-1.5"
+                  title="Toggle: show only orders with a label that hasn't been printed"
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Unprinted only ({unprintedShipmentIds.length})
+                </Button>
+
                 <div className="ml-auto flex gap-2">
                   <Badge variant="secondary">{totalSelected} selected</Badge>
                   <Badge variant="secondary">{totalItems} items</Badge>
@@ -752,8 +859,33 @@ function PicklistPage() {
                           </div>
                           <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
                             <span className="truncate">{o.customer || "\u2014"}</span>
+                            {(() => {
+                              const sh = shipmentsByOrder[`${sid}:${o.id}`];
+                              if (sh && sh.printed_at) {
+                                return (
+                                  <Badge
+                                    className="bg-brand-emerald text-white border-0 text-[10px] px-1.5 py-0 gap-1"
+                                    title={`Printed ${new Date(sh.printed_at).toLocaleString()}`}
+                                  >
+                                    <Printer className="h-2.5 w-2.5" /> Printed
+                                  </Badge>
+                                );
+                              }
+                              if (sh && sh.has_label && !sh.voided) {
+                                return (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] px-1.5 py-0 gap-1 border-brand-amber/50 text-brand-amber"
+                                    title="Label generated but not yet printed"
+                                  >
+                                    <Truck className="h-2.5 w-2.5" /> Label ready
+                                  </Badge>
+                                );
+                              }
+                              return null;
+                            })()}
                             {o.status === "completed" && (
-                              <Badge className="bg-emerald-600 hover:bg-emerald-600 text-white border-0 text-[10px] px-1.5 py-0">
+                              <Badge className="bg-brand-emerald text-white border-0 text-[10px] px-1.5 py-0">
                                 Completed
                               </Badge>
                             )}

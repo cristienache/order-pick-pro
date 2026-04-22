@@ -4,17 +4,24 @@ import { api, type User } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Trash2 } from "lucide-react";
+import { Loader2, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 type UserRow = User & { created_at: string };
 
 export const Route = createFileRoute("/admin/users")({
   component: () => <RequireAuth adminOnly><AppShell><UsersPage /></AppShell></RequireAuth>,
+  head: () => ({
+    meta: [
+      { title: "Users | Ultrax" },
+      { name: "description", content: "Manage user accounts and access." },
+    ],
+  }),
 });
 
 function UsersPage() {
@@ -45,10 +52,13 @@ function UsersPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Users</h1>
-        <p className="text-muted-foreground text-sm">All registered users. Deleting a user removes their sites permanently.</p>
-      </div>
+      <PageHeader
+        icon={Users}
+        accent="sky"
+        eyebrow="Team access"
+        title="Users"
+        description="All registered users. Deleting a user removes their sites permanently."
+      />
 
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>

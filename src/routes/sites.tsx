@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type Site } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,12 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/sites")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,
+  head: () => ({
+    meta: [
+      { title: "My Sites | Ultrax" },
+      { name: "description", content: "Manage your connected WooCommerce stores and return addresses." },
+    ],
+  }),
 });
 
 // ---------- Form types — split so the two dialogs can never share state ----------
@@ -160,76 +167,72 @@ function SitesPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">My WooCommerce Sites</h1>
-          <p className="text-muted-foreground text-sm">
-            Add stores and their REST API keys. Keys are encrypted at rest and never shown after saving.
-          </p>
-        </div>
+      <PageHeader
+        icon={Store}
+        accent="amber"
+        eyebrow="Connections"
+        title="My WooCommerce Sites"
+        description="Add stores and their REST API keys. Keys are encrypted at rest and never shown after saving."
+        actions={
+          <Dialog open={credsOpen} onOpenChange={setCredsOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={openCreate}><Plus className="h-4 w-4" /> Add site</Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>
+                  {credsEditing ? "Edit credentials" : "Add WooCommerce site"}
+                </DialogTitle>
+                <DialogDescription>
+                  Generate REST API keys in WooCommerce → Settings → Advanced → REST API. Permissions: Read/Write.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={saveCreds} className="space-y-4" autoComplete="off">
+                <input type="text" name="prevent-autofill" autoComplete="off" style={{ display: "none" }} />
+                <input type="password" name="prevent-password-autofill" autoComplete="new-password" style={{ display: "none" }} />
 
-        {/* ---------- Credentials dialog (also handles "Add site") ---------- */}
-        <Dialog open={credsOpen} onOpenChange={setCredsOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={openCreate}><Plus className="h-4 w-4" /> Add site</Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-lg">
-            <DialogHeader>
-              <DialogTitle>
-                {credsEditing ? "Edit credentials" : "Add WooCommerce site"}
-              </DialogTitle>
-              <DialogDescription>
-                Generate REST API keys in WooCommerce → Settings → Advanced → REST API. Permissions: Read/Write.
-              </DialogDescription>
-            </DialogHeader>
-            {/* autoComplete="off" + a hidden honeypot stops Chrome's password
-                manager and address autofill from injecting values into the
-                consumer key/secret fields. */}
-            <form onSubmit={saveCreds} className="space-y-4" autoComplete="off">
-              <input type="text" name="prevent-autofill" autoComplete="off" style={{ display: "none" }} />
-              <input type="password" name="prevent-password-autofill" autoComplete="new-password" style={{ display: "none" }} />
+                <div className="space-y-2">
+                  <Label htmlFor="name">Display name</Label>
+                  <Input id="name" name="display-name" value={credsForm.name} required maxLength={100}
+                    autoComplete="off"
+                    onChange={(e) => setCredsForm({ ...credsForm, name: e.target.value })}
+                    placeholder="Ultraskins UK" />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="store_url">Store URL</Label>
+                  <Input id="store_url" name="store-url" type="url" value={credsForm.store_url} required
+                    autoComplete="off"
+                    onChange={(e) => setCredsForm({ ...credsForm, store_url: e.target.value })}
+                    placeholder="https://www.example.com" />
+                  <p className="text-xs text-muted-foreground">Include https:// and www if applicable.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ck">Consumer key</Label>
+                  <Input id="ck" name="wc-consumer-key" value={credsForm.consumer_key} required
+                    autoComplete="off" data-lpignore="true" data-1p-ignore="true"
+                    onChange={(e) => setCredsForm({ ...credsForm, consumer_key: e.target.value })}
+                    placeholder="ck_..." />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="cs">Consumer secret</Label>
+                  <Input id="cs" name="wc-consumer-secret" type="password" value={credsForm.consumer_secret} required
+                    autoComplete="new-password" data-lpignore="true" data-1p-ignore="true"
+                    onChange={(e) => setCredsForm({ ...credsForm, consumer_secret: e.target.value })}
+                    placeholder="cs_..." />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="name">Display name</Label>
-                <Input id="name" name="display-name" value={credsForm.name} required maxLength={100}
-                  autoComplete="off"
-                  onChange={(e) => setCredsForm({ ...credsForm, name: e.target.value })}
-                  placeholder="Ultraskins UK" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="store_url">Store URL</Label>
-                <Input id="store_url" name="store-url" type="url" value={credsForm.store_url} required
-                  autoComplete="off"
-                  onChange={(e) => setCredsForm({ ...credsForm, store_url: e.target.value })}
-                  placeholder="https://www.example.com" />
-                <p className="text-xs text-muted-foreground">Include https:// and www if applicable.</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ck">Consumer key</Label>
-                <Input id="ck" name="wc-consumer-key" value={credsForm.consumer_key} required
-                  autoComplete="off" data-lpignore="true" data-1p-ignore="true"
-                  onChange={(e) => setCredsForm({ ...credsForm, consumer_key: e.target.value })}
-                  placeholder="ck_..." />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="cs">Consumer secret</Label>
-                <Input id="cs" name="wc-consumer-secret" type="password" value={credsForm.consumer_secret} required
-                  autoComplete="new-password" data-lpignore="true" data-1p-ignore="true"
-                  onChange={(e) => setCredsForm({ ...credsForm, consumer_secret: e.target.value })}
-                  placeholder="cs_..." />
-              </div>
-
-              <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => setCredsOpen(false)}>Cancel</Button>
-                <Button type="submit" disabled={credsSaving}>
-                  {credsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {credsEditing ? "Save credentials" : "Add site"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
-      </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setCredsOpen(false)}>Cancel</Button>
+                  <Button type="submit" disabled={credsSaving}>
+                    {credsSaving && <Loader2 className="h-4 w-4 animate-spin" />}
+                    {credsEditing ? "Save credentials" : "Add site"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       {/* ---------- Return-address dialog (separate, no key fields exist) ---------- */}
       <Dialog open={addrOpen} onOpenChange={setAddrOpen}>

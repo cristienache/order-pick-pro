@@ -33,7 +33,7 @@ export const Route = createFileRoute("/")({
 
 type Accent = "violet" | "emerald" | "amber" | "sky" | "rose";
 type Tool = {
-  to: "/orders" | "/royal-mail" | "/sites" | "/admin/users" | "/admin/invites";
+  to: "/orders" | "/royal-mail" | "/integrations" | "/admin/users" | "/admin/invites";
   label: string;
   caption: string;
   description: string;
@@ -77,11 +77,11 @@ const TOOLS: Tool[] = [
     accent: "emerald",
   },
   {
-    to: "/sites",
-    label: "My Sites",
-    caption: "WooCommerce stores",
+    to: "/integrations",
+    label: "Integrations",
+    caption: "Sales channels",
     description:
-      "Connect new WooCommerce stores or rotate the API keys on the ones you already run.",
+      "Connect new WooCommerce stores or rotate the API keys on the ones you already run. Shopify, Etsy, Magento and eBay coming soon.",
     icon: Store,
     accent: "amber",
   },
@@ -162,10 +162,10 @@ function HomePage() {
                 <ArrowUpRight className="h-4 w-4" />
               </Link>
               <Link
-                to="/sites"
+                to="/integrations"
                 className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-5 py-2.5 text-sm font-medium hover:bg-accent transition"
               >
-                Manage stores
+                Manage integrations
               </Link>
             </div>
           </div>
@@ -263,7 +263,7 @@ function HomePage() {
             {sites.map((s) => (
               <Link
                 key={s.id}
-                to="/sites"
+                to="/integrations"
                 className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-card px-3 py-1.5 text-sm hover:bg-accent transition"
               >
                 <Store className="h-3.5 w-3.5 text-muted-foreground" />

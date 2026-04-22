@@ -288,7 +288,7 @@ function LabelForm({
               <SelectTrigger id="service"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                {RM_SERVICES.map((s) => (
+                {rmServicesForFormat(packageFormat).map((s) => (
                   <SelectItem key={s.code} value={s.code}>
                     {s.label} ({s.code})
                   </SelectItem>

@@ -564,6 +564,8 @@ app.get("/api/stats/today", requireAuth, async (req, res) => {
     res.status(502).json({ error: e.message || "Stats unavailable" });
   }
 });
+
+// Full order detail (used by the order detail drawer in the dashboard).
 app.get("/api/sites/:id/orders/:orderId", requireAuth, async (req, res) => {
   const site = loadSiteWithKeys(Number(req.params.id), req.user.id);
   if (!site) return res.status(404).json({ error: "Not found" });

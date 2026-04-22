@@ -504,6 +504,7 @@ app.get("/api/sites/:id/orders", requireAuth, async (req, res) => {
           customer: `${o.billing?.first_name ?? ""} ${o.billing?.last_name ?? ""}`.trim(),
           email,
           shipping_method: ship,
+          shipping_country: (o.shipping?.country || o.billing?.country || "").toUpperCase(),
           itemCount: o.line_items.reduce((s, li) => s + li.quantity, 0),
           lineCount: o.line_items.length,
           // Compact item summary for the orders list — lets the picker see

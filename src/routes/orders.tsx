@@ -43,8 +43,8 @@ export const Route = createFileRoute("/orders")({
   component: () => <RequireAuth><AppShell><PicklistPage /></AppShell></RequireAuth>,
   head: () => ({
     meta: [
-      { title: "Picklist | Ultrax" },
-      { name: "description", content: "Generate multi-site WooCommerce picking and packing slips." },
+      { title: "Orders | Ultrax" },
+      { name: "description", content: "Pick, pack and ship WooCommerce orders across all your stores." },
     ],
   }),
 });

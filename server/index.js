@@ -31,6 +31,15 @@ import {
   normalizeCndCreateResponse,
   normalizeRmApiKey,
 } from "./royalmail.js";
+import {
+  ebayConfig,
+  buildAuthorizeUrl,
+  exchangeCodeForTokens,
+  getAccessToken,
+  fetchEbayUserId,
+  fetchOrders as fetchEbayOrders,
+  normalizeEbayOrder,
+} from "./ebay.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,6 +23,12 @@ export const Route = createFileRoute("/royal-mail")({
       </AppShell>
     </RequireAuth>
   ),
+  head: () => ({
+    meta: [
+      { title: "Royal Mail | Ultrax" },
+      { name: "description", content: "Connect Royal Mail Click & Drop and configure your sender address." },
+    ],
+  }),
 });
 
 // Mirror of server-side rmRowToPublic shape (Click & Drop API).
@@ -63,17 +70,13 @@ function RoyalMailPage() {
 
   return (
     <div className="space-y-6">
-      <header className="flex items-center gap-3">
-        <div className="h-10 w-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-          <Truck className="h-5 w-5" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold leading-tight">Royal Mail</h1>
-          <p className="text-sm text-muted-foreground">
-            Connect your Click &amp; Drop account to generate shipping labels from inside Ultrax.
-          </p>
-        </div>
-      </header>
+      <PageHeader
+        icon={Truck}
+        accent="emerald"
+        eyebrow="Shipping carrier"
+        title="Royal Mail"
+        description="Connect your Click & Drop account to generate shipping labels from inside Ultrax."
+      />
 
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />

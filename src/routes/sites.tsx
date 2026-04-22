@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api, type Site } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,6 +15,12 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/sites")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,
+  head: () => ({
+    meta: [
+      { title: "My Sites | Ultrax" },
+      { name: "description", content: "Manage your connected WooCommerce stores and return addresses." },
+    ],
+  }),
 });
 
 // ---------- Form types — split so the two dialogs can never share state ----------

@@ -171,14 +171,18 @@ function PicklistPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allowsAllDates]);
 
-  const loadOrders = useCallback(async (silent = false) => {
+  const loadOrders = useCallback(async (silent = false, extraStatuses: string[] = []) => {
     if (activeSites.length === 0) return;
     setLoadingOrders(true);
     try {
       const results: Record<number, OrderRow[]> = {};
       const sel: Record<number, Set<number>> = {};
       const qs = new URLSearchParams();
-      qs.set("statuses", statuses.join(","));
+      // Union the user's selected statuses with any extra ones the caller
+      // wants temporarily included (e.g. "completed" right after a print, so
+      // freshly-completed orders don't disappear from view).
+      const mergedStatuses = Array.from(new Set([...statuses, ...extraStatuses]));
+      qs.set("statuses", mergedStatuses.join(","));
       if (computeRepeat) qs.set("repeat", "1");
 
       // Push date bounds to the server so WooCommerce filters at the source.

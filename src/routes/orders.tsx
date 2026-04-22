@@ -14,6 +14,9 @@ import { PriorityBadges } from "@/components/priority-badges";
 import { FilterPresets, type PresetPayload } from "@/components/filter-presets";
 import { OrderDetailDrawer } from "@/components/order-detail-drawer";
 import { BulkRoyalMailDialog, type BulkSelection } from "@/components/bulk-royal-mail-dialog";
+import {
+  WooCommerceLogo, ShopifyLogo, EtsyLogo, MagentoLogo, EbayLogo,
+} from "@/components/integration-logos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";

@@ -157,3 +157,16 @@ export async function markShipmentsPrinted(ids: number[]): Promise<{
   });
 }
 
+// Today's orders aggregated across every site the user owns. Includes both
+// "processing" and "completed" so the dashboard revenue total reflects fully
+// shipped orders, not just the live backlog.
+export type TodayStats = {
+  count: number;
+  // Map of currency code -> revenue total in that currency.
+  revenue_by_currency: Record<string, number>;
+};
+
+export async function fetchTodayStats(): Promise<TodayStats> {
+  return api<TodayStats>("/api/stats/today");
+}
+

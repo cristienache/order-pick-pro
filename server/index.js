@@ -40,6 +40,7 @@ import {
   fetchOrders as fetchEbayOrders,
   normalizeEbayOrder,
 } from "./ebay.js";
+import { sendContactEmail, smtpConfig } from "./mailer.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
@@ -256,6 +257,57 @@ app.post("/api/auth/bootstrap", async (req, res) => {
 app.get("/api/auth/status", (_req, res) => {
   const count = db.prepare("SELECT COUNT(*) as c FROM users").get().c;
   res.json({ bootstrapped: count > 0, adminEmail: ADMIN_EMAIL });
+});
+
+// ---------- Public contact form ----------
+// Public POST endpoint (no auth) used by /contact. Heavily rate-limited per IP
+// so the form can't be abused for spam relay. Validation is strict (zod) and
+// we never echo anything from the request back to the client beyond a generic
+// success or error so we don't become an open oracle for typo'd addresses.
+const contactLimiter = rateLimit({
+  windowMs: 60 * 60_000, // 1 hour
+  max: 5,                // 5 submissions per IP per hour
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many messages from this IP. Try again later." },
+});
+const contactSchema = z.object({
+  name: z.string().trim().min(1).max(100),
+  email: z.string().trim().email().max(255),
+  // Optional: allow blank / undefined / null without failing.
+  phone: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().max(40).regex(/^[+\d\s().-]+$/, "Invalid phone").optional(),
+  ),
+  subject: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().max(150).optional(),
+  ),
+  message: z.string().trim().min(10).max(5000),
+  // Honeypot — real browsers leave this empty; bots tend to fill every field.
+  website: z.string().max(0).optional(),
+});
+
+app.post("/api/contact", contactLimiter, async (req, res) => {
+  const parsed = contactSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  // Honeypot triggered — pretend success so bots don't retry.
+  if (parsed.data.website) return res.json({ ok: true });
+
+  const cfg = smtpConfig();
+  if (!cfg.configured) {
+    console.error("[contact] SMTP not configured (set SMTP_USER and SMTP_PASS).");
+    return res.status(503).json({ error: "Contact form is not configured yet. Please email us directly." });
+  }
+  try {
+    await sendContactEmail(parsed.data);
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("[contact] sendMail failed:", e);
+    res.status(502).json({ error: "Failed to send message. Please try again or email us directly." });
+  }
 });
 
 app.get("/api/auth/me", requireAuth, (req, res) => {

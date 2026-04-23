@@ -163,9 +163,9 @@ function WooInventory() {
     }
   };
 
-  /** Build a diff payload for the bulk-save endpoint. Only includes fields
-   *  the user actually changed since the last sync — prevents wiping WC
-   *  values we never had locally (real sale_price, weight, etc.). */
+  /** Build a diff payload for the bulk-save endpoint. Sends ONLY fields that
+   *  the user actually changed since the last sync, so we never overwrite WC
+   *  values we don't have locally. */
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];
@@ -176,18 +176,18 @@ function WooInventory() {
       if (d.regular_price !== o.regular_price) {
         fields.regular_price = d.regular_price === "" ? null : Number(d.regular_price);
       }
-      if (d.sale_price !== "") fields.sale_price = Number(d.sale_price);
+      if (d.sale_price !== o.sale_price) {
+        fields.sale_price = d.sale_price === "" ? null : Number(d.sale_price);
+      }
+      if (d.weight !== o.weight) {
+        fields.weight = d.weight === "" ? null : Number(d.weight);
+      }
+      if (d.description !== o.description) fields.description = d.description;
       if (d.stock_quantity !== o.stock_quantity) {
         fields.stock_quantity = Number(d.stock_quantity) || 0;
       }
-      if (d.weight !== "") fields.weight = Number(d.weight);
-      if (d.description !== "") fields.description = d.description;
-      // Only send stock_status / manage_stock when the user touched stock,
-      // so we don't overwrite the existing WC values on price-only edits.
-      if (d.stock_quantity !== o.stock_quantity) {
-        fields.stock_status = d.stock_status;
-        fields.manage_stock = d.manage_stock;
-      }
+      if (d.stock_status !== o.stock_status) fields.stock_status = d.stock_status;
+      if (d.manage_stock !== o.manage_stock) fields.manage_stock = d.manage_stock;
       if (Object.keys(fields).length === 0) return null;
       return { product_id: pid, fields };
     }).filter((x): x is WcEditPayload => x !== null);

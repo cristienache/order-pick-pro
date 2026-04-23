@@ -505,10 +505,10 @@ export function mountOms(app, { requireAuth }) {
         const oid = crypto.randomUUID();
         db.prepare(
           `INSERT INTO oms_orders
-             (id, customer_name, customer_address, customer_lat, customer_lng, status, notes)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+             (id, user_id, customer_name, customer_address, customer_lat, customer_lng, status, notes)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
         ).run(
-          oid, body.customer_name, body.customer_address ?? null,
+          oid, req.user.id, body.customer_name, body.customer_address ?? null,
           body.customer_lat, body.customer_lng, body.notes ?? null,
         );
         for (const it of items) {

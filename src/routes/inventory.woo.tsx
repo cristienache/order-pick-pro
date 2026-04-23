@@ -157,29 +157,75 @@ function WooInventory() {
     }).map((p) => p.id);
   }, [siteProducts, drafts, originals]);
 
-  // Filtered visible rows. Filter chip + search work together. Collapsed
-  // variable-parents hide their variation rows.
+  // Filtered + sorted visible rows. Collapsed variable-parents hide their
+  // variation rows. Filters come from the shared InventoryFilterBar.
   const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = filters.search.trim().toLowerCase();
     const dirtySet = new Set(dirtyIds);
-    return siteProducts.filter((p) => {
-      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) {
-        return false;
-      }
+    const pMin = filters.priceMin ? Number(filters.priceMin) : null;
+    const pMax = filters.priceMax ? Number(filters.priceMax) : null;
+    const sMin = filters.salePriceMin ? Number(filters.salePriceMin) : null;
+    const sMax = filters.salePriceMax ? Number(filters.salePriceMax) : null;
+    const wMin = filters.weightMin ? Number(filters.weightMin) : null;
+    const wMax = filters.weightMax ? Number(filters.weightMax) : null;
+
+    const list = siteProducts.filter((p) => {
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) return false;
       if (p.parent_product_id && collapsed.has(p.parent_product_id)) return false;
-      switch (filter) {
-        case "dirty": return dirtySet.has(p.id);
-        case "variations": return p.wc_type === "variation";
-        case "parents": return p.wc_type !== "variation";
-        case "low": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5;
-        case "outofstock": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) <= 0;
-        default: return true;
+      if (filters.wcType !== "all" && p.wc_type !== filters.wcType) return false;
+      if (filters.editedOnly && !dirtySet.has(p.id)) return false;
+      if (filters.stockStatus !== "any" && p.stock_status !== filters.stockStatus) return false;
+      if (filters.manageStock !== "any" && p.manage_stock !== (filters.manageStock === "yes")) return false;
+      if (filters.hasImage !== "any" && Boolean(p.image_url) !== (filters.hasImage === "yes")) return false;
+      if (filters.hasSale !== "any") {
+        const onSale = p.sale_price != null && p.sale_price > 0 && (p.regular_price == null || p.sale_price < p.regular_price);
+        if (onSale !== (filters.hasSale === "yes")) return false;
+      }
+      if (filters.stockState !== "any" && p.wc_type !== "variable") {
+        const q = p.stock_quantity ?? 0;
+        if (filters.stockState === "out" && q > 0) return false;
+        if (filters.stockState === "inStock" && q <= 0) return false;
+        if (filters.stockState === "low" && (q <= 0 || q > 5)) return false;
+        if (filters.stockState === "over" && q <= 100) return false;
+      }
+      if (pMin != null && (p.regular_price ?? 0) < pMin) return false;
+      if (pMax != null && (p.regular_price ?? 0) > pMax) return false;
+      if (sMin != null && (p.sale_price ?? 0) < sMin) return false;
+      if (sMax != null && (p.sale_price ?? 0) > sMax) return false;
+      if (wMin != null && (p.weight ?? 0) < wMin) return false;
+      if (wMax != null && (p.weight ?? 0) > wMax) return false;
+      return true;
+    });
+
+    // Sort
+    const dir = filters.sortDir === "asc" ? 1 : -1;
+    const num = (v: number | null | undefined) => (v == null ? -Infinity : v);
+    list.sort((a, b) => {
+      switch (filters.sortKey) {
+        case "sku": return a.sku.localeCompare(b.sku) * dir;
+        case "regular_price": return (num(a.regular_price) - num(b.regular_price)) * dir;
+        case "sale_price": return (num(a.sale_price) - num(b.sale_price)) * dir;
+        case "stock_quantity": return ((a.stock_quantity ?? 0) - (b.stock_quantity ?? 0)) * dir;
+        case "weight": return (num(a.weight) - num(b.weight)) * dir;
+        case "last_synced_at": {
+          const ta = a.last_synced_at ? Date.parse(a.last_synced_at) : 0;
+          const tb = b.last_synced_at ? Date.parse(b.last_synced_at) : 0;
+          return (ta - tb) * dir;
+        }
+        case "dirty": {
+          const da = dirtySet.has(a.id) ? 1 : 0;
+          const db = dirtySet.has(b.id) ? 1 : 0;
+          return (db - da); // dirty rows always first regardless of dir
+        }
+        case "name":
+        default: return a.name.localeCompare(b.name) * dir;
       }
     });
-  }, [siteProducts, search, filter, collapsed, dirtyIds]);
+    return list;
+  }, [siteProducts, filters, collapsed, dirtyIds]);
 
   // Reset to page 1 whenever the filter/search changes the visible set.
-  useEffect(() => { setPage(1); }, [search, filter, pageSize, siteId]);
+  useEffect(() => { setPage(1); }, [filters, pageSize, siteId]);
 
   // Paginated slice rendered into the table. `pageSize === 0` shows everything.
   const pagedProducts = useMemo(() => {

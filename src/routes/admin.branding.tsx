@@ -97,15 +97,15 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 function BrandingPage() {
-  const { branding, refresh, preview } = useBranding();
-  const [draft, setDraft] = useState<Branding>(branding);
+  const { saved, refresh, preview } = useBranding();
+  const [draft, setDraft] = useState<Branding>(saved);
   const [saving, setSaving] = useState(false);
   const logoInput = useRef<HTMLInputElement>(null);
   const faviconInput = useRef<HTMLInputElement>(null);
 
-  // Sync local draft whenever the upstream branding changes (initial load
-  // or after a save). Skip while the user is actively editing.
-  useEffect(() => { setDraft(branding); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [branding.updated_at]);
+  // Sync local draft whenever the upstream saved branding changes (initial load
+  // or after a save).
+  useEffect(() => { setDraft(saved); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [saved.updated_at]);
 
   // Push the draft into the BrandingProvider's preview slot so the rest of
   // the app (top nav, page headers, colours) reflects unsaved changes live.
@@ -114,7 +114,7 @@ function BrandingPage() {
     return () => preview(null);
   }, [draft, preview]);
 
-  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(branding), [draft, branding]);
+  const dirty = useMemo(() => JSON.stringify(draft) !== JSON.stringify(saved), [draft, saved]);
 
   const setColor = (key: ColorKey, value: string) => {
     setDraft((d) => ({ ...d, colors: { ...d.colors, [key]: value } }));

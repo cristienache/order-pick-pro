@@ -237,21 +237,21 @@ function InventoryGrid() {
             sortOptions={SORT_OPTIONS}
             counts={{ total: products.data?.length ?? 0, visible: filteredProducts.length }}
           />
-        </div>
-        <div className="ml-auto flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">{selected.size} selected</Badge>
-          {selected.size > 0 && (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
-              <Button size="sm" onClick={() => setBulkOpen(true)}>
-                <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Bulk edit
-              </Button>
-            </>
-          )}
-          <Button variant="outline" size="sm" onClick={selectAllFiltered}>Select all</Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => qc.invalidateQueries({ queryKey: ["oms-inventory"] })}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-[10px]">{selected.size} selected</Badge>
+            {selected.size > 0 && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+                <Button size="sm" onClick={() => setBulkOpen(true)}>
+                  <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Bulk edit
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={selectAllFiltered}>Select all</Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => qc.invalidateQueries({ queryKey: ["oms-inventory"] })}>
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -20,13 +20,22 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  ArrowLeft, ArrowDown, ArrowUp, ExternalLink, Eye, FileText,
+  ArrowLeft, ExternalLink, Eye, FileText, GripVertical,
   Loader2, Plus, Save, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   BLOCK_CATALOGUE, makeBlock, slugify, type Block, type BlockType, type Page,
 } from "@/lib/pages";
+import {
+  DndContext, closestCenter, KeyboardSensor, PointerSensor,
+  useSensor, useSensors, type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, sortableKeyboardCoordinates, useSortable,
+  verticalListSortingStrategy, arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 export const Route = createFileRoute("/admin/pages/$pageId")({
   component: () => (
@@ -124,17 +133,24 @@ function PageEditor() {
     setDraft((d) => ({ ...d, blocks: d.blocks.filter((b) => b.id !== id) }));
   };
 
-  const moveBlock = (id: string, dir: -1 | 1) => {
+  const reorderBlocks = (fromId: string, toId: string) => {
     setDraft((d) => {
-      const idx = d.blocks.findIndex((b) => b.id === id);
-      if (idx === -1) return d;
-      const target = idx + dir;
-      if (target < 0 || target >= d.blocks.length) return d;
-      const next = d.blocks.slice();
-      const [item] = next.splice(idx, 1);
-      next.splice(target, 0, item);
-      return { ...d, blocks: next };
+      const from = d.blocks.findIndex((b) => b.id === fromId);
+      const to = d.blocks.findIndex((b) => b.id === toId);
+      if (from === -1 || to === -1 || from === to) return d;
+      return { ...d, blocks: arrayMove(d.blocks, from, to) };
     });
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    reorderBlocks(String(active.id), String(over.id));
   };
 
   const save = async () => {
@@ -274,18 +290,27 @@ function PageEditor() {
               </Card>
             ) : (
               <div className="space-y-3">
-                {draft.blocks.map((b, i) => (
-                  <BlockEditor
-                    key={b.id}
-                    block={b}
-                    index={i}
-                    total={draft.blocks.length}
-                    onChange={(props) => updateBlock(b.id, props)}
-                    onMoveUp={() => moveBlock(b.id, -1)}
-                    onMoveDown={() => moveBlock(b.id, 1)}
-                    onRemove={() => removeBlock(b.id)}
-                  />
-                ))}
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={draft.blocks.map((b) => b.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-3">
+                      {draft.blocks.map((b) => (
+                        <SortableBlock
+                          key={b.id}
+                          block={b}
+                          onChange={(props) => updateBlock(b.id, props)}
+                          onRemove={() => removeBlock(b.id)}
+                        />
+                      ))}
+                    </div>
+                  </SortableContext>
+                </DndContext>
                 <div className="pt-2">
                   <AddBlockMenu onAdd={addBlock} />
                 </div>
@@ -375,43 +400,52 @@ function AddBlockMenu({ onAdd }: { onAdd: (type: BlockType) => void }) {
   );
 }
 
-function BlockEditor({
-  block, index, total, onChange, onMoveUp, onMoveDown, onRemove,
+function SortableBlock({
+  block, onChange, onRemove,
 }: {
   block: Block;
-  index: number;
-  total: number;
   onChange: (props: Record<string, unknown>) => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
   onRemove: () => void;
 }) {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: block.id });
   const meta = BLOCK_CATALOGUE.find((b) => b.type === block.type);
   const setProp = (key: string, value: unknown) => onChange({ ...block.props, [key]: value });
 
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
   return (
-    <Card className="p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
-            {meta?.label || block.type}
-          </span>
-        </div>
-        <div className="flex items-center gap-0.5">
-          <Button variant="ghost" size="icon" onClick={onMoveUp} disabled={index === 0} title="Move up">
-            <ArrowUp className="h-4 w-4" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={onMoveDown} disabled={index === total - 1} title="Move down">
-            <ArrowDown className="h-4 w-4" />
-          </Button>
+    <div ref={setNodeRef} style={style}>
+      <Card className={`p-4 space-y-3 ${isDragging ? "ring-2 ring-primary shadow-lg" : ""}`}>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="cursor-grab active:cursor-grabbing touch-none p-1 -ml-1 text-muted-foreground hover:text-foreground rounded hover:bg-muted/50"
+              aria-label="Drag to reorder"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="h-4 w-4" />
+            </button>
+            <span className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground font-semibold">
+              {meta?.label || block.type}
+            </span>
+          </div>
           <Button variant="ghost" size="icon" onClick={onRemove} title="Remove" className="text-destructive hover:text-destructive">
             <Trash2 className="h-4 w-4" />
           </Button>
         </div>
-      </div>
 
-      <BlockPropsForm block={block} setProp={setProp} />
-    </Card>
+        <BlockPropsForm block={block} setProp={setProp} />
+      </Card>
+    </div>
   );
 }
 

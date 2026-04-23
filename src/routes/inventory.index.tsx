@@ -21,6 +21,7 @@ const SORT_OPTIONS: SortOption[] = [
   { value: "sku", label: "SKU" },
   { value: "regular_price", label: "Base price" },
   { value: "stock_quantity", label: "Total stock" },
+  { value: "wc_date_created", label: "Newest / Oldest" },
 ];
 
 export const Route = createFileRoute("/inventory/")({

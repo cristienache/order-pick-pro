@@ -23,9 +23,9 @@ HeyShop Express server (`/server`) must implement them.
 
 Shared TypeScript types live in [`src/lib/api-types.ts`](../src/lib/api-types.ts)
 and are re-exported from [`src/lib/inventory-api.ts`](../src/lib/inventory-api.ts).
-A minimal Express stub mounted under `/api/oms/*` lives at
-[`server/oms-stub.js`](../server/oms-stub.js) — drop it into `server/index.js`
-to develop the UI in parallel before the real handlers exist.
+The full SQLite-backed implementation lives in
+[`server/oms.js`](../server/oms.js) and is mounted from `server/index.js`
+via `mountOms(app, { requireAuth })`.
 
 ---
 

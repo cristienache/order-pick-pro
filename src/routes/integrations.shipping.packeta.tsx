@@ -463,7 +463,7 @@ function CountryRoutesCard({ hasApiPassword }: { hasApiPassword: boolean }) {
             <Button
               type="button" size="sm" variant="outline" onClick={sync}
               disabled={!hasApiPassword || syncing}
-              title={!hasApiPassword ? "Save an API password first" : "Refresh carrier list from Packeta"}
+              title={!hasApiPassword ? "Save your Packeta API password and Widget API key first" : "Refresh carrier list from Packeta"}
             >
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh

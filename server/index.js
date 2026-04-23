@@ -60,7 +60,7 @@ import {
   fetchOrders as fetchEbayOrders,
   normalizeEbayOrder,
 } from "./ebay.js";
-import { sendContactEmail, smtpConfig } from "./mailer.js";
+import { sendContactEmail, sendSignupApprovalEmail, smtpConfig } from "./mailer.js";
 import { mountOms } from "./oms.js";
 import { mountOmsWoo } from "./oms-woo.js";
 import { mountOmsPo } from "./oms-po.js";
@@ -318,16 +318,67 @@ app.post("/api/auth/signup", async (req, res) => {
     return res.status(403).json({ error: "This email is reserved. Use first-time setup." });
   }
 
-  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
-  if (existing) return res.status(409).json({ error: "An account with this email already exists" });
+  const existing = db.prepare("SELECT id, status FROM users WHERE email = ?").get(email);
+  if (existing) {
+    if (existing.status === "pending") {
+      return res.status(409).json({ error: "An account with this email is already pending approval." });
+    }
+    return res.status(409).json({ error: "An account with this email already exists" });
+  }
 
   const hash = await bcrypt.hash(password, 12);
+  const approvalToken = crypto.randomBytes(24).toString("hex");
   const result = db.prepare(
-    "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'user')",
-  ).run(email, hash);
-  const user = { id: result.lastInsertRowid, email, role: "user" };
-  const token = signToken(user);
-  res.json({ token, user });
+    "INSERT INTO users (email, password_hash, role, status, approval_token) VALUES (?, ?, 'user', 'pending', ?)",
+  ).run(email, hash, approvalToken);
+
+  // Fire-and-forget email to admin. We never block signup on SMTP failures —
+  // the admin can also approve via the in-app users page.
+  const baseUrl = (process.env.APP_BASE_URL || `${req.protocol}://${req.get("host") || "localhost"}`)
+    .replace(/\/+$/, "");
+  const approveUrl = `${baseUrl}/api/auth/approve/${approvalToken}`;
+  const rejectUrl = `${baseUrl}/api/auth/reject/${approvalToken}`;
+  if (smtpConfig().configured) {
+    sendSignupApprovalEmail({ email, approveUrl, rejectUrl })
+      .catch((e) => console.error("[signup] approval email failed:", e?.message || e));
+  } else {
+    console.warn("[signup] SMTP not configured — admin will not receive an approval email.");
+  }
+
+  res.status(202).json({
+    pending: true,
+    email,
+    message: "Your account has been created and is awaiting admin approval. You'll receive an email once approved.",
+    user_id: result.lastInsertRowid,
+  });
+});
+
+// Approve / reject endpoints — opened from the admin's email. Returns a tiny
+// HTML page so the result is readable in a browser tab. The token is single-
+// use (cleared once consumed) and only matches a 'pending' row.
+function renderResultPage(title, body) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;max-width:560px;margin:60px auto;padding:0 20px;color:#111;line-height:1.55}
+    h1{font-size:22px;margin:0 0 12px}
+    .ok{color:#0a7d3a}.err{color:#b00020}
+  </style></head><body>${body}</body></html>`;
+}
+app.get("/api/auth/approve/:token", (req, res) => {
+  const row = db.prepare("SELECT id, email, status FROM users WHERE approval_token = ?").get(req.params.token);
+  if (!row) return res.status(404).type("html").send(renderResultPage("Not found", "<h1 class='err'>Invalid or already-used link</h1><p>This approval link is no longer valid.</p>"));
+  if (row.status === "active") return res.type("html").send(renderResultPage("Already approved", `<h1 class='ok'>Already approved</h1><p>${row.email} can sign in.</p>`));
+  if (row.status === "rejected") return res.type("html").send(renderResultPage("Rejected", `<h1 class='err'>This account was rejected</h1><p>${row.email} cannot be approved.</p>`));
+  db.prepare("UPDATE users SET status = 'active', approval_token = NULL WHERE id = ?").run(row.id);
+  res.type("html").send(renderResultPage("Approved", `<h1 class='ok'>Approved ✓</h1><p><strong>${row.email}</strong> can now sign in.</p>`));
+});
+app.get("/api/auth/reject/:token", (req, res) => {
+  const row = db.prepare("SELECT id, email, status FROM users WHERE approval_token = ?").get(req.params.token);
+  if (!row) return res.status(404).type("html").send(renderResultPage("Not found", "<h1 class='err'>Invalid or already-used link</h1>"));
+  if (row.status === "rejected") return res.type("html").send(renderResultPage("Already rejected", `<h1 class='err'>Already rejected</h1>`));
+  db.prepare("UPDATE users SET status = 'rejected', approval_token = NULL WHERE id = ?").run(row.id);
+  res.type("html").send(renderResultPage("Rejected", `<h1 class='err'>Rejected</h1><p><strong>${row.email}</strong> will not be able to sign in.</p>`));
 });
 
 // ---------- Public contact form ----------

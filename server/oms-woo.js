@@ -230,6 +230,114 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * Upsert a single WC product or variation into oms_products + oms_inventory.
+ * Returns { id, created } where `created` is true on insert, false on update.
+ * `wcType` is one of "simple" | "variable" | "variation".
+ */
+function upsertWcProduct({
+  site, warehouseId, wc, nowIso, wcType,
+  parentOmsId = null, wcParentId = null, fallbackName = null,
+}) {
+  const isVariation = wcType === "variation";
+  const baseSku = wc.sku && wc.sku.trim() ? wc.sku.trim() : `WC-${site.id}-${wc.id}`;
+  const stockQty = Number.isFinite(Number(wc.stock_quantity))
+    ? Number(wc.stock_quantity) : 0;
+  const thumb = pickThumb(wc);
+  const label = isVariation ? variationLabel(wc.attributes) : null;
+  const displayName = isVariation
+    ? `${fallbackName || baseSku}${label ? ` — ${label}` : ""}`
+    : (wc.name || baseSku);
+
+  // Match on (site, woo_product_id, wc_type, wc_parent_id) so a variation
+  // and its parent (which can share a WC id space across product types) are
+  // treated as distinct rows.
+  const existing = db.prepare(
+    `SELECT id FROM oms_products
+       WHERE site_id = ? AND woo_product_id = ?
+         AND COALESCE(wc_type,'simple') = ?
+         AND COALESCE(wc_parent_id, 0) = COALESCE(?, 0)`,
+  ).get(site.id, wc.id, wcType, wcParentId);
+
+  let productId = existing?.id || crypto.randomUUID();
+  let created = false;
+
+  if (existing) {
+    db.prepare(
+      `UPDATE oms_products
+         SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
+             description = ?, short_description = ?, stock_status = ?,
+             manage_stock = ?, weight = ?, image_url = ?, wc_type = ?,
+             parent_product_id = ?, wc_parent_id = ?, variation_label = ?,
+             dirty = 0, dirty_fields = NULL, last_synced_at = ?
+       WHERE id = ?`,
+    ).run(
+      baseSku, displayName,
+      num(wc.price) ?? num(wc.regular_price) ?? 0,
+      num(wc.regular_price), num(wc.sale_price),
+      wc.description ?? null, wc.short_description ?? null,
+      wc.stock_status ?? "instock",
+      wc.manage_stock ? 1 : 0,
+      num(wc.weight),
+      thumb, wcType, parentOmsId, wcParentId, label,
+      nowIso,
+      productId,
+    );
+  } else {
+    // SKUs are UNIQUE in oms_products. Suffix on collision.
+    let finalSku = baseSku;
+    let i = 1;
+    while (db.prepare("SELECT 1 FROM oms_products WHERE sku = ?").get(finalSku)) {
+      finalSku = `${baseSku}-WC${site.id}-${i++}`;
+      if (i > 50) break;
+    }
+    db.prepare(
+      `INSERT INTO oms_products
+         (id, sku, name, source, base_price, woo_product_id, site_id,
+          description, short_description, regular_price, sale_price,
+          stock_status, manage_stock, weight, image_url, wc_type,
+          parent_product_id, wc_parent_id, variation_label,
+          dirty, last_synced_at)
+       VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    ).run(
+      productId, finalSku, displayName,
+      num(wc.price) ?? num(wc.regular_price) ?? 0,
+      wc.id, site.id,
+      wc.description ?? null, wc.short_description ?? null,
+      num(wc.regular_price), num(wc.sale_price),
+      wc.stock_status ?? "instock",
+      wc.manage_stock ? 1 : 0,
+      num(wc.weight),
+      thumb, wcType, parentOmsId, wcParentId, label,
+      nowIso,
+    );
+    created = true;
+  }
+
+  // Inventory mirror — variable parents themselves don't carry stock, only
+  // their variations do. Skip inventory for variable parents so totals
+  // aren't double-counted.
+  if (wcType !== "variable") {
+    const invRow = db.prepare(
+      `SELECT version FROM oms_inventory WHERE product_id = ? AND warehouse_id = ?`,
+    ).get(productId, warehouseId);
+    if (invRow) {
+      db.prepare(
+        `UPDATE oms_inventory SET quantity = ?, version = version + 1
+          WHERE product_id = ? AND warehouse_id = ?`,
+      ).run(stockQty, productId, warehouseId);
+    } else {
+      db.prepare(
+        `INSERT INTO oms_inventory
+           (product_id, warehouse_id, quantity, reserved, reorder_level, version)
+         VALUES (?, ?, ?, 0, 0, 1)`,
+      ).run(productId, warehouseId, stockQty);
+    }
+  }
+
+  return { id: productId, created };
+}
+
 /* ---------------- Mount ---------------- */
 
 export function mountOmsWoo(app, { requireAuth }) {

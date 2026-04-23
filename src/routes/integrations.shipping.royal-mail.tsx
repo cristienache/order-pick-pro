@@ -1,8 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { RequireAuth } from "@/components/require-auth";
-import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Truck, KeyRound, MapPin, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/royal-mail")({
-  component: () => (
-    <RequireAuth>
-      <AppShell>
-        <RoyalMailPage />
-      </AppShell>
-    </RequireAuth>
-  ),
+export const Route = createFileRoute("/integrations/shipping/royal-mail")({
+  component: RoyalMailPage,
   head: () => ({
     meta: [
       { title: "Royal Mail | Ultrax" },
@@ -31,7 +23,6 @@ export const Route = createFileRoute("/royal-mail")({
   }),
 });
 
-// Mirror of server-side rmRowToPublic shape (Click & Drop API).
 type RmSettings = {
   has_api_key: boolean;
   use_sandbox: boolean;
@@ -77,14 +68,11 @@ function RoyalMailPage() {
         title="Royal Mail"
         description="Connect your Click & Drop account to generate shipping labels from inside Ultrax."
       />
-
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />
     </div>
   );
 }
-
-// ---------- Credentials ----------
 
 function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChanged: () => Promise<void> }) {
   const [apiKey, setApiKey] = useState("");
@@ -92,14 +80,12 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // Keep the sandbox toggle in sync if a Test Connection updates the settings.
   useEffect(() => { setUseSandbox(settings.use_sandbox); }, [settings.use_sandbox]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      // Send only fields the user actually typed; empty string means "leave alone".
       const payload: Record<string, unknown> = { use_sandbox: useSandbox };
       if (apiKey.trim()) payload.api_key = apiKey.trim();
       await api("/api/royal-mail/credentials", { method: "PUT", body: payload });
@@ -108,9 +94,7 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
       toast.success("Credentials saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   const clearKey = async () => {
@@ -139,9 +123,7 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
       else toast.error(res.message || `Failed (${res.status ?? "?"})`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Test failed");
-    } finally {
-      setTesting(false);
-    }
+    } finally { setTesting(false); }
   };
 
   return (
@@ -155,16 +137,6 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
               <CardDescription>
                 Generate a key in your Click &amp; Drop account under{" "}
                 <span className="font-medium">Settings → Integrations → Create new API key</span>.
-                See the{" "}
-                <a
-                  href="https://api.parcel.royalmail.com/"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline hover:text-foreground"
-                >
-                  Click &amp; Drop API portal
-                </a>{" "}
-                for details.
               </CardDescription>
             </div>
           </div>
@@ -172,37 +144,24 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
         </div>
       </CardHeader>
       <CardContent>
-        {/* autoComplete=off + honeypot keeps Chrome from clobbering this field
-            (same trick we use on the WooCommerce site form). */}
         <form onSubmit={save} className="space-y-4" autoComplete="off">
           <input type="text" name="prevent-autofill" className="hidden" tabIndex={-1} aria-hidden />
           <input type="password" name="prevent-autofill-pw" className="hidden" tabIndex={-1} aria-hidden />
-
           <div className="space-y-2">
             <Label htmlFor="rm-api-key" className="flex items-center justify-between">
               <span>Click &amp; Drop API key</span>
               {settings.has_api_key && (
-                <button
-                  type="button"
-                  onClick={clearKey}
-                  className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1"
-                >
+                <button type="button" onClick={clearKey}
+                  className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1">
                   <Trash2 className="h-3 w-3" /> Remove
                 </button>
               )}
             </Label>
-            <Input
-              id="rm-api-key"
-              type="password"
-              value={apiKey}
+            <Input id="rm-api-key" type="password" value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={settings.has_api_key ? "•••••••• (saved — leave blank to keep)" : "Paste your Click & Drop API key"}
-              autoComplete="new-password"
-              data-lpignore="true"
-              data-1p-ignore="true"
-            />
+              autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" />
           </div>
-
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>
               <Label htmlFor="rm-sandbox" className="font-medium">Sandbox key</Label>
@@ -212,23 +171,16 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
             </div>
             <Switch id="rm-sandbox" checked={useSandbox} onCheckedChange={setUseSandbox} />
           </div>
-
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={saving}>
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Save credentials
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={!settings.has_api_key || testing}
-              onClick={test}
-            >
+            <Button type="button" variant="secondary" disabled={!settings.has_api_key || testing} onClick={test}>
               {testing && <Loader2 className="h-4 w-4 animate-spin" />}
               Test connection
             </Button>
           </div>
-
           {settings.last_tested_at && (
             <p className="text-xs text-muted-foreground">
               Last tested {new Date(settings.last_tested_at).toLocaleString()}
@@ -242,9 +194,7 @@ function CredentialsCard({ settings, onChanged }: { settings: RmSettings; onChan
 }
 
 function ConnectionBadge({ settings }: { settings: RmSettings }) {
-  if (!settings.has_api_key) {
-    return <Badge variant="outline">Not configured</Badge>;
-  }
+  if (!settings.has_api_key) return <Badge variant="outline">Not configured</Badge>;
   if (settings.last_test_ok === true) {
     return (
       <Badge className="bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300">
@@ -261,8 +211,6 @@ function ConnectionBadge({ settings }: { settings: RmSettings }) {
   }
   return <Badge variant="secondary">Saved — not tested</Badge>;
 }
-
-// ---------- Sender address ----------
 
 function SenderCard({ settings, onChanged }: { settings: RmSettings; onChanged: () => Promise<void> }) {
   const [form, setForm] = useState({
@@ -290,9 +238,7 @@ function SenderCard({ settings, onChanged }: { settings: RmSettings; onChanged: 
       toast.success("Sender address saved");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
-    } finally {
-      setSaving(false);
-    }
+    } finally { setSaving(false); }
   };
 
   return (

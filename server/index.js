@@ -62,6 +62,7 @@ import {
 } from "./ebay.js";
 import { sendContactEmail, smtpConfig } from "./mailer.js";
 import { mountOms } from "./oms.js";
+import { mountOmsWoo } from "./oms-woo.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
@@ -3189,6 +3190,8 @@ app.get("/api/ebay/accounts/:id/orders", requireAuth, async (req, res) => {
 // ---------- HeyShop Inventory ("OMS") module ----------
 // All /api/oms/* endpoints. Schema, seed, and handlers live in ./oms.js.
 mountOms(app, { requireAuth });
+// WooCommerce ↔ Inventory bridge (sync, bulk-edit, push, backups).
+mountOmsWoo(app, { requireAuth });
 
 app.listen(PORT, () => {
   console.log(`Ultrax API listening on http://127.0.0.1:${PORT}`);

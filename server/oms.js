@@ -128,49 +128,52 @@ db.exec(`
   );
 `);
 
-/* ---------------- Demo seed ----------------
- * Only runs when the catalog is empty, so production data is never touched.
- * Gives the UI something to render the first time HeyShop boots with the
- * Inventory module enabled.
+/* ---------------- Per-user scoping migrations (idempotent) ----------------
+ * Inventory and orders are per-tenant: every warehouse and every order belongs
+ * to a single HeyShop user. Existing single-tenant rows get backfilled to the
+ * first admin user so we don't strand data on upgrade.
+ *
+ * NOTE: We deliberately don't touch oms_products — the WC bridge already
+ * scopes products via the `site_id` column (sites are owned per-user), and
+ * the legacy demo seed put a couple of un-scoped products in there that we
+ * just leave alone (they're harmless and only visible to admins via the
+ * legacy code paths; the new endpoints filter through warehouses).
  */
 {
-  const productCount = db.prepare("SELECT COUNT(*) AS c FROM oms_products").get().c;
-  if (productCount === 0) {
-    const wId1 = crypto.randomUUID();
-    const wId2 = crypto.randomUUID();
-    const pId1 = crypto.randomUUID();
-    const pId2 = crypto.randomUUID();
-    const seed = db.transaction(() => {
-      db.prepare(
-        `INSERT INTO oms_warehouses (id, name, code, address, lat, lng, capacity_units, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      ).run(wId1, "London DC", "LON", "1 Main St, London", 51.5074, -0.1278, 10000);
-      db.prepare(
-        `INSERT INTO oms_warehouses (id, name, code, address, lat, lng, capacity_units, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      ).run(wId2, "Berlin DC", "BER", "Alexanderplatz 1, Berlin", 52.5200, 13.4050, 8000);
-
-      db.prepare(
-        `INSERT INTO oms_products (id, sku, name, source, base_price, woo_product_id)
-         VALUES (?, ?, ?, 'oms', ?, NULL)`,
-      ).run(pId1, "WIDGET-1", "Widget", 9.99);
-      db.prepare(
-        `INSERT INTO oms_products (id, sku, name, source, base_price, woo_product_id)
-         VALUES (?, ?, ?, 'oms', ?, NULL)`,
-      ).run(pId2, "GIZMO-2", "Gizmo", 19.0);
-
-      const insInv = db.prepare(
-        `INSERT INTO oms_inventory (product_id, warehouse_id, quantity, reserved, reorder_level, version)
-         VALUES (?, ?, ?, 0, ?, 1)`,
-      );
-      insInv.run(pId1, wId1, 42, 10);
-      insInv.run(pId1, wId2, 5, 10);
-      insInv.run(pId2, wId1, 17, 5);
-      insInv.run(pId2, wId2, 30, 5);
-    });
-    seed();
+  const whCols = new Set(
+    db.prepare("PRAGMA table_info(oms_warehouses)").all().map((c) => c.name),
+  );
+  if (!whCols.has("user_id")) {
+    db.exec(`ALTER TABLE oms_warehouses ADD COLUMN user_id INTEGER`);
   }
+  const orderCols = new Set(
+    db.prepare("PRAGMA table_info(oms_orders)").all().map((c) => c.name),
+  );
+  if (!orderCols.has("user_id")) {
+    db.exec(`ALTER TABLE oms_orders ADD COLUMN user_id INTEGER`);
+  }
+
+  // Backfill nulls onto the first admin user (if any). On a brand new DB
+  // there is no user yet — that's fine, the seed below skips and the next
+  // signup will own its own data.
+  const firstAdmin = db.prepare(
+    "SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1",
+  ).get();
+  if (firstAdmin) {
+    db.prepare("UPDATE oms_warehouses SET user_id = ? WHERE user_id IS NULL").run(firstAdmin.id);
+    db.prepare("UPDATE oms_orders SET user_id = ? WHERE user_id IS NULL").run(firstAdmin.id);
+  }
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oms_warehouses_user ON oms_warehouses(user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oms_orders_user ON oms_orders(user_id)`);
 }
+
+/* ---------------- Demo seed ----------------
+ * Disabled. Inventory is now per-user — no shared global catalog. New users
+ * see an empty inventory page until they connect a WooCommerce site (which
+ * auto-creates a per-user mirror warehouse + product rows) or manually
+ * create their first warehouse.
+ */
 
 /* ---------------- Helpers ---------------- */
 

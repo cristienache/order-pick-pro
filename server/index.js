@@ -545,7 +545,6 @@ function rowToPage(row) {
   };
 }
 
-import jwt from "jsonwebtoken";
 function bearerIsAdmin(req) {
   const auth = req.header("authorization") || "";
   if (!auth.startsWith("Bearer ")) return false;

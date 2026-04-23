@@ -122,7 +122,7 @@ export function BulkEditDialog({
                         <td className="px-2 py-1">{c.warehouseLabel}</td>
                         <td className="px-2 py-1 text-right">{c.current}</td>
                         <td className="px-2 py-1 text-right">{c.next}</td>
-                        <td className={`px-2 py-1 text-right ${d > 0 ? "text-emerald-600" : d < 0 ? "text-destructive" : "text-muted-foreground"}`}>
+                        <td className={`px-2 py-1 text-right ${d > 0 ? "text-brand-emerald" : d < 0 ? "text-destructive" : "text-muted-foreground"}`}>
                           {d > 0 ? "+" : ""}{d}
                         </td>
                       </tr>

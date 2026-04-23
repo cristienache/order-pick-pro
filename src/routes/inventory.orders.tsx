@@ -28,9 +28,9 @@ function OrdersPage() {
 
   if (orders.error) {
     return (
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+      <div className="rounded-lg border border-brand-amber/40 bg-brand-amber-soft p-4 text-sm">
         <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 text-amber-600" />
+          <AlertCircle className="h-4 w-4 mt-0.5 text-brand-amber" />
           <div>
             <p className="font-semibold">Orders endpoint not available yet.</p>
             <p className="text-muted-foreground mt-1">Implement <code className="font-mono">GET/POST /api/oms/orders</code>.</p>
@@ -92,9 +92,9 @@ function OrdersPage() {
 
 function StatusBadge({ s }: { s: string }) {
   const tone =
-    s === "shipped" ? "bg-emerald-600 text-white" :
+    s === "shipped" ? "bg-brand-emerald text-background" :
     s === "allocated" ? "bg-foreground text-background" :
-    s === "partial" || s === "backorder" ? "bg-amber-500 text-white" :
+    s === "partial" || s === "backorder" ? "bg-brand-amber text-background" :
     s === "cancelled" ? "bg-muted text-muted-foreground" :
     "bg-muted text-muted-foreground";
   return <Badge className={`font-mono text-[10px] uppercase ${tone}`}>{s}</Badge>;

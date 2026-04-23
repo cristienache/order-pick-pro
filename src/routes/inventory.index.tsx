@@ -156,9 +156,9 @@ function InventoryGrid() {
   const anyError = products.error || warehouses.error || inventory.error;
   if (anyError) {
     return (
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+      <div className="rounded-lg border border-brand-amber/40 bg-brand-amber-soft p-4 text-sm">
         <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 text-amber-600" />
+          <AlertCircle className="h-4 w-4 mt-0.5 text-brand-amber" />
           <div>
             <p className="font-semibold">Inventory backend not available yet.</p>
             <p className="text-muted-foreground mt-1">

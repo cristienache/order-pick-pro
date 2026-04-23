@@ -47,9 +47,9 @@ function AuditPage() {
 
   if (audit.error) {
     return (
-      <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm dark:border-amber-900 dark:bg-amber-950/30">
+      <div className="rounded-lg border border-brand-amber/40 bg-brand-amber-soft p-4 text-sm">
         <div className="flex items-start gap-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 text-amber-600" />
+          <AlertCircle className="h-4 w-4 mt-0.5 text-brand-amber" />
           <div>
             <p className="font-semibold">Audit endpoint not available yet.</p>
             <p className="text-muted-foreground mt-1">Implement <code className="font-mono">GET /api/oms/inventory/audit</code> on the HeyShop server.</p>
@@ -95,7 +95,7 @@ function AuditPage() {
                     <span className="text-muted-foreground">{p?.name}</span>
                   </td>
                   <td className="px-3 py-1.5">{whMap.get(r.warehouse_id) ?? "?"}</td>
-                  <td className={`px-3 py-1.5 text-right ${r.delta > 0 ? "text-emerald-600" : "text-destructive"}`}>
+                  <td className={`px-3 py-1.5 text-right ${r.delta > 0 ? "text-brand-emerald" : "text-destructive"}`}>
                     {r.delta > 0 ? "+" : ""}{r.delta}
                   </td>
                   <td className="px-3 py-1.5 text-right">{r.new_qty}</td>

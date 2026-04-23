@@ -12,15 +12,15 @@ export interface StockCellProps {
 }
 
 function tone(qty: number, reorder: number) {
-  if (qty <= reorder) return "text-destructive";
-  if (qty <= reorder * 1.5) return "text-amber-600 dark:text-amber-400";
-  return "text-emerald-600 dark:text-emerald-400";
+  if (qty <= reorder) return "text-brand-rose";
+  if (qty <= reorder * 1.5) return "text-brand-amber";
+  return "text-brand-emerald";
 }
 
 function dotTone(qty: number, reorder: number) {
-  if (qty <= reorder) return "bg-destructive";
-  if (qty <= reorder * 1.5) return "bg-amber-500";
-  return "bg-emerald-500";
+  if (qty <= reorder) return "bg-brand-rose";
+  if (qty <= reorder * 1.5) return "bg-brand-amber";
+  return "bg-brand-emerald";
 }
 
 /**

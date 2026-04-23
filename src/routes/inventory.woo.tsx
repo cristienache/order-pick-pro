@@ -208,6 +208,11 @@ function WooInventory() {
         case "sale_price": return (num(a.sale_price) - num(b.sale_price)) * dir;
         case "stock_quantity": return ((a.stock_quantity ?? 0) - (b.stock_quantity ?? 0)) * dir;
         case "weight": return (num(a.weight) - num(b.weight)) * dir;
+        case "wc_date_created": {
+          const ta = a.wc_date_created ? Date.parse(a.wc_date_created) : 0;
+          const tb = b.wc_date_created ? Date.parse(b.wc_date_created) : 0;
+          return (ta - tb) * dir;
+        }
         case "last_synced_at": {
           const ta = a.last_synced_at ? Date.parse(a.last_synced_at) : 0;
           const tb = b.last_synced_at ? Date.parse(b.last_synced_at) : 0;

@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import type { Page } from "@/lib/pages";
 
-export const Route = createFileRoute("/admin/pages")({
+export const Route = createFileRoute("/admin/pages/")({
   component: () => (
     <RequireAuth adminOnly>
       <AppShell>

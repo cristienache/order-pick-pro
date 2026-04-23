@@ -203,4 +203,21 @@ db.exec(`
     expires_at TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_ebay_states_user ON ebay_oauth_states(user_id);
+
+  -- Global app branding. Single row (id=1). Stores app name, tagline, logo
+  -- and favicon as data URLs (kept small enough to live in SQLite — admin
+  -- form enforces ~256KB ceiling), per-nav-item label overrides as JSON,
+  -- and a colour palette as JSON (CSS variable name -> string value).
+  CREATE TABLE IF NOT EXISTS branding (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    app_name TEXT NOT NULL DEFAULT 'Ultrax',
+    tagline TEXT NOT NULL DEFAULT 'Order ops',
+    logo_data_url TEXT,
+    favicon_data_url TEXT,
+    nav_labels TEXT NOT NULL DEFAULT '{}',
+    colors TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+  );
+  INSERT OR IGNORE INTO branding (id) VALUES (1);
 `);

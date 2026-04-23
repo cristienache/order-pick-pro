@@ -40,6 +40,7 @@ type PacketaSettings = {
   use_sandbox: boolean;
   sender_name: string | null;
   sender_company: string | null;
+  sender_label: string | null;
   sender_address_line1: string | null;
   sender_address_line2: string | null;
   sender_city: string | null;
@@ -275,6 +276,7 @@ function SenderCard({ settings, onChanged }: { settings: PacketaSettings; onChan
   const [form, setForm] = useState({
     sender_name: settings.sender_name ?? "",
     sender_company: settings.sender_company ?? "",
+    sender_label: settings.sender_label ?? "",
     sender_address_line1: settings.sender_address_line1 ?? "",
     sender_address_line2: settings.sender_address_line2 ?? "",
     sender_city: settings.sender_city ?? "",
@@ -315,6 +317,26 @@ function SenderCard({ settings, onChanged }: { settings: PacketaSettings; onChan
       </CardHeader>
       <CardContent>
         <form onSubmit={save} className="space-y-4">
+          <div className="space-y-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+            <Label htmlFor="ps-label" className="font-medium">
+              Sender ID (eshop) <span className="text-destructive">*</span>
+            </Label>
+            <Input
+              id="ps-label"
+              value={form.sender_label}
+              onChange={set("sender_label")}
+              placeholder="e.g. myshop"
+              maxLength={60}
+            />
+            <p className="text-xs text-muted-foreground">
+              The exact sender identifier registered in your Packeta account.
+              Find it in the Packeta client section under{" "}
+              <span className="font-medium">Settings → Senders</span> — it's the
+              short code shown next to each registered sender.
+              Without this, label creation fails with{" "}
+              <em>"Sender is not given. Please choose a sender."</em>
+            </p>
+          </div>
           <div className="grid sm:grid-cols-2 gap-4">
             <Field id="ps-name" label="Name" value={form.sender_name} onChange={set("sender_name")} />
             <Field id="ps-company" label="Company" value={form.sender_company} onChange={set("sender_company")} />

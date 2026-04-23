@@ -1772,6 +1772,18 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
     };
   }
 
+  if (!sender || !String(sender.sender_label || "").trim()) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "Packeta sender ID is missing. Open the Packeta integration page and " +
+          "fill in the \"Sender ID (eshop)\" field — copy it from your Packeta " +
+          "client section under Settings → Senders.",
+      },
+    };
+  }
+
   const packet = buildPacketaPacketAttrs({
     order,
     route: { ...route, is_pickup_points: isPickup },

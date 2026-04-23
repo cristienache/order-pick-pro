@@ -34,7 +34,10 @@ export const Route = createFileRoute("/inventory/woo")({
   component: WooInventory,
 });
 
-/** Locally-edited row state. We mirror the server fields the user can edit. */
+/** Locally-edited row state. We mirror the server fields the user can edit.
+ *  Keeping `description` as `string | null` lets us tell "user typed empty"
+ *  apart from "never touched" (null). Same idea for the other fields: blank
+ *  string = user cleared it on purpose; null = unchanged from sync. */
 type DraftRow = {
   name: string;
   sku: string;
@@ -45,6 +48,17 @@ type DraftRow = {
   manage_stock: boolean;
   weight: string;
   description: string;
+};
+
+/** Snapshot of the row as it was right after the last sync. Used to compute
+ *  a per-field diff so we only push fields the user actually changed —
+ *  prevents wiping WC data we never had locally (real regular_price,
+ *  sale_price, weight, description, etc.). */
+type OriginalRow = {
+  name: string;
+  sku: string;
+  regular_price: string;
+  stock_quantity: string;
 };
 
 /** Pull WC mirror products + stock from the OMS endpoints (already implemented). */

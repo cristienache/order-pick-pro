@@ -5,6 +5,7 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  signup: (email: string, password: string) => Promise<void>;
   bootstrap: (email: string, password: string) => Promise<void>;
   acceptInvite: (token: string, password: string) => Promise<void>;
   logout: () => void;
@@ -40,6 +41,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(user);
   };
 
+  const signup = async (email: string, password: string) => {
+    const { token, user } = await api<{ token: string; user: User }>("/api/auth/signup", {
+      body: { email, password },
+    });
+    setToken(token);
+    setUser(user);
+  };
+
   const bootstrap = async (email: string, password: string) => {
     const { token, user } = await api<{ token: string; user: User }>("/api/auth/bootstrap", {
       body: { email, password },
@@ -59,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = () => { setToken(null); setUser(null); };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, bootstrap, acceptInvite, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, signup, bootstrap, acceptInvite, logout, refresh }}>
       {children}
     </AuthContext.Provider>
   );

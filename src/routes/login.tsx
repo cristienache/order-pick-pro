@@ -21,16 +21,18 @@ function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [needsBootstrap, setNeedsBootstrap] = useState<boolean | null>(null);
   const [adminEmail, setAdminEmail] = useState<string>("");
+  const [publicSignup, setPublicSignup] = useState<boolean>(false);
 
   useEffect(() => {
     if (!loading && user) navigate({ to: "/" });
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    api<{ bootstrapped: boolean; adminEmail: string }>("/api/auth/status")
+    api<{ bootstrapped: boolean; adminEmail: string; publicSignup?: boolean }>("/api/auth/status")
       .then((r) => {
         setNeedsBootstrap(!r.bootstrapped);
         setAdminEmail(r.adminEmail);
+        setPublicSignup(r.publicSignup !== false);
         if (!r.bootstrapped) setEmail(r.adminEmail);
       })
       .catch(() => setNeedsBootstrap(false));
@@ -102,7 +104,15 @@ function LoginPage() {
               {needsBootstrap ? "Create master admin" : "Sign in"}
             </Button>
           </form>
-          <p className="text-center text-xs text-muted-foreground mt-6">
+          {!needsBootstrap && publicSignup && (
+            <p className="text-center text-sm text-muted-foreground mt-6">
+              Don't have an account?{" "}
+              <Link to="/signup" className="text-foreground font-medium hover:underline">
+                Sign up
+              </Link>
+            </p>
+          )}
+          <p className="text-center text-xs text-muted-foreground mt-4">
             Need help? <Link to="/contact" className="text-foreground font-medium hover:underline">Contact us</Link>
           </p>
         </CardContent>

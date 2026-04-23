@@ -279,7 +279,45 @@ app.post("/api/auth/bootstrap", async (req, res) => {
 
 app.get("/api/auth/status", (_req, res) => {
   const count = db.prepare("SELECT COUNT(*) as c FROM users").get().c;
-  res.json({ bootstrapped: count > 0, adminEmail: ADMIN_EMAIL });
+  res.json({
+    bootstrapped: count > 0,
+    adminEmail: ADMIN_EMAIL,
+    publicSignup: process.env.ALLOW_PUBLIC_SIGNUP !== "false", // default on
+  });
+});
+
+// ---------- Public self-signup ----------
+// Allows anyone to create a regular ('user') account. Bootstrap of the master
+// admin is still handled separately by /api/auth/bootstrap. This endpoint is
+// rate-limited via the /api/auth/ limiter and can be disabled by setting the
+// env var ALLOW_PUBLIC_SIGNUP=false.
+const signupSchema = z.object({
+  email: z.string().trim().email().max(255),
+  password: z.string().min(8).max(200),
+});
+app.post("/api/auth/signup", async (req, res) => {
+  if (process.env.ALLOW_PUBLIC_SIGNUP === "false") {
+    return res.status(403).json({ error: "Public signup is disabled" });
+  }
+  const parsed = signupSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid input" });
+  const { email, password } = parsed.data;
+
+  // Master admin must use bootstrap flow, not signup.
+  if (email.toLowerCase() === ADMIN_EMAIL) {
+    return res.status(403).json({ error: "This email is reserved. Use first-time setup." });
+  }
+
+  const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  if (existing) return res.status(409).json({ error: "An account with this email already exists" });
+
+  const hash = await bcrypt.hash(password, 12);
+  const result = db.prepare(
+    "INSERT INTO users (email, password_hash, role) VALUES (?, ?, 'user')",
+  ).run(email, hash);
+  const user = { id: result.lastInsertRowid, email, role: "user" };
+  const token = signToken(user);
+  res.json({ token, user });
 });
 
 // ---------- Public contact form ----------

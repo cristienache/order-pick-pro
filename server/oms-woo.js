@@ -142,7 +142,17 @@ async function pushOneToWc(site, wcId, body) {
     body: JSON.stringify(body),
   });
   const text = await res.text().catch(() => "");
-  if (!res.ok) throw new Error(`WC ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    // WC errors look like {"code":"product_invalid_sku","message":"...","data":{...}}.
+    // Surface the human message when present so the UI toast is useful.
+    let msg = text.slice(0, 300);
+    try {
+      const j = JSON.parse(text);
+      if (j && (j.message || j.code)) msg = `${j.code || "wc_error"}: ${j.message || ""}`.trim();
+    } catch { /* leave raw */ }
+    console.error(`[oms-woo] push ${wcId} failed (${res.status}):`, msg, "body:", JSON.stringify(body));
+    throw new Error(`WC ${res.status}: ${msg}`);
+  }
   try { return JSON.parse(text); } catch { return null; }
 }
 

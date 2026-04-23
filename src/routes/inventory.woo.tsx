@@ -503,7 +503,7 @@ function WooInventory() {
       )}
 
       {/* Grid */}
-      <div className="overflow-auto border border-t-0 rounded-b-lg">
+      <div className="overflow-auto border border-t-0">
         {products.isLoading ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />

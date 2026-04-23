@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Package } from "lucide-react";
+import { CheckCircle2, Loader2, Package } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/signup")({
@@ -14,13 +14,14 @@ export const Route = createFileRoute("/signup")({
 });
 
 function SignupPage() {
-  const { user, signup, loading } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [allowed, setAllowed] = useState<boolean | null>(null);
+  const [submitted, setSubmitted] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) navigate({ to: "/" });
@@ -29,11 +30,7 @@ function SignupPage() {
   useEffect(() => {
     api<{ bootstrapped: boolean; publicSignup?: boolean }>("/api/auth/status")
       .then((r) => {
-        // If app not yet bootstrapped, the user must use /login (first-time setup).
-        if (!r.bootstrapped) {
-          setAllowed(false);
-          return;
-        }
+        if (!r.bootstrapped) { setAllowed(false); return; }
         setAllowed(r.publicSignup !== false);
       })
       .catch(() => setAllowed(false));
@@ -47,9 +44,14 @@ function SignupPage() {
     }
     setSubmitting(true);
     try {
-      await signup(email, password);
-      toast.success("Account created. Welcome!");
-      navigate({ to: "/" });
+      // We deliberately bypass the AuthContext signup() helper because the
+      // server now returns 202 (pending) instead of a JWT — it cannot log
+      // the user in until an admin approves the account.
+      await api<{ pending: boolean; email: string; message: string }>(
+        "/api/auth/signup",
+        { body: { email, password } },
+      );
+      setSubmitted(email);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign up failed");
     } finally {
@@ -62,17 +64,34 @@ function SignupPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="mx-auto mb-2 h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-            <Package className="h-6 w-6 text-primary" />
+            {submitted ? (
+              <CheckCircle2 className="h-6 w-6 text-primary" />
+            ) : (
+              <Package className="h-6 w-6 text-primary" />
+            )}
           </div>
-          <CardTitle>Create your account</CardTitle>
+          <CardTitle>
+            {submitted ? "Awaiting approval" : "Create your account"}
+          </CardTitle>
           <CardDescription>
-            {allowed === false
-              ? "Self-signup is currently disabled. Please ask an admin for an invite."
-              : "Sign up to get started with Ultrax."}
+            {submitted
+              ? `Thanks! Your account for ${submitted} has been created and is now pending review by our team. You'll receive an email once it's approved.`
+              : allowed === false
+                ? "Self-signup is currently disabled. Please ask an admin for an invite."
+                : "Sign up to request access to Ultrax. An admin will review your account before you can sign in."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {allowed === false ? (
+          {submitted ? (
+            <div className="space-y-4">
+              <p className="text-sm text-muted-foreground">
+                In the meantime, you can return to the sign-in page.
+              </p>
+              <Button asChild className="w-full" variant="outline">
+                <Link to="/login">Back to sign in</Link>
+              </Button>
+            </div>
+          ) : allowed === false ? (
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
                 If you already have an account,{" "}
@@ -125,16 +144,18 @@ function SignupPage() {
               </div>
               <Button type="submit" className="w-full" disabled={submitting || allowed === null}>
                 {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Create account
+                Request access
               </Button>
             </form>
           )}
-          <p className="text-center text-xs text-muted-foreground mt-6">
-            Already have an account?{" "}
-            <Link to="/login" className="text-foreground font-medium hover:underline">
-              Sign in
-            </Link>
-          </p>
+          {!submitted && (
+            <p className="text-center text-xs text-muted-foreground mt-6">
+              Already have an account?{" "}
+              <Link to="/login" className="text-foreground font-medium hover:underline">
+                Sign in
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

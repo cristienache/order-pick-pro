@@ -17,6 +17,7 @@ import shopifyLogo from "@/assets/integrations/shopify.svg";
 import etsyLogo from "@/assets/integrations/etsy.svg";
 import magentoLogo from "@/assets/integrations/magento.svg";
 import ebayLogo from "@/assets/integrations/ebay.svg";
+import packetaLogo from "@/assets/integrations/packeta.png";
 
 export const Route = createFileRoute("/integrations")({
   component: () => <RequireAuth><AppShell><SitesPage /></AppShell></RequireAuth>,

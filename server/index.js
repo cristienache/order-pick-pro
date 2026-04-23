@@ -1673,6 +1673,13 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
   const value = Number(order.total) || route.default_value || 0;
   const weight = route.default_weight_kg > 0 ? route.default_weight_kg : 0.5;
 
+  // Packeta requires `eshop` to be the sender ID (a.k.a. "senderLabel") that
+  // the user has registered in their Packeta client section. It is NOT a
+  // free-text company name — passing the wrong value yields:
+  //   "eshop_id: ...: Sender is not given. Please choose a sender."
+  // We use the dedicated sender_label column. Without it we cannot continue.
+  const eshopId = String(sender.sender_label || "").trim();
+
   const attrs = {
     number: String(order.number || order.id),
     name: String(ship.first_name || billing.first_name || "").slice(0, 32),
@@ -1689,12 +1696,8 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
     cod: 0,
     value,
     weight,
-    eshop: sender.sender_company || sender.sender_name || "Ultrax",
+    eshop: eshopId,
   };
-
-  // Sender block printed on the label.
-  if (sender.sender_name) attrs.senderName = sender.sender_name;
-  if (sender.sender_company) attrs.senderLabel = sender.sender_company;
 
   return attrs;
 }

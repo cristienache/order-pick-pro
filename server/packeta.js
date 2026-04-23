@@ -258,27 +258,18 @@ export async function verifyPacketaSender({ apiPassword, useSandbox, senderLabel
 
 // ---------- Phase 2: createPacket + label PDF ----------
 
-// Read the WC Packeta plugin's pickup-point ID off a WooCommerce order.
-// The plugin stores it in order meta as one of these keys:
-//   packetery_point_id, _packetery_point_id, packetery point id
-// We also accept it on a shipping line meta entry, which is where some
-// installations write it.
-export function pickPacketaPickupPointId(order) {
+// Generic order-meta reader. Walks order.meta_data and every shipping line's
+// meta_data and returns the first value whose lowercased key is in `keys`.
+function readOrderMeta(order, keys) {
   if (!order || typeof order !== "object") return null;
-  const KEYS = new Set([
-    "packetery_point_id",
-    "_packetery_point_id",
-    "packeta_point_id",
-    "_packeta_point_id",
-    "packetery point id",
-  ]);
+  const set = new Set(keys.map((k) => String(k).toLowerCase()));
   const tryRead = (arr) => {
     if (!Array.isArray(arr)) return null;
     for (const m of arr) {
       const k = String(m?.key || "").toLowerCase().trim();
-      if (KEYS.has(k)) {
+      if (set.has(k)) {
         const v = m.value;
-        if (v == null) continue;
+        if (v == null || v === "") continue;
         const str = String(v).trim();
         if (str) return str;
       }
@@ -295,6 +286,59 @@ export function pickPacketaPickupPointId(order) {
   }
   return null;
 }
+
+// Read the WC Packeta plugin's pickup-point ID off a WooCommerce order.
+// Stored in order/shipping-line meta as `packetery_point_id` (and a few
+// historical aliases).
+export function pickPacketaPickupPointId(order) {
+  return readOrderMeta(order, [
+    "packetery_point_id",
+    "_packetery_point_id",
+    "packeta_point_id",
+    "_packeta_point_id",
+    "packetery point id",
+  ]);
+}
+
+// Carrier ID chosen by the customer at checkout via the Packeta WC plugin.
+// Stored in `packetery_carrier_id` meta. May be:
+//   - a numeric Packeta carrier code (e.g. "106" for CZ Home Delivery)
+//   - the literal string "zpoint" / "packeta" for Packeta pickup points
+// We pass it through verbatim; the caller decides whether to look it up in
+// our carrier catalog.
+export function pickPacketaCarrierId(order) {
+  return readOrderMeta(order, [
+    "packetery_carrier_id",
+    "_packetery_carrier_id",
+    "packeta_carrier_id",
+  ]);
+}
+
+// Order weight (kg) saved by the WC Packeta plugin. Falls back to null if
+// not present so the caller can use its own default.
+export function pickPacketaWeightKg(order) {
+  const raw = readOrderMeta(order, ["packetery_weight", "_packetery_weight"]);
+  if (raw == null) return null;
+  const n = Number(String(raw).replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// Order dimensions (cm) saved by the WC Packeta plugin. Returns
+// { length, width, height } with each value either a positive number or null.
+export function pickPacketaDimensions(order) {
+  const read = (keys) => {
+    const raw = readOrderMeta(order, keys);
+    if (raw == null) return null;
+    const n = Number(String(raw).replace(",", "."));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  };
+  return {
+    length: read(["packetery_length", "_packetery_length"]),
+    width: read(["packetery_width", "_packetery_width"]),
+    height: read(["packetery_height", "_packetery_height"]),
+  };
+}
+
 
 // POST createPacket. `packet` should already be normalised — see
 // buildCreatePacketBody below.

@@ -510,10 +510,13 @@ function CountryRoutesCard({ hasApiPassword }: { hasApiPassword: boolean }) {
           <div className="flex items-start gap-3">
             <Globe className="h-5 w-5 text-muted-foreground mt-0.5" />
             <div>
-              <CardTitle>Country routing</CardTitle>
+              <CardTitle>Country routing <span className="text-xs font-normal text-muted-foreground ml-2">(fallback)</span></CardTitle>
               <CardDescription>
-                Map each destination country to a Packeta carrier. Used when creating
-                labels for orders shipping to that country.
+                When the Packeta WooCommerce plugin is installed, HeyShop reads the
+                carrier the customer chose at checkout (<code className="text-xs">packetery_carrier_id</code>)
+                and the saved <code className="text-xs">packetery_weight</code> directly from each order — no
+                country mapping needed. Use this table only as a fallback for orders that
+                don't carry that meta (e.g. sites without the plugin).
               </CardDescription>
             </div>
           </div>

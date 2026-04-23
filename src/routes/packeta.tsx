@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, type PacketaCarrier, type PacketaCountryRoute } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
@@ -12,7 +12,13 @@ import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Package, KeyRound, MapPin, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { Loader2, Package, KeyRound, MapPin, CheckCircle2, AlertCircle, Trash2, Globe, RefreshCw, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/packeta")({

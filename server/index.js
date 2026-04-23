@@ -43,6 +43,8 @@ import {
   createPacketaPacket,
   getPacketaLabelPdf,
   getPacketaLabelsPdf,
+  getPacketaCourierNumber,
+  getPacketaCourierLabelPdf,
 } from "./packeta.js";
 import {
   syncPacketaCarriers,
@@ -1920,13 +1922,51 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
     return { status: 422, body: { error: created.error || "Packeta rejected the packet.", detail: created.detail } };
   }
 
-  const label = await getPacketaLabelPdf({
+  // Try to fetch the OFFICIAL CARRIER label first (DHL / bpost / DPD / PPL /
+  // ...) — this is the label the Packeta admin UI prints for routed packets.
+  // If Packeta hasn't yet routed the packet to a carrier (common for pickup
+  // points or right after creation), fall back to the generic Packeta label.
+  let labelBuffer = null;
+  let labelKind = "packeta"; // "courier" if we got the carrier's official label
+  let courierTrackingNumber = null;
+  let labelWarning = null;
+
+  const courierNum = await getPacketaCourierNumber({
     apiPassword: creds.apiPassword,
     useSandbox: creds.useSandbox,
     packetId: created.packetId,
-    format: "A6 on A6",
   });
-  const labelBase64 = label.ok && label.buffer ? label.buffer.toString("base64") : null;
+  if (courierNum.ok && courierNum.courierNumber) {
+    courierTrackingNumber = courierNum.courierNumber;
+    const courierLabel = await getPacketaCourierLabelPdf({
+      apiPassword: creds.apiPassword,
+      useSandbox: creds.useSandbox,
+      packetId: created.packetId,
+      courierNumber: courierNum.courierNumber,
+      format: "A6 on A6",
+    });
+    if (courierLabel.ok && courierLabel.buffer) {
+      labelBuffer = courierLabel.buffer;
+      labelKind = "courier";
+    } else {
+      labelWarning = courierLabel.error || null;
+    }
+  }
+  if (!labelBuffer) {
+    const label = await getPacketaLabelPdf({
+      apiPassword: creds.apiPassword,
+      useSandbox: creds.useSandbox,
+      packetId: created.packetId,
+      format: "A6 on A6",
+    });
+    if (label.ok && label.buffer) {
+      labelBuffer = label.buffer;
+    } else {
+      labelWarning = labelWarning || label.error || "Label PDF could not be fetched yet.";
+    }
+  }
+  const labelBase64 = labelBuffer ? labelBuffer.toString("base64") : null;
+  const trackingForCustomer = courierTrackingNumber || created.barcode || created.barcodeText || null;
 
   const insert = db.prepare(`
     INSERT INTO shipments (
@@ -1936,8 +1976,8 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
     ) VALUES (?, ?, ?, ?, ?, ?, ?, 'packeta', ?, ?)
   `).run(
     userId, siteId, orderId, site.store_url,
-    created.barcode || created.barcodeText || null,
-    `PACKETA:${resolved.route?.carrier_id ?? resolved.addressId ?? "wc-plugin"}`,
+    trackingForCustomer,
+    `PACKETA:${resolved.route?.carrier_id ?? resolved.addressId ?? "wc-plugin"}${labelKind === "courier" ? ":COURIER" : ""}`,
     labelBase64,
     created.packetId,
     created.barcode || null,
@@ -1945,14 +1985,13 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
 
   // Notify the customer with the tracking number (customer_note=true emails them)
   // and best-effort mark the order as completed in WooCommerce.
-  if (created.barcode) {
+  if (trackingForCustomer) {
+    const trackingLine = courierTrackingNumber
+      ? `Packeta label created. Carrier tracking: ${courierTrackingNumber}` +
+        (created.barcode ? ` (Packeta: ${created.barcode})` : "")
+      : `Packeta label created. Tracking: ${created.barcode}`;
     try {
-      await addOrderNote(
-        site,
-        orderId,
-        `Packeta label created. Tracking: ${created.barcode}`,
-        true,
-      );
+      await addOrderNote(site, orderId, trackingLine, true);
     } catch (e) {
       console.warn(`[packeta] WC customer note failed for order ${orderId}: ${e.message}`);
     }
@@ -1970,7 +2009,9 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
       shipment: rmShipmentToPublic(saved),
       packet_id: created.packetId,
       barcode: created.barcode || null,
-      label_warning: label.ok ? null : (label.error || "Label PDF could not be fetched yet."),
+      courier_number: courierTrackingNumber,
+      label_kind: labelKind,
+      label_warning: labelBuffer ? null : labelWarning,
     },
   };
 }

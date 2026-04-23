@@ -93,10 +93,6 @@ export const wcApi = {
   listProducts: (siteId: number) =>
     api<WcProductRow[]>(`${BASE}/products?site_id=${siteId}`),
 
-  sync: (siteId: number) =>
-    api<{ total: number; created: number; updated: number; warehouse_id: string }>(
-      `${BASE}/sync/${siteId}`, { method: "POST", body: {} },
-    ),
 
   /** One chunk of the sync. Call repeatedly until `done` is true. */
   syncPage: (siteId: number, page: number, perPage = 50) =>

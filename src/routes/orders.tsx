@@ -397,10 +397,16 @@ function PicklistPage() {
 
   const filteredBySite = useMemo(() => {
     const out: Record<number, OrderRow[]> = {};
+    // Server may return extra statuses (e.g. "completed" right after a print
+    // so freshly-completed orders don't vanish mid-action). The visible list
+    // must still honour the user's status chip — otherwise the chip says
+    // "Processing" but completed rows are showing too.
+    const allowedStatuses = new Set(statuses);
     for (const sid of activeSites) {
       const arr = ordersBySite[sid] || [];
       const q = search.trim().toLowerCase();
       const filtered = arr.filter((o) => {
+        if (!allowedStatuses.has(o.status)) return false;
         if (!withinDateRange(o, datePreset, customFrom, customTo)) return false;
         if (showOnlyUnprinted) {
           const sh = shipmentsByOrder[`${sid}:${o.id}`];
@@ -417,7 +423,7 @@ function PicklistPage() {
       });
     }
     return out;
-  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
+  }, [ordersBySite, activeSites, statuses, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
 
   // Flat, globally-sorted list of every visible order across all sites.
   // Each entry carries its siteId so the unified table can render the

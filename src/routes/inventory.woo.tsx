@@ -713,19 +713,32 @@ function WooInventory() {
                             disabled={isVariation}
                             className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
                           />
-                          {isVariableParent && (
-                            <>
-                              <Badge variant="outline" className="text-[9px]">VARIABLE</Badge>
-                              <button
-                                onClick={() => copyParentToVariations(p.id)}
-                                className="mr-1 rounded p-1 hover:bg-muted"
-                                title="Copy price/weight/status to all variations"
-                                aria-label="Copy to variations"
-                              >
-                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                              </button>
-                            </>
-                          )}
+                          {isVariableParent && (() => {
+                            const vCount = siteProducts.filter((x) => x.parent_product_id === p.id).length;
+                            return (
+                              <>
+                                <Badge variant="outline" className="text-[9px]">
+                                  VARIABLE • {vCount} {vCount === 1 ? "variation" : "variations"}
+                                </Badge>
+                                {vCount === 0 && (
+                                  <span
+                                    className="text-[9px] text-brand-amber font-semibold"
+                                    title="WooCommerce returned no variations for this parent — check that variations are published in WC."
+                                  >
+                                    ⚠ no variations imported
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => copyParentToVariations(p.id)}
+                                  className="mr-1 rounded p-1 hover:bg-muted"
+                                  title="Copy price/weight/status to all variations"
+                                  aria-label="Copy to variations"
+                                >
+                                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                                </button>
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="h-9 border-b p-0 align-middle">

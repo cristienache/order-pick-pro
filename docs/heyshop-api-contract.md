@@ -21,9 +21,11 @@ HeyShop Express server (`/server`) must implement them.
 - **Timestamps:** ISO 8601 strings (`2026-04-23T10:15:00.000Z`).
 - **Money:** plain numbers (no Decimal wrapper). Quantities are integers ≥ 0.
 
-Shared TypeScript types live in [`src/lib/inventory-api.ts`](../src/lib/inventory-api.ts).
-The Express server should mirror those interfaces (or import them via a
-shared package once one exists).
+Shared TypeScript types live in [`src/lib/api-types.ts`](../src/lib/api-types.ts)
+and are re-exported from [`src/lib/inventory-api.ts`](../src/lib/inventory-api.ts).
+A minimal Express stub mounted under `/api/oms/*` lives at
+[`server/oms-stub.js`](../server/oms-stub.js) — drop it into `server/index.js`
+to develop the UI in parallel before the real handlers exist.
 
 ---
 

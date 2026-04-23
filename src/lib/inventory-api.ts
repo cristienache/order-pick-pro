@@ -4,154 +4,27 @@
 // docs/heyshop-api-contract.md). Auth piggybacks on HeyShop's existing
 // JWT (Bearer token from localStorage["ultrax_token"]) — we reuse the
 // `api()` helper from src/lib/api.ts so the same auth flow applies.
+//
+// All shared shapes live in src/lib/api-types.ts so the Express server
+// can import (or mirror) the exact same definitions.
 
 import { api } from "./api";
+import type {
+  AuditRow,
+  BulkUpdateInventoryInput,
+  BulkUpdateInventoryResult,
+  CreateOrderInput,
+  InventoryRow,
+  OmsSession,
+  Order,
+  OrderDetail,
+  Product,
+  ShipmentStatus,
+  UpdateInventoryCellInput,
+  Warehouse,
+} from "./api-types";
 
-/* ---------------- Shared domain types ---------------- */
-
-export type ProductSource = "woo" | "oms";
-export type OrderStatus =
-  | "pending"
-  | "allocated"
-  | "partial"
-  | "backorder"
-  | "shipped"
-  | "cancelled";
-export type ShipmentStatus = "allocated" | "picked" | "shipped" | "cancelled";
-export type AppRole = "admin" | "manager" | "viewer";
-
-export interface Product {
-  id: string;
-  sku: string;
-  name: string;
-  source: ProductSource;
-  base_price: number;
-  woo_product_id: number | null;
-}
-
-export interface Warehouse {
-  id: string;
-  name: string;
-  code: string;
-  address: string | null;
-  lat: number;
-  lng: number;
-  capacity_units: number;
-  is_active: boolean;
-}
-
-export interface InventoryRow {
-  product_id: string;
-  warehouse_id: string;
-  quantity: number;
-  reserved: number;
-  reorder_level: number;
-  version: number;
-}
-
-export interface AuditRow {
-  id: string;
-  product_id: string;
-  warehouse_id: string;
-  delta: number;
-  new_qty: number;
-  reason: string;
-  source: string;
-  actor_id: string | null;
-  created_at: string;
-}
-
-export interface Order {
-  id: string;
-  customer_name: string;
-  customer_address: string | null;
-  customer_lat: number;
-  customer_lng: number;
-  status: OrderStatus;
-  notes: string | null;
-  woo_order_id: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface OrderItem {
-  id: string;
-  order_id: string;
-  product_id: string;
-  quantity: number;
-}
-
-export interface OrderShipment {
-  id: string;
-  order_id: string;
-  warehouse_id: string;
-  status: ShipmentStatus;
-  tracking: string | null;
-  created_at: string;
-}
-
-export interface ShipmentItem {
-  id: string;
-  shipment_id: string;
-  product_id: string;
-  quantity: number;
-}
-
-export interface OmsSession {
-  id: string;
-  email: string;
-  roles: AppRole[];
-  warehouse_ids: string[];
-}
-
-/* ---------------- Request/response payloads ---------------- */
-
-export interface UpdateInventoryCellInput {
-  product_id: string;
-  warehouse_id: string;
-  next_quantity: number;
-  expected_version: number;
-  reason?: string;
-}
-
-export interface BulkUpdateInventoryInput {
-  reason?: string;
-  updates: Array<{
-    product_id: string;
-    warehouse_id: string;
-    next_quantity: number;
-    expected_version: number;
-  }>;
-}
-
-export interface BulkUpdateInventoryResult {
-  ok: number;
-  failed: Array<{
-    product_id: string;
-    warehouse_id: string;
-    reason: "version_conflict" | "forbidden" | "not_found" | "error";
-    message?: string;
-  }>;
-}
-
-export interface CreateOrderInput {
-  customer_name: string;
-  customer_address?: string | null;
-  customer_lat: number;
-  customer_lng: number;
-  notes?: string | null;
-  items: Array<{ product_id: string; quantity: number }>;
-}
-
-export interface OrderDetail {
-  order: Order;
-  items: OrderItem[];
-  shipments: OrderShipment[];
-  shipment_items: ShipmentItem[];
-  shortfall: Array<{ product_id: string; quantity: number }>;
-}
-
-/* ---------------- Client surface ---------------- */
+export type * from "./api-types";
 
 const BASE = "/api/oms";
 

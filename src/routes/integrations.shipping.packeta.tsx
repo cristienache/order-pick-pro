@@ -286,6 +286,7 @@ function SenderCard({ settings, onChanged }: { settings: PacketaSettings; onChan
     sender_email: settings.sender_email ?? "",
   });
   const [saving, setSaving] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -300,6 +301,28 @@ function SenderCard({ settings, onChanged }: { settings: PacketaSettings; onChan
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Save failed");
     } finally { setSaving(false); }
+  };
+
+  // Packeta's API has no "list senders" method — we can only validate a
+  // user-supplied label via senderGetReturnRouting. This button does that
+  // round-trip and surfaces whether the label is registered.
+  const verify = async () => {
+    const label = form.sender_label.trim();
+    if (!label) {
+      toast.error("Enter a Sender ID first");
+      return;
+    }
+    setVerifying(true);
+    try {
+      const r = await api<{ ok: boolean; message?: string; error?: string }>(
+        "/api/packeta/verify-sender",
+        { method: "POST", body: { sender_label: label } },
+      );
+      if (r.ok) toast.success(r.message || "Sender verified");
+      else toast.error(r.message || r.error || "Sender not recognised");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Verification failed");
+    } finally { setVerifying(false); }
   };
 
   return (
@@ -321,19 +344,33 @@ function SenderCard({ settings, onChanged }: { settings: PacketaSettings; onChan
             <Label htmlFor="ps-label" className="font-medium">
               Sender ID (eshop) <span className="text-destructive">*</span>
             </Label>
-            <Input
-              id="ps-label"
-              value={form.sender_label}
-              onChange={set("sender_label")}
-              placeholder="e.g. myshop"
-              maxLength={60}
-            />
+            <div className="flex gap-2">
+              <Input
+                id="ps-label"
+                value={form.sender_label}
+                onChange={set("sender_label")}
+                placeholder="e.g. myshop"
+                maxLength={60}
+                className="flex-1"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={verify}
+                disabled={verifying || !form.sender_label.trim() || !settings.has_api_password}
+              >
+                {verifying ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                Verify
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               The exact sender identifier registered in your Packeta account.
               Find it in the Packeta client section under{" "}
               <span className="font-medium">Settings → Senders</span> — it's the
               short code shown next to each registered sender.
-              Without this, label creation fails with{" "}
+              Packeta's API doesn't expose a list of senders, but{" "}
+              <span className="font-medium">Verify</span> checks whether the ID
+              you entered exists. Without a valid sender, label creation fails with{" "}
               <em>"Sender is not given. Please choose a sender."</em>
             </p>
           </div>

@@ -137,7 +137,17 @@ for (const col of RETURN_COLS) {
   }
 }
 
-// Add api_key_enc to royal_mail_credentials for older databases that were
+// Add status + approval_token to existing users tables. Existing users are
+// considered active so this migration is non-destructive on the live VPS DB.
+const userCols = new Set(
+  db.prepare("PRAGMA table_info(users)").all().map((c) => c.name),
+);
+if (!userCols.has("status")) {
+  db.exec(`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+}
+if (!userCols.has("approval_token")) {
+  db.exec(`ALTER TABLE users ADD COLUMN approval_token TEXT`);
+}
 // created before the Click & Drop migration.
 const rmCols = new Set(
   db.prepare("PRAGMA table_info(royal_mail_credentials)").all().map((c) => c.name),

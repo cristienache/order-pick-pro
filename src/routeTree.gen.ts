@@ -90,9 +90,9 @@ const AdminPagesIndexRoute = AdminPagesIndexRouteImport.update({
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminPagesPageIdRoute = AdminPagesPageIdRouteImport.update({
-  id: '/$pageId',
-  path: '/$pageId',
-  getParentRoute: () => AdminPagesRoute,
+  id: '/admin/pages/$pageId',
+  path: '/admin/pages/$pageId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -208,6 +208,7 @@ export interface RootRouteChildren {
   AdminUsersRoute: typeof AdminUsersRoute
   ApiSplatRoute: typeof ApiSplatRoute
   PSlugRoute: typeof PSlugRoute
+  AdminPagesPageIdRoute: typeof AdminPagesPageIdRoute
   AdminPagesIndexRoute: typeof AdminPagesIndexRoute
 }
 
@@ -306,10 +307,10 @@ declare module '@tanstack/react-router' {
     }
     '/admin/pages/$pageId': {
       id: '/admin/pages/$pageId'
-      path: '/$pageId'
+      path: '/admin/pages/$pageId'
       fullPath: '/admin/pages/$pageId'
       preLoaderRoute: typeof AdminPagesPageIdRouteImport
-      parentRoute: typeof AdminPagesRoute
+      parentRoute: typeof rootRouteImport
     }
   }
 }
@@ -327,17 +328,9 @@ const rootRouteChildren: RootRouteChildren = {
   AdminUsersRoute: AdminUsersRoute,
   ApiSplatRoute: ApiSplatRoute,
   PSlugRoute: PSlugRoute,
+  AdminPagesPageIdRoute: AdminPagesPageIdRoute,
   AdminPagesIndexRoute: AdminPagesIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

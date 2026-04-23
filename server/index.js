@@ -1295,6 +1295,10 @@ const packetaCredsSchema = z.object({
 const packetaSenderSchema = z.object({
   sender_name: optAddrField(100),
   sender_company: optAddrField(100),
+  // The Packeta-assigned eshop / sender ID. REQUIRED by Packeta's createPacket
+  // call as the `senderLabel` field. The user copies this from their Packeta
+  // client section under Settings → Senders (e.g. "myshop", "eshop123").
+  sender_label: optAddrField(60),
   sender_address_line1: optAddrField(150),
   sender_address_line2: optAddrField(150),
   sender_city: optAddrField(80),
@@ -1311,7 +1315,7 @@ function packetaRowToPublic(row) {
       has_api_password: false,
       has_widget_api_key: false,
       use_sandbox: false,
-      sender_name: null, sender_company: null,
+      sender_name: null, sender_company: null, sender_label: null,
       sender_address_line1: null, sender_address_line2: null,
       sender_city: null, sender_postcode: null,
       sender_country: "CZ", sender_phone: null, sender_email: null,
@@ -1324,6 +1328,7 @@ function packetaRowToPublic(row) {
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,
+    sender_label: row.sender_label,
     sender_address_line1: row.sender_address_line1,
     sender_address_line2: row.sender_address_line2,
     sender_city: row.sender_city,
@@ -1396,24 +1401,28 @@ app.put("/api/packeta/sender", requireAuth, (req, res) => {
   if (existing) {
     db.prepare(`
       UPDATE packeta_credentials
-      SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
+      SET sender_name = ?, sender_company = ?, sender_label = ?,
+          sender_address_line1 = ?, sender_address_line2 = ?,
           sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
           updated_at = datetime('now')
       WHERE user_id = ?
     `).run(
-      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_name, d.sender_company, d.sender_label,
+      d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
       req.user.id,
     );
   } else {
     db.prepare(`
       INSERT INTO packeta_credentials (
-        user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
+        user_id, sender_name, sender_company, sender_label,
+        sender_address_line1, sender_address_line2,
         sender_city, sender_postcode, sender_country, sender_phone, sender_email
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user.id,
-      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_name, d.sender_company, d.sender_label,
+      d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
     );
   }
@@ -1664,6 +1673,13 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
   const value = Number(order.total) || route.default_value || 0;
   const weight = route.default_weight_kg > 0 ? route.default_weight_kg : 0.5;
 
+  // Packeta requires `eshop` to be the sender ID (a.k.a. "senderLabel") that
+  // the user has registered in their Packeta client section. It is NOT a
+  // free-text company name — passing the wrong value yields:
+  //   "eshop_id: ...: Sender is not given. Please choose a sender."
+  // We use the dedicated sender_label column. Without it we cannot continue.
+  const eshopId = String(sender.sender_label || "").trim();
+
   const attrs = {
     number: String(order.number || order.id),
     name: String(ship.first_name || billing.first_name || "").slice(0, 32),
@@ -1680,12 +1696,8 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
     cod: 0,
     value,
     weight,
-    eshop: sender.sender_company || sender.sender_name || "Ultrax",
+    eshop: eshopId,
   };
-
-  // Sender block printed on the label.
-  if (sender.sender_name) attrs.senderName = sender.sender_name;
-  if (sender.sender_company) attrs.senderLabel = sender.sender_company;
 
   return attrs;
 }
@@ -1756,6 +1768,18 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
         error:
           `Order ${order.number} ships to a pickup-point carrier but no pickup point ID was found ` +
           `on the order. Customers normally pick this at checkout via the Packeta WooCommerce plugin.`,
+      },
+    };
+  }
+
+  if (!sender || !String(sender.sender_label || "").trim()) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "Packeta sender ID is missing. Open the Packeta integration page and " +
+          "fill in the \"Sender ID (eshop)\" field — copy it from your Packeta " +
+          "client section under Settings → Senders.",
       },
     };
   }

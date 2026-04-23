@@ -19,8 +19,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   RefreshCw, Save, Send, History, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Undo2, Download, Copy,
+  Loader2, AlertCircle, Undo2, Download, Copy, Trash2,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";

@@ -105,7 +105,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
   const [labelOpen, setLabelOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) { setData(null); setRm(null); setLabelOpen(false); return; }
+    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); return; }
     let cancelled = false;
     setLoading(true);
     api<{ order: WCOrder; notes: WCNote[] }>(`/api/sites/${siteId}/orders/${orderId}`)
@@ -132,8 +132,50 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
         shipment: ship?.shipment ?? null,
       });
     });
+
+    // Same for Packeta. `has_api_password` mirrors `has_api_key`.
+    Promise.all([
+      api<{ settings: { has_api_password: boolean } | null }>(
+        "/api/packeta/settings",
+      ).catch(() => null),
+      api<{ shipment: RmShipment | null }>(
+        `/api/packeta/shipments/by-order/${siteId}/${orderId}`,
+      ).catch(() => null),
+    ]).then(([s, ship]) => {
+      if (cancelled) return;
+      setPk({
+        configured: Boolean(s?.settings?.has_api_password),
+        shipment: ship?.shipment ?? null,
+      });
+    });
     return () => { cancelled = true; };
   }, [open, siteId, orderId]);
+
+  // Create (or reuse) a Packeta label for this order, then open the PDF.
+  const createPacketaLabel = async () => {
+    if (siteId == null || orderId == null) return;
+    setPkBusy(true);
+    try {
+      const r = await api<{ shipment: RmShipment; label_warning?: string | null }>(
+        `/api/packeta/orders/${siteId}/${orderId}/label`,
+        { method: "POST" },
+      );
+      setPk((prev) => prev ? { ...prev, shipment: r.shipment } : prev);
+      if (r.label_warning) toast.warning(r.label_warning);
+      else toast.success("Packeta label created");
+      // Open the merged PDF in a new tab for printing.
+      window.open(`/api/packeta/shipments/${r.shipment.id}/label.pdf`, "_blank", "noopener");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create Packeta label");
+    } finally {
+      setPkBusy(false);
+    }
+  };
+
+  const reprintPacketaLabel = () => {
+    if (!pk?.shipment) return;
+    window.open(`/api/packeta/shipments/${pk.shipment.id}/label.pdf`, "_blank", "noopener");
+  };
 
   const order = data?.order;
   const notes = data?.notes ?? [];

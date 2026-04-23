@@ -21,6 +21,8 @@ db.exec(`
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending','active','rejected')),
+    approval_token TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -133,6 +135,18 @@ for (const col of RETURN_COLS) {
   if (!sitesCols.has(col)) {
     db.exec(`ALTER TABLE sites ADD COLUMN ${col} TEXT`);
   }
+}
+
+// Add status + approval_token to existing users tables. Existing users are
+// considered active so this migration is non-destructive on the live VPS DB.
+const userCols = new Set(
+  db.prepare("PRAGMA table_info(users)").all().map((c) => c.name),
+);
+if (!userCols.has("status")) {
+  db.exec(`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+}
+if (!userCols.has("approval_token")) {
+  db.exec(`ALTER TABLE users ADD COLUMN approval_token TEXT`);
 }
 
 // Add api_key_enc to royal_mail_credentials for older databases that were

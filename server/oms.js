@@ -128,89 +128,89 @@ db.exec(`
   );
 `);
 
-/* ---------------- Demo seed ----------------
- * Only runs when the catalog is empty, so production data is never touched.
- * Gives the UI something to render the first time HeyShop boots with the
- * Inventory module enabled.
+/* ---------------- Per-user scoping migrations (idempotent) ----------------
+ * Inventory and orders are per-tenant: every warehouse and every order belongs
+ * to a single HeyShop user. Existing single-tenant rows get backfilled to the
+ * first admin user so we don't strand data on upgrade.
+ *
+ * NOTE: We deliberately don't touch oms_products — the WC bridge already
+ * scopes products via the `site_id` column (sites are owned per-user), and
+ * the legacy demo seed put a couple of un-scoped products in there that we
+ * just leave alone (they're harmless and only visible to admins via the
+ * legacy code paths; the new endpoints filter through warehouses).
  */
 {
-  const productCount = db.prepare("SELECT COUNT(*) AS c FROM oms_products").get().c;
-  if (productCount === 0) {
-    const wId1 = crypto.randomUUID();
-    const wId2 = crypto.randomUUID();
-    const pId1 = crypto.randomUUID();
-    const pId2 = crypto.randomUUID();
-    const seed = db.transaction(() => {
-      db.prepare(
-        `INSERT INTO oms_warehouses (id, name, code, address, lat, lng, capacity_units, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      ).run(wId1, "London DC", "LON", "1 Main St, London", 51.5074, -0.1278, 10000);
-      db.prepare(
-        `INSERT INTO oms_warehouses (id, name, code, address, lat, lng, capacity_units, is_active)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-      ).run(wId2, "Berlin DC", "BER", "Alexanderplatz 1, Berlin", 52.5200, 13.4050, 8000);
-
-      db.prepare(
-        `INSERT INTO oms_products (id, sku, name, source, base_price, woo_product_id)
-         VALUES (?, ?, ?, 'oms', ?, NULL)`,
-      ).run(pId1, "WIDGET-1", "Widget", 9.99);
-      db.prepare(
-        `INSERT INTO oms_products (id, sku, name, source, base_price, woo_product_id)
-         VALUES (?, ?, ?, 'oms', ?, NULL)`,
-      ).run(pId2, "GIZMO-2", "Gizmo", 19.0);
-
-      const insInv = db.prepare(
-        `INSERT INTO oms_inventory (product_id, warehouse_id, quantity, reserved, reorder_level, version)
-         VALUES (?, ?, ?, 0, ?, 1)`,
-      );
-      insInv.run(pId1, wId1, 42, 10);
-      insInv.run(pId1, wId2, 5, 10);
-      insInv.run(pId2, wId1, 17, 5);
-      insInv.run(pId2, wId2, 30, 5);
-    });
-    seed();
+  const whCols = new Set(
+    db.prepare("PRAGMA table_info(oms_warehouses)").all().map((c) => c.name),
+  );
+  if (!whCols.has("user_id")) {
+    db.exec(`ALTER TABLE oms_warehouses ADD COLUMN user_id INTEGER`);
   }
+  const orderCols = new Set(
+    db.prepare("PRAGMA table_info(oms_orders)").all().map((c) => c.name),
+  );
+  if (!orderCols.has("user_id")) {
+    db.exec(`ALTER TABLE oms_orders ADD COLUMN user_id INTEGER`);
+  }
+
+  // Backfill nulls onto the first admin user (if any). On a brand new DB
+  // there is no user yet — that's fine, the seed below skips and the next
+  // signup will own its own data.
+  const firstAdmin = db.prepare(
+    "SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1",
+  ).get();
+  if (firstAdmin) {
+    db.prepare("UPDATE oms_warehouses SET user_id = ? WHERE user_id IS NULL").run(firstAdmin.id);
+    db.prepare("UPDATE oms_orders SET user_id = ? WHERE user_id IS NULL").run(firstAdmin.id);
+  }
+
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oms_warehouses_user ON oms_warehouses(user_id)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_oms_orders_user ON oms_orders(user_id)`);
 }
+
+/* ---------------- Demo seed ----------------
+ * Disabled. Inventory is now per-user — no shared global catalog. New users
+ * see an empty inventory page until they connect a WooCommerce site (which
+ * auto-creates a per-user mirror warehouse + product rows) or manually
+ * create their first warehouse.
+ */
 
 /* ---------------- Helpers ---------------- */
 
 const ALLOWED_SHIPMENT_STATUSES = new Set(["allocated", "picked", "shipped", "cancelled"]);
 
 /** Read the OMS profile for a HeyShop user, falling back to defaults.
- *  HeyShop admins are mirrored as OMS admins automatically. */
+ *  HeyShop admins are mirrored as OMS admins automatically. Non-admins
+ *  are now treated as the owner ("manager") of their own per-user data. */
 function getOmsProfile(user) {
-  const row = db.prepare(
-    "SELECT role, warehouse_ids FROM oms_user_profiles WHERE user_id = ?",
-  ).get(user.id);
   const isHeyshopAdmin = user.role === "admin";
-  if (!row) {
-    return {
-      role: isHeyshopAdmin ? "admin" : "viewer",
-      warehouse_ids: [],
-    };
-  }
-  let wh = [];
-  try { wh = JSON.parse(row.warehouse_ids || "[]"); } catch { wh = []; }
   return {
-    role: isHeyshopAdmin ? "admin" : row.role,
-    warehouse_ids: Array.isArray(wh) ? wh.map(String) : [],
+    user_id: user.id,
+    role: isHeyshopAdmin ? "admin" : "manager",
   };
 }
 
-/** Returns true if `profile` is allowed to edit `warehouse_id`. */
+/** Returns true if `profile` is allowed to edit `warehouse_id`. Admins can
+ *  edit any warehouse; everyone else can only edit warehouses they own. */
 function canEditWarehouse(profile, warehouseId) {
   if (profile.role === "admin") return true;
-  return profile.warehouse_ids.includes(warehouseId);
+  const row = db.prepare(
+    "SELECT user_id FROM oms_warehouses WHERE id = ?",
+  ).get(warehouseId);
+  return !!row && row.user_id === profile.user_id;
 }
 
-/** Visible warehouses for a profile. Admins see all; everyone else sees the
- *  allowlist (which may be empty → no rows). Returns Set<string>. */
+/** Visible warehouses for a profile. Admins see all; everyone else sees only
+ *  the warehouses they own. Returns Set<string>. */
 function visibleWarehouseIds(profile) {
   if (profile.role === "admin") {
     const all = db.prepare("SELECT id FROM oms_warehouses").all().map((r) => r.id);
     return new Set(all);
   }
-  return new Set(profile.warehouse_ids);
+  const rows = db.prepare(
+    "SELECT id FROM oms_warehouses WHERE user_id = ?",
+  ).all(profile.user_id);
+  return new Set(rows.map((r) => r.id));
 }
 
 /** Manhattan distance, matching src/lib/routing.ts. */
@@ -259,9 +259,7 @@ export function mountOms(app, { requireAuth }) {
   // ---------- Session ----------
   app.get(`${r}/session`, requireAuth, (req, res) => {
     const profile = getOmsProfile(req.user);
-    const visible = profile.role === "admin"
-      ? db.prepare("SELECT id FROM oms_warehouses").all().map((row) => row.id)
-      : profile.warehouse_ids;
+    const visible = [...visibleWarehouseIds(profile)];
     res.json({
       id: String(req.user.id),
       email: req.user.email,
@@ -271,23 +269,45 @@ export function mountOms(app, { requireAuth }) {
   });
 
   // ---------- Catalog ----------
-  app.get(`${r}/products`, requireAuth, (_req, res) => {
+  // Products are scoped through warehouses: a non-admin only sees products
+  // that have inventory in one of their warehouses (which is everything the
+  // WC sync has imported for them, since that creates per-user mirror rows).
+  app.get(`${r}/products`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
+    if (profile.role === "admin") {
+      const rows = db.prepare(
+        `SELECT id, sku, name, source, base_price, woo_product_id, created_at
+           FROM oms_products ORDER BY name ASC`,
+      ).all();
+      return res.json(rows);
+    }
+    const visible = [...visibleWarehouseIds(profile)];
+    if (visible.length === 0) return res.json([]);
     const rows = db.prepare(
-      `SELECT id, sku, name, source, base_price, woo_product_id, created_at
-         FROM oms_products
-        ORDER BY name ASC`,
-    ).all();
+      `SELECT DISTINCT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id, p.created_at
+         FROM oms_products p
+         JOIN oms_inventory i ON i.product_id = p.id
+        WHERE i.warehouse_id IN (${visible.map(() => "?").join(",")})
+        ORDER BY p.name ASC`,
+    ).all(...visible);
     res.json(rows);
   });
 
   app.get(`${r}/warehouses`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
     const activeOnly = req.query.active === "1" || req.query.active === "true";
-    const rows = db.prepare(
-      `SELECT id, name, code, address, lat, lng, capacity_units, is_active
-         FROM oms_warehouses
-         ${activeOnly ? "WHERE is_active = 1" : ""}
-        ORDER BY name ASC`,
-    ).all().map((w) => ({ ...w, is_active: !!w.is_active }));
+    const where = [];
+    const params = [];
+    if (profile.role !== "admin") {
+      where.push("user_id = ?");
+      params.push(req.user.id);
+    }
+    if (activeOnly) where.push("is_active = 1");
+    const sql = `SELECT id, name, code, address, lat, lng, capacity_units, is_active
+                   FROM oms_warehouses
+                   ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+                  ORDER BY name ASC`;
+    const rows = db.prepare(sql).all(...params).map((w) => ({ ...w, is_active: !!w.is_active }));
     res.json(rows);
   });
 
@@ -439,19 +459,29 @@ export function mountOms(app, { requireAuth }) {
 
   // ---------- Orders ----------
   app.get(`${r}/orders`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
     const limitRaw = Number(req.query.limit);
     const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 100, 1), 500);
+    const where = profile.role === "admin" ? "" : "WHERE o.user_id = ?";
+    const params = profile.role === "admin" ? [limit] : [req.user.id, limit];
     const rows = db.prepare(
       `SELECT o.*,
               (SELECT COUNT(*) FROM oms_shipments s WHERE s.order_id = o.id) AS shipment_count
          FROM oms_orders o
+         ${where}
         ORDER BY o.created_at DESC
         LIMIT ?`,
-    ).all(limit);
+    ).all(...params);
     res.json(rows);
   });
 
   app.get(`${r}/orders/:id`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
+    const order = db.prepare("SELECT user_id FROM oms_orders WHERE id = ?").get(req.params.id);
+    if (!order) return res.status(404).json({ error: "Not found" });
+    if (profile.role !== "admin" && order.user_id !== req.user.id) {
+      return res.status(404).json({ error: "Not found" });
+    }
     const detail = loadOrderDetail(req.params.id);
     if (!detail) return res.status(404).json({ error: "Not found" });
     res.json(detail);
@@ -475,10 +505,10 @@ export function mountOms(app, { requireAuth }) {
         const oid = crypto.randomUUID();
         db.prepare(
           `INSERT INTO oms_orders
-             (id, customer_name, customer_address, customer_lat, customer_lng, status, notes)
-           VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+             (id, user_id, customer_name, customer_address, customer_lat, customer_lng, status, notes)
+           VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
         ).run(
-          oid, body.customer_name, body.customer_address ?? null,
+          oid, req.user.id, body.customer_name, body.customer_address ?? null,
           body.customer_lat, body.customer_lng, body.notes ?? null,
         );
         for (const it of items) {
@@ -488,11 +518,14 @@ export function mountOms(app, { requireAuth }) {
           ).run(crypto.randomUUID(), oid, it.product_id, it.quantity);
         }
 
-        // ---- Greedy nearest-warehouse routing ----
+        // ---- Greedy nearest-warehouse routing (scoped to caller's warehouses) ----
         const customer = { lat: body.customer_lat, lng: body.customer_lng };
-        const warehouses = db.prepare(
-          `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1`,
-        ).all().sort((a, b) => manhattan(a, customer) - manhattan(b, customer));
+        const whSql = req.user.role === "admin"
+          ? `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1`
+          : `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1 AND user_id = ?`;
+        const whParams = req.user.role === "admin" ? [] : [req.user.id];
+        const warehouses = db.prepare(whSql).all(...whParams)
+          .sort((a, b) => manhattan(a, customer) - manhattan(b, customer));
 
         // Local working copy of inventory so allocations within the same
         // request consume from the shared pool.

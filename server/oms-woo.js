@@ -115,17 +115,24 @@ function getSiteForUser(userId, siteId) {
 }
 
 /** Mirror warehouse for a WC site. Auto-create on first sync. The id is
- *  deterministic per site so re-syncs reuse it. */
-function ensureMirrorWarehouse(site) {
+ *  deterministic per site so re-syncs reuse it. The warehouse is owned by
+ *  the same user who owns the site, so per-user inventory scoping works. */
+function ensureMirrorWarehouse(site, userId) {
   const code = `WC-${site.id}`;
-  let row = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
-  if (row) return row.id;
+  const row = db.prepare("SELECT id, user_id FROM oms_warehouses WHERE code = ?").get(code);
+  if (row) {
+    // Backfill user_id on legacy mirror warehouses created before per-user scoping.
+    if (!row.user_id && userId) {
+      db.prepare("UPDATE oms_warehouses SET user_id = ? WHERE id = ?").run(userId, row.id);
+    }
+    return row.id;
+  }
   const id = crypto.randomUUID();
   db.prepare(
     `INSERT INTO oms_warehouses
-       (id, name, code, address, lat, lng, capacity_units, is_active)
-     VALUES (?, ?, ?, NULL, 0, 0, 0, 1)`,
-  ).run(id, `${site.name} (WC mirror)`, code);
+       (id, user_id, name, code, address, lat, lng, capacity_units, is_active)
+     VALUES (?, ?, ?, ?, NULL, 0, 0, 0, 1)`,
+  ).run(id, userId ?? null, `${site.name} (WC mirror)`, code);
   return id;
 }
 
@@ -419,7 +426,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, siteId); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id,
               p.site_id, p.description, p.short_description, p.regular_price,
@@ -453,7 +460,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     try { site = getSiteForUser(req.user.id, req.params.siteId); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
 
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
     const base = normalizeUrl(site.store_url);
     const page = Math.max(1, Number(req.query.page) || Number(req.body?.page) || 1);
     const perPage = Math.min(100, Math.max(10, Number(req.query.per_page) || 50));
@@ -581,7 +588,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
 
     let ok = 0; const failed = [];
     const tx = db.transaction(() => {
@@ -799,7 +806,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
 
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.regular_price, p.sale_price, p.description,

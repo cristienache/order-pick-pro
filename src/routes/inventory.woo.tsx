@@ -37,6 +37,7 @@ const SORT_OPTIONS: SortOption[] = [
   { value: "sale_price", label: "Sale price" },
   { value: "stock_quantity", label: "Stock" },
   { value: "weight", label: "Weight" },
+  { value: "wc_date_created", label: "Newest / Oldest" },
   { value: "last_synced_at", label: "Last sync" },
   { value: "dirty", label: "Edited first" },
 ];

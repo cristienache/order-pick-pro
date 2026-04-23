@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { poApi, PO_STATUS_LABEL, type PoLineInput, type PoStatus } from "@/lib/purchase-orders-api";
+import { poApi, PO_STATUS_LABEL, type PoLineInput, type PoStatus, type PurchaseOrder } from "@/lib/purchase-orders-api";
 import { omsApi } from "@/lib/inventory-api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -301,7 +301,7 @@ function PoDetailPage() {
   );
 }
 
-function ReadOnlyView({ po }: { po: NonNullable<ReturnType<typeof usePo>> }) {
+function ReadOnlyView({ po }: { po: PurchaseOrder }) {
   return (
     <Card className="p-4 space-y-4">
       <div className="grid grid-cols-2 gap-4 text-sm">

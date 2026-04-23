@@ -172,8 +172,9 @@ export function persistPacketaCarriers(carriers) {
 }
 
 // Combined fetch+persist. Never throws; returns a stable result object.
-export async function syncPacketaCarriers(apiPassword) {
-  const fetched = await fetchPacketaCarriers(apiPassword);
+// `widgetApiKey` is the Packeta Widget API key.
+export async function syncPacketaCarriers(widgetApiKey) {
+  const fetched = await fetchPacketaCarriers(widgetApiKey);
   if (!fetched.ok) return { ok: false, error: fetched.error };
   const persisted = persistPacketaCarriers(fetched.carriers);
   return { ok: true, ...persisted };

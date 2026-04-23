@@ -128,7 +128,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
   const [editingAddress, setEditingAddress] = useState<"shipping" | "billing" | null>(null);
 
   useEffect(() => {
-    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); return; }
+    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); setEditingAddress(null); return; }
     let cancelled = false;
     setLoading(true);
     api<{ order: WCOrder; notes: WCNote[] }>(`/api/sites/${siteId}/orders/${orderId}`)
@@ -294,8 +294,16 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
 
             {/* Addresses side-by-side */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <AddressBlock a={order.shipping} label="Ship to" />
-              <AddressBlock a={order.billing} label="Bill to" />
+              <AddressBlock
+                a={order.shipping}
+                label="Ship to"
+                onEdit={siteId != null ? () => setEditingAddress("shipping") : undefined}
+              />
+              <AddressBlock
+                a={order.billing}
+                label="Bill to"
+                onEdit={siteId != null ? () => setEditingAddress("billing") : undefined}
+              />
             </div>
 
             <Separator />

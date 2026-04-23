@@ -32,7 +32,19 @@ import {
   normalizeCndCreateResponse,
   normalizeRmApiKey,
 } from "./royalmail.js";
-import { testPacketaConnection, normalizePacketaPassword } from "./packeta.js";
+import {
+  testPacketaConnection,
+  normalizePacketaPassword,
+  pickPacketaPickupPointId,
+  createPacketaPacket,
+  getPacketaLabelPdf,
+  getPacketaLabelsPdf,
+} from "./packeta.js";
+import {
+  syncPacketaCarriers,
+  getCatalogLastSyncedAt,
+  isCatalogStale,
+} from "./packetaCarriers.js";
 import {
   ebayConfig,
   buildAuthorizeUrl,

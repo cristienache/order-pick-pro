@@ -18,6 +18,7 @@ import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as InventoryIndexRouteImport } from './routes/inventory.index'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as InventoryWooRouteImport } from './routes/inventory.woo'
 import { Route as InventoryOrdersRouteImport } from './routes/inventory.orders'
 import { Route as InventoryAuditRouteImport } from './routes/inventory.audit'
 import { Route as IntegrationsShippingRouteImport } from './routes/integrations.shipping'
@@ -76,6 +77,11 @@ const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const InventoryWooRoute = InventoryWooRouteImport.update({
+  id: '/woo',
+  path: '/woo',
+  getParentRoute: () => InventoryRoute,
 } as any)
 const InventoryOrdersRoute = InventoryOrdersRouteImport.update({
   id: '/orders',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
   '/inventory/orders': typeof InventoryOrdersRoute
+  '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/inventory/': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/inventory/audit': typeof InventoryAuditRoute
   '/inventory/orders': typeof InventoryOrdersRoute
+  '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/inventory': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
   '/inventory/orders': typeof InventoryOrdersRoute
+  '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/inventory/': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
@@ -235,6 +244,7 @@ export interface FileRouteTypes {
     | '/integrations/shipping'
     | '/inventory/audit'
     | '/inventory/orders'
+    | '/inventory/woo'
     | '/p/$slug'
     | '/inventory/'
     | '/admin/pages/$pageId'
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/integrations/channels'
     | '/inventory/audit'
     | '/inventory/orders'
+    | '/inventory/woo'
     | '/p/$slug'
     | '/inventory'
     | '/admin/pages/$pageId'
@@ -281,6 +292,7 @@ export interface FileRouteTypes {
     | '/integrations/shipping'
     | '/inventory/audit'
     | '/inventory/orders'
+    | '/inventory/woo'
     | '/p/$slug'
     | '/inventory/'
     | '/admin/pages/$pageId'
@@ -371,6 +383,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/p/$slug'
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/inventory/woo': {
+      id: '/inventory/woo'
+      path: '/woo'
+      fullPath: '/inventory/woo'
+      preLoaderRoute: typeof InventoryWooRouteImport
+      parentRoute: typeof InventoryRoute
     }
     '/inventory/orders': {
       id: '/inventory/orders'
@@ -498,12 +517,14 @@ const IntegrationsRouteWithChildren = IntegrationsRoute._addFileChildren(
 interface InventoryRouteChildren {
   InventoryAuditRoute: typeof InventoryAuditRoute
   InventoryOrdersRoute: typeof InventoryOrdersRoute
+  InventoryWooRoute: typeof InventoryWooRoute
   InventoryIndexRoute: typeof InventoryIndexRoute
 }
 
 const InventoryRouteChildren: InventoryRouteChildren = {
   InventoryAuditRoute: InventoryAuditRoute,
   InventoryOrdersRoute: InventoryOrdersRoute,
+  InventoryWooRoute: InventoryWooRoute,
   InventoryIndexRoute: InventoryIndexRoute,
 }
 

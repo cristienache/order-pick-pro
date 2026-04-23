@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
-  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink,
+  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink, Package,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";

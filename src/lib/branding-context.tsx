@@ -145,6 +145,7 @@ export function BrandingProvider({ children }: { children: ReactNode }) {
 
   const value: BrandingState = {
     branding: effective,
+    saved: branding,
     loading,
     refresh: load,
     preview: setDraft,

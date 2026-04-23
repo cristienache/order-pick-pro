@@ -24,7 +24,6 @@ import { Route as PurchaseOrdersNewRouteImport } from './routes/purchase-orders.
 import { Route as PurchaseOrdersIdRouteImport } from './routes/purchase-orders.$id'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as InventoryWooRouteImport } from './routes/inventory.woo'
-import { Route as InventoryOrdersRouteImport } from './routes/inventory.orders'
 import { Route as InventoryAuditRouteImport } from './routes/inventory.audit'
 import { Route as IntegrationsShippingRouteImport } from './routes/integrations.shipping'
 import { Route as IntegrationsChannelsRouteImport } from './routes/integrations.channels'
@@ -113,11 +112,6 @@ const InventoryWooRoute = InventoryWooRouteImport.update({
   path: '/woo',
   getParentRoute: () => InventoryRoute,
 } as any)
-const InventoryOrdersRoute = InventoryOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
-  getParentRoute: () => InventoryRoute,
-} as any)
 const InventoryAuditRoute = InventoryAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -198,7 +192,6 @@ export interface FileRoutesByFullPath {
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
@@ -225,7 +218,6 @@ export interface FileRoutesByTo {
   '/api/$': typeof ApiSplatRoute
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
@@ -256,7 +248,6 @@ export interface FileRoutesById {
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
   '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
@@ -288,7 +279,6 @@ export interface FileRouteTypes {
     | '/integrations/channels'
     | '/integrations/shipping'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
     | '/purchase-orders/$id'
@@ -315,7 +305,6 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/integrations/channels'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
     | '/purchase-orders/$id'
@@ -345,7 +334,6 @@ export interface FileRouteTypes {
     | '/integrations/channels'
     | '/integrations/shipping'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
     | '/purchase-orders/$id'
@@ -485,13 +473,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InventoryWooRouteImport
       parentRoute: typeof InventoryRoute
     }
-    '/inventory/orders': {
-      id: '/inventory/orders'
-      path: '/orders'
-      fullPath: '/inventory/orders'
-      preLoaderRoute: typeof InventoryOrdersRouteImport
-      parentRoute: typeof InventoryRoute
-    }
     '/inventory/audit': {
       id: '/inventory/audit'
       path: '/audit'
@@ -610,14 +591,12 @@ const IntegrationsRouteWithChildren = IntegrationsRoute._addFileChildren(
 
 interface InventoryRouteChildren {
   InventoryAuditRoute: typeof InventoryAuditRoute
-  InventoryOrdersRoute: typeof InventoryOrdersRoute
   InventoryWooRoute: typeof InventoryWooRoute
   InventoryIndexRoute: typeof InventoryIndexRoute
 }
 
 const InventoryRouteChildren: InventoryRouteChildren = {
   InventoryAuditRoute: InventoryAuditRoute,
-  InventoryOrdersRoute: InventoryOrdersRoute,
   InventoryWooRoute: InventoryWooRoute,
   InventoryIndexRoute: InventoryIndexRoute,
 }
@@ -664,12 +643,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

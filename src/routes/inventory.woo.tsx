@@ -37,6 +37,7 @@ const SORT_OPTIONS: SortOption[] = [
   { value: "sale_price", label: "Sale price" },
   { value: "stock_quantity", label: "Stock" },
   { value: "weight", label: "Weight" },
+  { value: "wc_date_created", label: "Newest / Oldest" },
   { value: "last_synced_at", label: "Last sync" },
   { value: "dirty", label: "Edited first" },
 ];
@@ -207,6 +208,11 @@ function WooInventory() {
         case "sale_price": return (num(a.sale_price) - num(b.sale_price)) * dir;
         case "stock_quantity": return ((a.stock_quantity ?? 0) - (b.stock_quantity ?? 0)) * dir;
         case "weight": return (num(a.weight) - num(b.weight)) * dir;
+        case "wc_date_created": {
+          const ta = a.wc_date_created ? Date.parse(a.wc_date_created) : 0;
+          const tb = b.wc_date_created ? Date.parse(b.wc_date_created) : 0;
+          return (ta - tb) * dir;
+        }
         case "last_synced_at": {
           const ta = a.last_synced_at ? Date.parse(a.last_synced_at) : 0;
           const tb = b.last_synced_at ? Date.parse(b.last_synced_at) : 0;
@@ -326,19 +332,55 @@ function WooInventory() {
     setCollapsed((s) => { const n = new Set(s); n.has(parentId) ? n.delete(parentId) : n.add(parentId); return n; });
 
   /* ---------- Mutations ---------- */
+  // Chunked sync — pulls one page of products at a time so any single
+  // request stays under the proxy/edge timeout (was hitting 504 on big
+  // catalogs). Updates a sticky toast with live progress.
+  const [syncing, setSyncing] = useState(false);
   const sync = async () => {
-    if (!siteId) return;
-    const t = toast.loading(`Syncing ${site?.name ?? "site"}…`);
+    if (!siteId || syncing) return;
+    setSyncing(true);
+    const t = toast.loading(`Syncing ${site?.name ?? "site"}…`, { duration: Infinity });
+    let page = 1;
+    let totalCreated = 0, totalUpdated = 0;
+    const allErrors: string[] = [];
     try {
-      const r = await wcApi.sync(siteId);
-      toast.success(`Synced: ${r.created} new, ${r.updated} updated`, { id: t });
+      // Hard safety cap — 200 pages × 50 = 10k products. Stops accidental
+      // infinite loops if WC ever lies about pagination.
+      for (let i = 0; i < 200; i++) {
+        const r = await wcApi.syncPage(siteId, page, 50);
+        totalCreated += r.created;
+        totalUpdated += r.updated;
+        for (const e of r.errors) allErrors.push(e.error);
+        const progress = r.total_pages
+          ? `page ${r.page}/${r.total_pages}`
+          : `page ${r.page}`;
+        toast.loading(
+          `Syncing ${site?.name ?? "site"} — ${progress} • ${totalCreated + totalUpdated} products`,
+          { id: t, duration: Infinity },
+        );
+        if (r.done || r.next_page == null) break;
+        page = r.next_page;
+      }
+      const errMsg = allErrors.length
+        ? ` • ${allErrors.length} warning${allErrors.length === 1 ? "" : "s"}`
+        : "";
+      toast.success(
+        `Synced: ${totalCreated} new, ${totalUpdated} updated${errMsg}`,
+        { id: t, duration: 6000 },
+      );
+      if (allErrors.length) {
+        // eslint-disable-next-line no-console
+        console.warn("[wc sync] warnings:", allErrors.slice(0, 20));
+      }
       qc.invalidateQueries({ queryKey: ["wc-sites"] });
       qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
       qc.invalidateQueries({ queryKey: ["wc-inventory", siteId] });
       qc.invalidateQueries({ queryKey: ["oms-products"] });
       qc.invalidateQueries({ queryKey: ["oms-inventory"] });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Sync failed", { id: t });
+      toast.error(e instanceof Error ? e.message : "Sync failed", { id: t, duration: 8000 });
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -514,8 +556,9 @@ function WooInventory() {
           <Button variant="outline" size="sm" onClick={() => setShowBackups(true)}>
             <History className="mr-1.5 h-3.5 w-3.5" /> Backups
           </Button>
-          <Button variant="outline" size="sm" onClick={sync} disabled={!siteId}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Sync from WC
+          <Button variant="outline" size="sm" onClick={sync} disabled={!siteId || syncing}>
+            {syncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+            {syncing ? "Syncing…" : "Sync from WC"}
           </Button>
           <Button variant="outline" size="sm" onClick={saveLocal} disabled={!siteId}>
             <Save className="mr-1.5 h-3.5 w-3.5" /> Save
@@ -670,19 +713,32 @@ function WooInventory() {
                             disabled={isVariation}
                             className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
                           />
-                          {isVariableParent && (
-                            <>
-                              <Badge variant="outline" className="text-[9px]">VARIABLE</Badge>
-                              <button
-                                onClick={() => copyParentToVariations(p.id)}
-                                className="mr-1 rounded p-1 hover:bg-muted"
-                                title="Copy price/weight/status to all variations"
-                                aria-label="Copy to variations"
-                              >
-                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
-                              </button>
-                            </>
-                          )}
+                          {isVariableParent && (() => {
+                            const vCount = siteProducts.filter((x) => x.parent_product_id === p.id).length;
+                            return (
+                              <>
+                                <Badge variant="outline" className="text-[9px]">
+                                  VARIABLE • {vCount} {vCount === 1 ? "variation" : "variations"}
+                                </Badge>
+                                {vCount === 0 && (
+                                  <span
+                                    className="text-[9px] text-brand-amber font-semibold"
+                                    title="WooCommerce returned no variations for this parent — check that variations are published in WC."
+                                  >
+                                    ⚠ no variations imported
+                                  </span>
+                                )}
+                                <button
+                                  onClick={() => copyParentToVariations(p.id)}
+                                  className="mr-1 rounded p-1 hover:bg-muted"
+                                  title="Copy price/weight/status to all variations"
+                                  aria-label="Copy to variations"
+                                >
+                                  <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                                </button>
+                              </>
+                            );
+                          })()}
                         </div>
                       </td>
                       <td className="h-9 border-b p-0 align-middle">

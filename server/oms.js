@@ -273,7 +273,7 @@ export function mountOms(app, { requireAuth }) {
   // ---------- Catalog ----------
   app.get(`${r}/products`, requireAuth, (_req, res) => {
     const rows = db.prepare(
-      `SELECT id, sku, name, source, base_price, woo_product_id
+      `SELECT id, sku, name, source, base_price, woo_product_id, created_at
          FROM oms_products
         ORDER BY name ASC`,
     ).all();

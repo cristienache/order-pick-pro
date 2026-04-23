@@ -32,6 +32,8 @@ export interface Product {
   source: ProductSource;
   base_price: number;
   woo_product_id: number | null;
+  /** ISO timestamp the product row was first created in the OMS. */
+  created_at?: string | null;
 }
 
 export interface Warehouse {

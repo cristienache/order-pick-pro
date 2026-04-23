@@ -47,6 +47,9 @@ export type WcProductRow = {
   wc_parent_id: number | null;
   /** "Red / Large" — pre-built from the variation's attribute options. */
   variation_label: string | null;
+  /** WC product creation timestamp (ISO). Drives "newest/oldest" sort. */
+  wc_date_created: string | null;
+  wc_date_modified: string | null;
 };
 
 export type WcEditPayload = {
@@ -90,10 +93,19 @@ export const wcApi = {
   listProducts: (siteId: number) =>
     api<WcProductRow[]>(`${BASE}/products?site_id=${siteId}`),
 
-  sync: (siteId: number) =>
-    api<{ total: number; created: number; updated: number; warehouse_id: string }>(
-      `${BASE}/sync/${siteId}`, { method: "POST", body: {} },
-    ),
+
+  /** One chunk of the sync. Call repeatedly until `done` is true. */
+  syncPage: (siteId: number, page: number, perPage = 50) =>
+    api<{
+      page: number; per_page: number; batch_size: number;
+      created: number; updated: number;
+      errors: Array<{ wc_id?: number; product_id?: string; error: string }>;
+      done: boolean; next_page: number | null;
+      total_products: number | null; total_pages: number | null;
+      warehouse_id: string;
+    }>(`${BASE}/sync/${siteId}?page=${page}&per_page=${perPage}`, {
+      method: "POST", body: {},
+    }),
 
   saveLocal: (site_id: number, edits: WcEditPayload[]) =>
     api<BulkResult>(`${BASE}/products/bulk`, {

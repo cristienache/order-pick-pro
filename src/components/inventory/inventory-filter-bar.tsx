@@ -52,7 +52,7 @@ export type FilterField =
 
 export type SortKey =
   | "name" | "sku" | "regular_price" | "sale_price"
-  | "stock_quantity" | "weight" | "last_synced_at" | "dirty";
+  | "stock_quantity" | "weight" | "last_synced_at" | "wc_date_created" | "dirty";
 export type SortDir = "asc" | "desc";
 
 export type SortOption = { value: SortKey; label: string };

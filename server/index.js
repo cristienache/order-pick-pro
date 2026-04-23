@@ -1985,14 +1985,13 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
 
   // Notify the customer with the tracking number (customer_note=true emails them)
   // and best-effort mark the order as completed in WooCommerce.
-  if (created.barcode) {
+  if (trackingForCustomer) {
+    const trackingLine = courierTrackingNumber
+      ? `Packeta label created. Carrier tracking: ${courierTrackingNumber}` +
+        (created.barcode ? ` (Packeta: ${created.barcode})` : "")
+      : `Packeta label created. Tracking: ${created.barcode}`;
     try {
-      await addOrderNote(
-        site,
-        orderId,
-        `Packeta label created. Tracking: ${created.barcode}`,
-        true,
-      );
+      await addOrderNote(site, orderId, trackingLine, true);
     } catch (e) {
       console.warn(`[packeta] WC customer note failed for order ${orderId}: ${e.message}`);
     }
@@ -2010,7 +2009,9 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
       shipment: rmShipmentToPublic(saved),
       packet_id: created.packetId,
       barcode: created.barcode || null,
-      label_warning: label.ok ? null : (label.error || "Label PDF could not be fetched yet."),
+      courier_number: courierTrackingNumber,
+      label_kind: labelKind,
+      label_warning: labelBuffer ? null : labelWarning,
     },
   };
 }

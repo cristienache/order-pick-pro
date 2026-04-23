@@ -18,7 +18,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  RefreshCw, Search, Save, Send, History, ChevronDown, ChevronRight,
+  RefreshCw, Save, Send, History, ChevronDown, ChevronRight,
   Loader2, AlertCircle, Undo2, Download, Copy,
 } from "lucide-react";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";

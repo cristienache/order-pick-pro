@@ -259,9 +259,7 @@ export function mountOms(app, { requireAuth }) {
   // ---------- Session ----------
   app.get(`${r}/session`, requireAuth, (req, res) => {
     const profile = getOmsProfile(req.user);
-    const visible = profile.role === "admin"
-      ? db.prepare("SELECT id FROM oms_warehouses").all().map((row) => row.id)
-      : profile.warehouse_ids;
+    const visible = [...visibleWarehouseIds(profile)];
     res.json({
       id: String(req.user.id),
       email: req.user.email,
@@ -271,23 +269,45 @@ export function mountOms(app, { requireAuth }) {
   });
 
   // ---------- Catalog ----------
-  app.get(`${r}/products`, requireAuth, (_req, res) => {
+  // Products are scoped through warehouses: a non-admin only sees products
+  // that have inventory in one of their warehouses (which is everything the
+  // WC sync has imported for them, since that creates per-user mirror rows).
+  app.get(`${r}/products`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
+    if (profile.role === "admin") {
+      const rows = db.prepare(
+        `SELECT id, sku, name, source, base_price, woo_product_id, created_at
+           FROM oms_products ORDER BY name ASC`,
+      ).all();
+      return res.json(rows);
+    }
+    const visible = [...visibleWarehouseIds(profile)];
+    if (visible.length === 0) return res.json([]);
     const rows = db.prepare(
-      `SELECT id, sku, name, source, base_price, woo_product_id, created_at
-         FROM oms_products
-        ORDER BY name ASC`,
-    ).all();
+      `SELECT DISTINCT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id, p.created_at
+         FROM oms_products p
+         JOIN oms_inventory i ON i.product_id = p.id
+        WHERE i.warehouse_id IN (${visible.map(() => "?").join(",")})
+        ORDER BY p.name ASC`,
+    ).all(...visible);
     res.json(rows);
   });
 
   app.get(`${r}/warehouses`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
     const activeOnly = req.query.active === "1" || req.query.active === "true";
-    const rows = db.prepare(
-      `SELECT id, name, code, address, lat, lng, capacity_units, is_active
-         FROM oms_warehouses
-         ${activeOnly ? "WHERE is_active = 1" : ""}
-        ORDER BY name ASC`,
-    ).all().map((w) => ({ ...w, is_active: !!w.is_active }));
+    const where = [];
+    const params = [];
+    if (profile.role !== "admin") {
+      where.push("user_id = ?");
+      params.push(req.user.id);
+    }
+    if (activeOnly) where.push("is_active = 1");
+    const sql = `SELECT id, name, code, address, lat, lng, capacity_units, is_active
+                   FROM oms_warehouses
+                   ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
+                  ORDER BY name ASC`;
+    const rows = db.prepare(sql).all(...params).map((w) => ({ ...w, is_active: !!w.is_active }));
     res.json(rows);
   });
 

@@ -63,13 +63,14 @@ function ContactPage() {
 
   return (
     <AppShell>
-      <div className="max-w-2xl">
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Get in touch</h1>
-        <p className="mt-4 text-lg text-muted-foreground">
-          Whether you'd like a demo, have a question about your account, or need help with an
-          integration — drop us a line and a real person will reply within one business day.
-        </p>
-      </div>
+      <div>
+        <div className="max-w-2xl">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Get in touch</h1>
+          <p className="mt-4 text-lg text-muted-foreground">
+            Whether you'd like a demo, have a question about your account, or need help with an
+            integration — drop us a line and a real person will reply within one business day.
+          </p>
+        </div>
 
         <div className="mt-12 grid gap-8 md:grid-cols-[1fr,1.4fr]">
           {/* Direct channels */}

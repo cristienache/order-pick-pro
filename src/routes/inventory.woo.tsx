@@ -19,8 +19,13 @@ import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   RefreshCw, Save, Send, History, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Undo2, Download, Copy,
+  Loader2, AlertCircle, Undo2, Download, Copy, Trash2,
 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
@@ -107,6 +112,10 @@ function WooInventory() {
   // Pagination state. `pageSize === 0` means "All".
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [page, setPage] = useState(1);
+  // Wipe & re-sync confirmation dialog.
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeText, setWipeText] = useState("");
+  const [wiping, setWiping] = useState(false);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -343,9 +352,33 @@ function WooInventory() {
     await startWcSync(siteId, site.name);
   };
 
-  /** Build a diff payload for the bulk-save endpoint. Sends ONLY fields that
-   *  the user actually changed since the last sync, so we never overwrite WC
-   *  values we don't have locally. */
+  /** Wipe every imported product for the active site, then immediately
+   *  kick off a fresh background sync. Other sites are untouched. */
+  const wipeAndResync = async () => {
+    if (!siteId || !site) return;
+    setWiping(true);
+    try {
+      const r = await wcApi.wipeSite(siteId);
+      toast.success(`Deleted ${r.deleted} products from ${site.name}. Re-syncing…`);
+      // Clear local edit buffer + drop the cached product list immediately so
+      // the grid empties before the sync repopulates it.
+      setDrafts({}); setOriginals({}); setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
+      qc.invalidateQueries({ queryKey: ["wc-sites"] });
+      qc.invalidateQueries({ queryKey: ["oms-products"] });
+      qc.invalidateQueries({ queryKey: ["oms-inventory"] });
+      setWipeOpen(false);
+      setWipeText("");
+      // Fire & forget — the SyncProvider drives the chunked loop and the
+      // topbar pill shows progress, so the user can navigate away.
+      void startWcSync(siteId, site.name);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Wipe failed");
+    } finally {
+      setWiping(false);
+    }
+  };
+
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];
@@ -518,6 +551,15 @@ function WooInventory() {
           <Button variant="outline" size="sm" onClick={sync} disabled={!siteId || syncing}>
             {syncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
             {syncing ? "Syncing…" : "Sync from WC"}
+          </Button>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => { setWipeText(""); setWipeOpen(true); }}
+            disabled={!siteId || syncing || siteProducts.length === 0}
+            className="text-destructive hover:text-destructive"
+            title="Delete all imported products for this site"
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Wipe & re-sync
           </Button>
           <Button variant="outline" size="sm" onClick={saveLocal} disabled={!siteId}>
             <Save className="mr-1.5 h-3.5 w-3.5" /> Save
@@ -810,6 +852,52 @@ function WooInventory() {
 
       {/* Backups drawer */}
       {showBackups && <BackupsPanel onClose={() => setShowBackups(false)} />}
+
+      {/* Wipe & re-sync confirmation. Requires the user to type DELETE so it
+          cannot be triggered by an accidental Enter / double-click. */}
+      <AlertDialog open={wipeOpen} onOpenChange={(o) => { setWipeOpen(o); if (!o) setWipeText(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Wipe & re-sync {site?.name ?? "site"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This deletes <strong>{siteProducts.length}</strong> imported products
+                  (including variations and stock levels) for this site only. Other
+                  connected stores are not affected.
+                </p>
+                <p>
+                  A fresh sync from WooCommerce will start automatically. Any local
+                  edits you haven&apos;t pushed yet will be lost.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Type <strong className="font-mono text-foreground">DELETE</strong> to confirm.
+                </p>
+                <input
+                  autoFocus
+                  value={wipeText}
+                  onChange={(e) => setWipeText(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  placeholder="DELETE"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={wiping}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); wipeAndResync(); }}
+              disabled={wipeText !== "DELETE" || wiping}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {wiping ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Wiping…</> : "Wipe & re-sync"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

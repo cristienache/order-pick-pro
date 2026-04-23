@@ -396,6 +396,46 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
               </>
             )}
 
+            {/* Packeta label action — same shape as Royal Mail above. */}
+            {pk && (
+              <>
+                <Separator />
+                {!pk.configured ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Package className="h-4 w-4" />
+                      <span>Connect Packeta to print EU labels.</span>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/integrations/shipping/packeta">Set up</Link>
+                    </Button>
+                  </div>
+                ) : pk.shipment ? (
+                  <Button
+                    onClick={reprintPacketaLabel}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Package className="h-3.5 w-3.5" />
+                    Reprint Packeta label · {pk.shipment.packeta_barcode || pk.shipment.tracking_number || "created"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={createPacketaLabel}
+                    size="sm"
+                    className="w-full"
+                    disabled={pkBusy}
+                  >
+                    {pkBusy
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Package className="h-3.5 w-3.5" />}
+                    Create Packeta label (4×6")
+                  </Button>
+                )}
+              </>
+            )}
+
             {wcUrl && (
               <>
                 <Separator />

@@ -1,13 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth-context";
+import { useBranding, navLabel } from "@/lib/branding-context";
+import { BrandedLogo } from "@/components/branded-logo";
 import { Button } from "@/components/ui/button";
 import {
-  LogOut, Package, Settings, Users, Store, Truck, Home,
+  LogOut, Package, Settings, Users, Store, Truck, Home, Palette,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
+  const { branding } = useBranding();
   const navigate = useNavigate();
 
   const handleLogout = () => {
@@ -22,25 +25,38 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-7">
             <Link to="/" className="flex items-center gap-2.5 group">
-              <div className="relative h-9 w-9 rounded-xl bg-gradient-to-br from-brand-violet to-brand-sky text-white flex items-center justify-center shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--brand-violet)_55%,transparent)] group-hover:scale-105 transition-transform">
-                <Package className="h-4.5 w-4.5" strokeWidth={2.5} />
-              </div>
+              <BrandedLogo />
               <div className="leading-tight">
-                <div className="font-bold text-base tracking-tight">Ultrax</div>
+                <div className="font-bold text-base tracking-tight">{branding.app_name}</div>
                 <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground -mt-0.5">
-                  Order ops
+                  {branding.tagline}
                 </div>
               </div>
             </Link>
             <nav className="flex items-center gap-0.5 text-sm">
-              <NavLink to="/" icon={<Home className="h-4 w-4" />} exact>Home</NavLink>
-              <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>Orders</NavLink>
-              <NavLink to="/integrations" icon={<Store className="h-4 w-4" />}>Integrations</NavLink>
-              <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>Royal Mail</NavLink>
+              <NavLink to="/" icon={<Home className="h-4 w-4" />} exact>
+                {navLabel(branding, "home")}
+              </NavLink>
+              <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>
+                {navLabel(branding, "orders")}
+              </NavLink>
+              <NavLink to="/integrations" icon={<Store className="h-4 w-4" />}>
+                {navLabel(branding, "integrations")}
+              </NavLink>
+              <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>
+                {navLabel(branding, "royal_mail")}
+              </NavLink>
               {user?.role === "admin" && (
                 <>
-                  <NavLink to="/admin/users" icon={<Users className="h-4 w-4" />}>Users</NavLink>
-                  <NavLink to="/admin/invites" icon={<Settings className="h-4 w-4" />}>Invites</NavLink>
+                  <NavLink to="/admin/users" icon={<Users className="h-4 w-4" />}>
+                    {navLabel(branding, "users")}
+                  </NavLink>
+                  <NavLink to="/admin/invites" icon={<Settings className="h-4 w-4" />}>
+                    {navLabel(branding, "invites")}
+                  </NavLink>
+                  <NavLink to="/admin/branding" icon={<Palette className="h-4 w-4" />}>
+                    Branding
+                  </NavLink>
                 </>
               )}
             </nav>

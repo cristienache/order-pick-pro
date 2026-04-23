@@ -406,6 +406,104 @@ app.delete("/api/users/:id", requireAuth, requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Branding (global, single row) ----------
+// Phase 1 of the page builder. Anyone signed in can READ branding so the
+// app-shell can render the right name/logo/colours. Only admins can WRITE.
+// Logos & favicons are stored as data URLs (PNG/SVG/ICO base64) inside the
+// row to avoid a separate uploads pipeline. The frontend caps each upload
+// at ~256KB so the row stays small. Colour palette + nav label overrides
+// are JSON blobs.
+const BRANDING_DEFAULTS = Object.freeze({
+  app_name: "Ultrax",
+  tagline: "Order ops",
+  logo_data_url: null,
+  favicon_data_url: null,
+  nav_labels: {},
+  colors: {},
+});
+
+function readBrandingRow() {
+  const row = db.prepare(
+    `SELECT app_name, tagline, logo_data_url, favicon_data_url,
+            nav_labels, colors, updated_at
+       FROM branding WHERE id = 1`,
+  ).get();
+  if (!row) return { ...BRANDING_DEFAULTS, updated_at: null };
+  let nav_labels = {};
+  let colors = {};
+  try { nav_labels = JSON.parse(row.nav_labels || "{}"); } catch { nav_labels = {}; }
+  try { colors = JSON.parse(row.colors || "{}"); } catch { colors = {}; }
+  return {
+    app_name: row.app_name || BRANDING_DEFAULTS.app_name,
+    tagline: row.tagline || BRANDING_DEFAULTS.tagline,
+    logo_data_url: row.logo_data_url || null,
+    favicon_data_url: row.favicon_data_url || null,
+    nav_labels,
+    colors,
+    updated_at: row.updated_at || null,
+  };
+}
+
+// Public read — no auth so the brand applies on /login too.
+app.get("/api/branding", (_req, res) => {
+  res.json({ branding: readBrandingRow() });
+});
+
+const MAX_DATA_URL_BYTES = 350_000; // ~256KB binary after base64 overhead
+const BrandingUpdateSchema = z.object({
+  app_name: z.string().trim().min(1).max(60).optional(),
+  tagline: z.string().trim().max(80).optional(),
+  // null clears the asset, undefined leaves it untouched, string replaces.
+  logo_data_url: z.union([z.string().max(MAX_DATA_URL_BYTES), z.null()]).optional(),
+  favicon_data_url: z.union([z.string().max(MAX_DATA_URL_BYTES), z.null()]).optional(),
+  nav_labels: z.record(z.string(), z.string().max(40)).optional(),
+  colors: z.record(z.string(), z.string().max(80)).optional(),
+});
+
+app.put("/api/branding", requireAuth, requireAdmin, (req, res) => {
+  const parsed = BrandingUpdateSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });
+  }
+  const patch = parsed.data;
+
+  // Validate data URLs are actually data: URLs of the right image type.
+  const checks = [
+    ["logo_data_url", /^data:image\/(png|jpeg|svg\+xml|webp|x-icon|vnd\.microsoft\.icon);base64,/],
+    ["favicon_data_url", /^data:image\/(png|x-icon|vnd\.microsoft\.icon|svg\+xml);base64,/],
+  ];
+  for (const [field, allowed] of checks) {
+    const v = patch[field];
+    if (typeof v === "string" && v.length > 0 && !allowed.test(v)) {
+      return res.status(400).json({ error: `Invalid ${field}: must be a base64-encoded image data URL` });
+    }
+  }
+
+  const current = readBrandingRow();
+  const next = {
+    app_name: patch.app_name ?? current.app_name,
+    tagline: patch.tagline ?? current.tagline,
+    logo_data_url: patch.logo_data_url === undefined ? current.logo_data_url : patch.logo_data_url,
+    favicon_data_url: patch.favicon_data_url === undefined ? current.favicon_data_url : patch.favicon_data_url,
+    nav_labels: patch.nav_labels ?? current.nav_labels,
+    colors: patch.colors ?? current.colors,
+  };
+
+  db.prepare(
+    `UPDATE branding
+        SET app_name = ?, tagline = ?, logo_data_url = ?, favicon_data_url = ?,
+            nav_labels = ?, colors = ?,
+            updated_at = datetime('now'), updated_by = ?
+      WHERE id = 1`,
+  ).run(
+    next.app_name, next.tagline, next.logo_data_url, next.favicon_data_url,
+    JSON.stringify(next.nav_labels), JSON.stringify(next.colors),
+    req.user.id,
+  );
+
+  res.json({ branding: readBrandingRow() });
+});
+
 // ---------- Sites (per-user) ----------
 // All "return_*" columns are nullable — the user can fill them in later via
 // the Edit dialog. They're required only when generating a 4x6 shipping label.

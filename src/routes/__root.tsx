@@ -2,6 +2,7 @@ import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/r
 
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
+import { BrandingProvider } from "@/lib/branding-context";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -67,10 +68,14 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
+  // BrandingProvider sits inside AuthProvider so the live preview / admin
+  // settings page (which uses both contexts) can read the auth state.
   return (
     <AuthProvider>
-      <Toaster richColors position="top-right" />
-      <Outlet />
+      <BrandingProvider>
+        <Toaster richColors position="top-right" />
+        <Outlet />
+      </BrandingProvider>
     </AuthProvider>
   );
 }

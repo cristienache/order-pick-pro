@@ -498,6 +498,20 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
           onVoided={() => setRm((prev) => prev ? { ...prev, shipment: null } : prev)}
         />
       )}
+
+      {order && siteId != null && (
+        <EditAddressDialog
+          open={editingAddress !== null}
+          onOpenChange={(o) => { if (!o) setEditingAddress(null); }}
+          siteId={siteId}
+          orderId={order.id}
+          kind={editingAddress ?? "shipping"}
+          initial={editingAddress === "billing" ? order.billing : order.shipping}
+          onSaved={(payload) =>
+            setData(payload as { order: WCOrder; notes: WCNote[] })
+          }
+        />
+      )}
     </Sheet>
   );
 }

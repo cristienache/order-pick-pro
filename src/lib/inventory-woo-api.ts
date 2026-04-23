@@ -36,6 +36,17 @@ export type WcProductRow = {
   /** From oms_inventory on the mirror warehouse. */
   stock_quantity: number;
   inventory_version: number;
+  /** Small thumbnail URL pulled from WC images[0].src — null if WC has none. */
+  image_url: string | null;
+  /** "simple" | "variable" | "variation". Variable parents have no editable
+   *  stock/price of their own — those live on each variation row. */
+  wc_type: "simple" | "variable" | "variation";
+  /** oms_products.id of the variable parent, when this row is a variation. */
+  parent_product_id: string | null;
+  /** WC parent product id for variations (used by /push to target the right URL). */
+  wc_parent_id: number | null;
+  /** "Red / Large" — pre-built from the variation's attribute options. */
+  variation_label: string | null;
 };
 
 export type WcEditPayload = {
@@ -73,6 +84,11 @@ const BASE = "/api/oms/woo";
 
 export const wcApi = {
   listSites: () => api<WcSiteSummary[]>(`${BASE}/sites`),
+
+  /** All WC-mirror products + variations for a site, with every field the
+   *  bulk editor needs (description, sale_price, weight, image, etc.). */
+  listProducts: (siteId: number) =>
+    api<WcProductRow[]>(`${BASE}/products?site_id=${siteId}`),
 
   sync: (siteId: number) =>
     api<{ total: number; created: number; updated: number; warehouse_id: string }>(

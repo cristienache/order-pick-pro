@@ -429,6 +429,10 @@ function WooInventory() {
           <Badge variant="outline" className="font-mono text-[10px]">
             {selectedIds.length || dirtyIds.length} pending
           </Badge>
+          <WcBulkPanel selectedCount={selectedIds.length} onApply={applyBulk} />
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredProducts.length === 0}>
+            <Download className="mr-1.5 h-3.5 w-3.5" /> CSV
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowBackups(true)}>
             <History className="mr-1.5 h-3.5 w-3.5" /> Backups
           </Button>
@@ -446,6 +450,25 @@ function WooInventory() {
             <Send className="mr-1.5 h-3.5 w-3.5" /> Push to WooCommerce
           </Button>
         </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex items-center gap-2 border-b bg-muted/20 px-4 py-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground">Show:</span>
+        <ToggleGroup
+          type="single"
+          value={filter}
+          onValueChange={(v) => v && setFilter(v as typeof filter)}
+          className="gap-1"
+          size="sm"
+        >
+          <ToggleGroupItem value="all" className="h-6 px-2 text-[11px]">All ({siteProducts.length})</ToggleGroupItem>
+          <ToggleGroupItem value="dirty" className="h-6 px-2 text-[11px]">Edited ({dirtyIds.length})</ToggleGroupItem>
+          <ToggleGroupItem value="parents" className="h-6 px-2 text-[11px]">Parents only</ToggleGroupItem>
+          <ToggleGroupItem value="variations" className="h-6 px-2 text-[11px]">Variations only</ToggleGroupItem>
+          <ToggleGroupItem value="low" className="h-6 px-2 text-[11px]">Low stock (≤5)</ToggleGroupItem>
+          <ToggleGroupItem value="outofstock" className="h-6 px-2 text-[11px]">Out of stock</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       {/* Status row */}

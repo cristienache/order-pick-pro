@@ -926,6 +926,52 @@ function BackupsPanel({ onClose }: { onClose: () => void }) {
           </ul>
         )}
       </aside>
+
+      {/* Wipe & re-sync confirmation. Requires the user to type DELETE so it
+          cannot be triggered by an accidental Enter / double-click. */}
+      <AlertDialog open={wipeOpen} onOpenChange={(o) => { setWipeOpen(o); if (!o) setWipeText(""); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Wipe & re-sync {site?.name ?? "site"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This deletes <strong>{siteProducts.length}</strong> imported products
+                  (including variations and stock levels) for this site only. Other
+                  connected stores are not affected.
+                </p>
+                <p>
+                  A fresh sync from WooCommerce will start automatically. Any local
+                  edits you haven&apos;t pushed yet will be lost.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Type <strong className="font-mono text-foreground">DELETE</strong> to confirm.
+                </p>
+                <input
+                  autoFocus
+                  value={wipeText}
+                  onChange={(e) => setWipeText(e.target.value)}
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                  placeholder="DELETE"
+                />
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={wiping}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); wipeAndResync(); }}
+              disabled={wipeText !== "DELETE" || wiping}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {wiping ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Wiping…</> : "Wipe & re-sync"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

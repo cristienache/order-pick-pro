@@ -19,6 +19,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminInvitesRouteImport } from './routes/admin.invites'
+import { Route as AdminBrandingRouteImport } from './routes/admin.branding'
 
 const RoyalMailRoute = RoyalMailRouteImport.update({
   id: '/royal-mail',
@@ -70,6 +71,11 @@ const AdminInvitesRoute = AdminInvitesRouteImport.update({
   path: '/admin/invites',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminBrandingRoute = AdminBrandingRouteImport.update({
+  id: '/admin/branding',
+  path: '/admin/branding',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/royal-mail': typeof RoyalMailRoute
+  '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/orders'
     | '/royal-mail'
+    | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/orders'
     | '/royal-mail'
+    | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/orders'
     | '/royal-mail'
+    | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
   RoyalMailRoute: typeof RoyalMailRoute
+  AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   ApiSplatRoute: typeof ApiSplatRoute
@@ -232,6 +245,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminInvitesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/branding': {
+      id: '/admin/branding'
+      path: '/admin/branding'
+      fullPath: '/admin/branding'
+      preLoaderRoute: typeof AdminBrandingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
   RoyalMailRoute: RoyalMailRoute,
+  AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,
   ApiSplatRoute: ApiSplatRoute,

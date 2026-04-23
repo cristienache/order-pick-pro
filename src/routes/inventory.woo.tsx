@@ -539,7 +539,7 @@ function WooInventory() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((p) => {
+              {pagedProducts.map((p) => {
                 const d = drafts[p.id];
                 if (!d) return null;
                 const isDirty = dirtyIds.includes(p.id);

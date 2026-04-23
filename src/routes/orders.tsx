@@ -423,7 +423,7 @@ function PicklistPage() {
       });
     }
     return out;
-  }, [ordersBySite, activeSites, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
+  }, [ordersBySite, activeSites, statuses, search, sortOrder, datePreset, customFrom, customTo, showOnlyUnprinted, shipmentsByOrder]);
 
   // Flat, globally-sorted list of every visible order across all sites.
   // Each entry carries its siteId so the unified table can render the

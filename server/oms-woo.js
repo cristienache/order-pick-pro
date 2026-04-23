@@ -190,12 +190,15 @@ async function fetchOneFromWc(site, wcId, parentId = null) {
   return res.json();
 }
 
-/** Fetch all variations for a variable parent (paginated). */
+/** Fetch all variations for a variable parent (paginated). Throws on hard
+ *  errors so the sync caller can surface them — silent failures here were
+ *  previously hiding "not authorized" or 5xx and leaving variable parents
+ *  un-editable in the grid. */
 async function fetchAllVariations(site, parentId) {
   const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${parentId}/variations`;
   const perPage = 100;
   const all = [];
-  for (let page = 1; page <= 10; page++) {
+  for (let page = 1; page <= 20; page++) {
     const url = `${base}?per_page=${perPage}&page=${page}`;
     const res = await fetch(url, {
       headers: {
@@ -203,7 +206,13 @@ async function fetchAllVariations(site, parentId) {
         Accept: "application/json",
       },
     });
-    if (!res.ok) break;
+    if (!res.ok) {
+      if (page === 1) {
+        const text = await res.text().catch(() => "");
+        throw new Error(`WC ${res.status}: ${text.slice(0, 200)}`);
+      }
+      break;
+    }
     const batch = await res.json();
     if (!Array.isArray(batch) || batch.length === 0) break;
     all.push(...batch);

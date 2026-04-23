@@ -55,6 +55,10 @@ const PRODUCT_EXTRA_COLS = [
   ["parent_product_id", "TEXT"],                   // oms_products.id of the variable parent
   ["wc_parent_id", "INTEGER"],                     // WC parent product id (for variations)
   ["variation_label", "TEXT"],                     // e.g. "Red / Large" — derived from attributes
+  // WC creation timestamps — used to power "newest / oldest" sorts in the
+  // inventory grid. Stored as ISO 8601 strings (UTC).
+  ["wc_date_created", "TEXT"],
+  ["wc_date_modified", "TEXT"],
 ];
 for (const [col, type] of PRODUCT_EXTRA_COLS) {
   if (!productCols.has(col)) db.exec(`ALTER TABLE oms_products ADD COLUMN ${col} ${type}`);

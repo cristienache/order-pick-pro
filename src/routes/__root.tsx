@@ -1,4 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useState } from "react";
 
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
@@ -68,14 +70,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  // BrandingProvider sits inside AuthProvider so the live preview / admin
-  // settings page (which uses both contexts) can read the auth state.
+  // QueryClient is created per-request so SSR doesn't share cached data
+  // between users. BrandingProvider sits inside AuthProvider so the live
+  // preview / admin settings page (which uses both contexts) can read the
+  // auth state.
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
+  }));
   return (
-    <AuthProvider>
-      <BrandingProvider>
-        <Toaster richColors position="top-right" />
-        <Outlet />
-      </BrandingProvider>
-    </AuthProvider>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrandingProvider>
+          <Toaster richColors position="top-right" />
+          <Outlet />
+        </BrandingProvider>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }

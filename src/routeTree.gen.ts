@@ -11,11 +11,15 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as InventoryIndexRouteImport } from './routes/inventory.index'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as InventoryOrdersRouteImport } from './routes/inventory.orders'
+import { Route as InventoryAuditRouteImport } from './routes/inventory.audit'
 import { Route as IntegrationsShippingRouteImport } from './routes/integrations.shipping'
 import { Route as IntegrationsChannelsRouteImport } from './routes/integrations.channels'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
@@ -38,6 +42,11 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InventoryRoute = InventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IntegrationsRoute = IntegrationsRouteImport.update({
   id: '/integrations',
   path: '/integrations',
@@ -58,10 +67,25 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InventoryIndexRoute = InventoryIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => InventoryRoute,
+} as any)
 const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
+} as any)
+const InventoryOrdersRoute = InventoryOrdersRouteImport.update({
+  id: '/orders',
+  path: '/orders',
+  getParentRoute: () => InventoryRoute,
+} as any)
+const InventoryAuditRoute = InventoryAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => InventoryRoute,
 } as any)
 const IntegrationsShippingRoute = IntegrationsShippingRouteImport.update({
   id: '/shipping',
@@ -127,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/accept-invite': typeof AcceptInviteRoute
   '/contact': typeof ContactRoute
   '/integrations': typeof IntegrationsRouteWithChildren
+  '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/admin/branding': typeof AdminBrandingRoute
@@ -135,7 +160,10 @@ export interface FileRoutesByFullPath {
   '/api/$': typeof ApiSplatRoute
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
+  '/inventory/audit': typeof InventoryAuditRoute
+  '/inventory/orders': typeof InventoryOrdersRoute
   '/p/$slug': typeof PSlugRoute
+  '/inventory/': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -154,7 +182,10 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
   '/integrations/channels': typeof IntegrationsChannelsRoute
+  '/inventory/audit': typeof InventoryAuditRoute
+  '/inventory/orders': typeof InventoryOrdersRoute
   '/p/$slug': typeof PSlugRoute
+  '/inventory': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -167,6 +198,7 @@ export interface FileRoutesById {
   '/accept-invite': typeof AcceptInviteRoute
   '/contact': typeof ContactRoute
   '/integrations': typeof IntegrationsRouteWithChildren
+  '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/admin/branding': typeof AdminBrandingRoute
@@ -175,7 +207,10 @@ export interface FileRoutesById {
   '/api/$': typeof ApiSplatRoute
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
+  '/inventory/audit': typeof InventoryAuditRoute
+  '/inventory/orders': typeof InventoryOrdersRoute
   '/p/$slug': typeof PSlugRoute
+  '/inventory/': typeof InventoryIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -189,6 +224,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/contact'
     | '/integrations'
+    | '/inventory'
     | '/login'
     | '/orders'
     | '/admin/branding'
@@ -197,7 +233,10 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/integrations/channels'
     | '/integrations/shipping'
+    | '/inventory/audit'
+    | '/inventory/orders'
     | '/p/$slug'
+    | '/inventory/'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -216,7 +255,10 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/api/$'
     | '/integrations/channels'
+    | '/inventory/audit'
+    | '/inventory/orders'
     | '/p/$slug'
+    | '/inventory'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -228,6 +270,7 @@ export interface FileRouteTypes {
     | '/accept-invite'
     | '/contact'
     | '/integrations'
+    | '/inventory'
     | '/login'
     | '/orders'
     | '/admin/branding'
@@ -236,7 +279,10 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/integrations/channels'
     | '/integrations/shipping'
+    | '/inventory/audit'
+    | '/inventory/orders'
     | '/p/$slug'
+    | '/inventory/'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -249,6 +295,7 @@ export interface RootRouteChildren {
   AcceptInviteRoute: typeof AcceptInviteRoute
   ContactRoute: typeof ContactRoute
   IntegrationsRoute: typeof IntegrationsRouteWithChildren
+  InventoryRoute: typeof InventoryRouteWithChildren
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
@@ -274,6 +321,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inventory': {
+      id: '/inventory'
+      path: '/inventory'
+      fullPath: '/inventory'
+      preLoaderRoute: typeof InventoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/integrations': {
@@ -304,12 +358,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inventory/': {
+      id: '/inventory/'
+      path: '/'
+      fullPath: '/inventory/'
+      preLoaderRoute: typeof InventoryIndexRouteImport
+      parentRoute: typeof InventoryRoute
+    }
     '/p/$slug': {
       id: '/p/$slug'
       path: '/p/$slug'
       fullPath: '/p/$slug'
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/inventory/orders': {
+      id: '/inventory/orders'
+      path: '/orders'
+      fullPath: '/inventory/orders'
+      preLoaderRoute: typeof InventoryOrdersRouteImport
+      parentRoute: typeof InventoryRoute
+    }
+    '/inventory/audit': {
+      id: '/inventory/audit'
+      path: '/audit'
+      fullPath: '/inventory/audit'
+      preLoaderRoute: typeof InventoryAuditRouteImport
+      parentRoute: typeof InventoryRoute
     }
     '/integrations/shipping': {
       id: '/integrations/shipping'
@@ -420,11 +495,28 @@ const IntegrationsRouteWithChildren = IntegrationsRoute._addFileChildren(
   IntegrationsRouteChildren,
 )
 
+interface InventoryRouteChildren {
+  InventoryAuditRoute: typeof InventoryAuditRoute
+  InventoryOrdersRoute: typeof InventoryOrdersRoute
+  InventoryIndexRoute: typeof InventoryIndexRoute
+}
+
+const InventoryRouteChildren: InventoryRouteChildren = {
+  InventoryAuditRoute: InventoryAuditRoute,
+  InventoryOrdersRoute: InventoryOrdersRoute,
+  InventoryIndexRoute: InventoryIndexRoute,
+}
+
+const InventoryRouteWithChildren = InventoryRoute._addFileChildren(
+  InventoryRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
   ContactRoute: ContactRoute,
   IntegrationsRoute: IntegrationsRouteWithChildren,
+  InventoryRoute: InventoryRouteWithChildren,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
   AdminBrandingRoute: AdminBrandingRoute,
@@ -438,12 +530,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { createStart } from '@tanstack/react-start'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-  }
-}

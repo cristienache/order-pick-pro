@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 import type { PageNavItem } from "@/lib/pages";
 import {
-  LogOut, Package, Settings, Users, Plug, Home, Palette, FileText,
+  LogOut, Package, Settings, Users, Plug, Home, Palette, FileText, Boxes,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -55,6 +55,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <>
                   <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>
                     {navLabel(branding, "orders")}
+                  </NavLink>
+                  <NavLink to="/inventory" icon={<Boxes className="h-4 w-4" />}>
+                    Inventory
                   </NavLink>
                   <NavLink to="/integrations" icon={<Plug className="h-4 w-4" />}>
                     {navLabel(branding, "integrations")}

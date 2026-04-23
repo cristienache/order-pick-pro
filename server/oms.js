@@ -180,40 +180,37 @@ db.exec(`
 const ALLOWED_SHIPMENT_STATUSES = new Set(["allocated", "picked", "shipped", "cancelled"]);
 
 /** Read the OMS profile for a HeyShop user, falling back to defaults.
- *  HeyShop admins are mirrored as OMS admins automatically. */
+ *  HeyShop admins are mirrored as OMS admins automatically. Non-admins
+ *  are now treated as the owner ("manager") of their own per-user data. */
 function getOmsProfile(user) {
-  const row = db.prepare(
-    "SELECT role, warehouse_ids FROM oms_user_profiles WHERE user_id = ?",
-  ).get(user.id);
   const isHeyshopAdmin = user.role === "admin";
-  if (!row) {
-    return {
-      role: isHeyshopAdmin ? "admin" : "viewer",
-      warehouse_ids: [],
-    };
-  }
-  let wh = [];
-  try { wh = JSON.parse(row.warehouse_ids || "[]"); } catch { wh = []; }
   return {
-    role: isHeyshopAdmin ? "admin" : row.role,
-    warehouse_ids: Array.isArray(wh) ? wh.map(String) : [],
+    user_id: user.id,
+    role: isHeyshopAdmin ? "admin" : "manager",
   };
 }
 
-/** Returns true if `profile` is allowed to edit `warehouse_id`. */
+/** Returns true if `profile` is allowed to edit `warehouse_id`. Admins can
+ *  edit any warehouse; everyone else can only edit warehouses they own. */
 function canEditWarehouse(profile, warehouseId) {
   if (profile.role === "admin") return true;
-  return profile.warehouse_ids.includes(warehouseId);
+  const row = db.prepare(
+    "SELECT user_id FROM oms_warehouses WHERE id = ?",
+  ).get(warehouseId);
+  return !!row && row.user_id === profile.user_id;
 }
 
-/** Visible warehouses for a profile. Admins see all; everyone else sees the
- *  allowlist (which may be empty → no rows). Returns Set<string>. */
+/** Visible warehouses for a profile. Admins see all; everyone else sees only
+ *  the warehouses they own. Returns Set<string>. */
 function visibleWarehouseIds(profile) {
   if (profile.role === "admin") {
     const all = db.prepare("SELECT id FROM oms_warehouses").all().map((r) => r.id);
     return new Set(all);
   }
-  return new Set(profile.warehouse_ids);
+  const rows = db.prepare(
+    "SELECT id FROM oms_warehouses WHERE user_id = ?",
+  ).all(profile.user_id);
+  return new Set(rows.map((r) => r.id));
 }
 
 /** Manhattan distance, matching src/lib/routing.ts. */

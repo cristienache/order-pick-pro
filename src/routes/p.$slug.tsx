@@ -1,9 +1,8 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
 import { useBranding } from "@/lib/branding-context";
-import { BrandedLogo } from "@/components/branded-logo";
+import { AppShell } from "@/components/app-shell";
 import { PageRenderer } from "@/components/page-renderer";
 import type { Page } from "@/lib/pages";
 import { Loader2 } from "lucide-react";
@@ -19,7 +18,6 @@ export const Route = createFileRoute("/p/$slug")({
 
 function PublicPageRoute() {
   const { slug } = Route.useParams();
-  const { user } = useAuth();
   const { branding } = useBranding();
   const router = useRouter();
   const [page, setPage] = useState<Page | null>(null);
@@ -45,28 +43,8 @@ function PublicPageRoute() {
   }, [page, branding.app_name]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border/60">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5">
-            <BrandedLogo />
-            <div className="font-bold text-base tracking-tight">{branding.app_name}</div>
-          </Link>
-          <div className="flex items-center gap-3 text-sm">
-            {user ? (
-              <Link to="/" className="text-muted-foreground hover:text-foreground transition">
-                Dashboard
-              </Link>
-            ) : (
-              <Link to="/login" className="text-muted-foreground hover:text-foreground transition">
-                Sign in
-              </Link>
-            )}
-          </div>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-6 py-12 md:py-16">
+    <AppShell>
+      <div className="max-w-3xl mx-auto py-6 md:py-10">
         {loading && (
           <div className="flex items-center justify-center py-20 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -102,7 +80,7 @@ function PublicPageRoute() {
             <PageRenderer blocks={page.blocks} />
           </article>
         )}
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

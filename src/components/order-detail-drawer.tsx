@@ -322,7 +322,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
                       <span>Connect Royal Mail to print labels.</span>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link to="/royal-mail">Set up</Link>
+                      <Link to="/integrations/shipping/royal-mail">Set up</Link>
                     </Button>
                   </div>
                 ) : rm.shipment ? (

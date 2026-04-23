@@ -33,7 +33,7 @@ export const Route = createFileRoute("/")({
 
 type Accent = "violet" | "emerald" | "amber" | "sky" | "rose";
 type Tool = {
-  to: "/orders" | "/royal-mail" | "/integrations" | "/admin/users" | "/admin/invites";
+  to: "/orders" | "/integrations/shipping/royal-mail" | "/integrations" | "/admin/users" | "/admin/invites";
   label: string;
   caption: string;
   description: string;
@@ -68,7 +68,7 @@ const TOOLS: Tool[] = [
     accent: "violet",
   },
   {
-    to: "/royal-mail",
+    to: "/integrations/shipping/royal-mail",
     label: "Royal Mail",
     caption: "Labels & manifests",
     description:

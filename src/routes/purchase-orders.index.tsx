@@ -13,10 +13,10 @@ export const Route = createFileRoute("/purchase-orders/")({
 
 const STATUS_TONE: Record<PoStatus, string> = {
   draft: "bg-muted text-muted-foreground",
-  sent: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200",
-  partial: "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200",
-  received: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200",
-  cancelled: "bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200",
+  sent: "bg-accent text-accent-foreground",
+  partial: "bg-brand-amber-soft text-brand-amber",
+  received: "bg-brand-green-soft text-brand-green",
+  cancelled: "bg-destructive/10 text-destructive",
 };
 
 function PoListPage() {

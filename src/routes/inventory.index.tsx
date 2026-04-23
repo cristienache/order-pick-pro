@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StockCell } from "@/components/inventory/stock-cell";
 import { BulkEditDialog, type BulkTarget } from "@/components/inventory/bulk-edit-dialog";
+import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,9 @@ function InventoryGrid() {
   const [lowOnly, setLowOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  // Pagination state. `pageSize === 0` means "All".
+  const [pageSize, setPageSize] = useState<PageSize>(25);
+  const [page, setPage] = useState(1);
 
   const visibleWarehouses = useMemo(() => {
     if (!warehouses.data) return [];

@@ -22,7 +22,7 @@ import {
   RefreshCw, Search, Save, Send, History, ChevronDown, ChevronRight,
   Loader2, AlertCircle, Undo2, Download, Copy,
 } from "lucide-react";
-import { wcApi, type WcEditPayload, type WcProductRow } from "@/lib/inventory-woo-api";
+import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
 

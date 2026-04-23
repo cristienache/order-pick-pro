@@ -4,15 +4,17 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StockCell } from "@/components/inventory/stock-cell";
 import { BulkEditDialog, type BulkTarget } from "@/components/inventory/bulk-edit-dialog";
 import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, Wand2, RefreshCw, AlertCircle } from "lucide-react";
+import { Wand2, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { omsApi } from "@/lib/inventory-api";
+import {
+  InventoryFilterBar, DEFAULT_FILTERS,
+  type InventoryFilters, type SortOption,
+} from "@/components/inventory/inventory-filter-bar";
 
 export const Route = createFileRoute("/inventory/")({
   head: () => ({ meta: [{ title: "Inventory grid — HeyShop" }] }),

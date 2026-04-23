@@ -336,6 +336,14 @@ const packetaCols = new Set(
 if (!packetaCols.has("widget_api_key_enc")) {
   db.exec(`ALTER TABLE packeta_credentials ADD COLUMN widget_api_key_enc TEXT`);
 }
+// Phase 2.2: Packeta requires the senderLabel field on createPacket to match
+// an "eshop" / sender ID configured in the user's Packeta account. Without
+// it, label creation fails with: "eshop_id: ... Sender is not given. Please
+// choose a sender." This is NOT the company name printed on the label —
+// it's an internal identifier set by Packeta when the sender is registered.
+if (!packetaCols.has("sender_label")) {
+  db.exec(`ALTER TABLE packeta_credentials ADD COLUMN sender_label TEXT`);
+}
 
 // Phase 2.1: drop the UNIQUE(user_id, country) constraint on
 // packeta_country_routes so a single country can have multiple carriers

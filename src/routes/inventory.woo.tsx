@@ -296,7 +296,11 @@ function WooInventory() {
     try {
       const r = await wcApi.push(siteId, idsForPush);
       if (r.failed.length) {
-        toast.warning(`Pushed ${r.ok}, failed ${r.failed.length}. Check logs.`, { id: t });
+        const first = r.failed[0]?.error || r.failed[0]?.reason || "unknown";
+        toast.warning(
+          `Pushed ${r.ok}, failed ${r.failed.length}. First error: ${first}`,
+          { id: t, duration: 8000 },
+        );
       } else {
         toast.success(`Pushed ${r.ok} product${r.ok === 1 ? "" : "s"} to WooCommerce`, { id: t });
       }

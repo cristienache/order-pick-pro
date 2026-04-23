@@ -434,6 +434,11 @@ export function mountOmsWoo(app, { requireAuth }) {
   });
 
   // ----- Sync a site's WC catalog into oms_products -----
+  // Chunked sync: each call processes ONE page of products (default 50) +
+  // their variations, then returns `next_page` so the client can loop.
+  // This keeps every individual request under the 30s edge timeout that
+  // was causing 504s on big stores. The client (inventory.woo.tsx) drives
+  // the loop and shows live progress.
   app.post(`${r}/sync/:siteId`, requireAuth, async (req, res) => {
     let site;
     try { site = getSiteForUser(req.user.id, req.params.siteId); }
@@ -441,78 +446,112 @@ export function mountOmsWoo(app, { requireAuth }) {
 
     const warehouseId = ensureMirrorWarehouse(site);
     const base = normalizeUrl(site.store_url);
-    const perPage = 100;
-    const maxPages = 30; // hard cap → 3,000 products
-    let page = 1, total = 0, created = 0, updated = 0;
+    const page = Math.max(1, Number(req.query.page) || Number(req.body?.page) || 1);
+    const perPage = Math.min(100, Math.max(10, Number(req.query.per_page) || 50));
+    let created = 0, updated = 0;
     const errors = [];
 
     try {
-      while (page <= maxPages) {
-        const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&orderby=id&order=asc`;
-        const wcRes = await fetch(url, {
-          headers: {
-            Authorization: authHeader(site.consumer_key, site.consumer_secret),
-            Accept: "application/json",
-          },
-        });
-        if (!wcRes.ok) {
-          const text = await wcRes.text().catch(() => "");
-          throw new Error(`WC ${wcRes.status}: ${text.slice(0, 300)}`);
-        }
-        const batch = await wcRes.json();
-        if (!Array.isArray(batch) || batch.length === 0) break;
+      const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&orderby=id&order=asc`;
+      const wcRes = await fetch(url, {
+        headers: {
+          Authorization: authHeader(site.consumer_key, site.consumer_secret),
+          Accept: "application/json",
+        },
+      });
+      if (!wcRes.ok) {
+        const text = await wcRes.text().catch(() => "");
+        throw new Error(`WC ${wcRes.status}: ${text.slice(0, 300)}`);
+      }
+      const batch = await wcRes.json();
+      const nowIso = new Date().toISOString();
 
-        const nowIso = new Date().toISOString();
-        const upsert = db.transaction((rows) => {
-          for (const wc of rows) {
-            const productId = upsertWcProduct({
-              site, warehouseId, wc, nowIso,
-              wcType: wc.type === "variable" ? "variable" : "simple",
-            });
-            if (productId.created) created++; else updated++;
-            // Stash the parent for the variation pass below.
-            if (wc.type === "variable") {
-              variableParents.push({ wcId: wc.id, omsId: productId.id });
-            }
+      // Total products header from WC — useful so the client can show progress.
+      const totalProducts = Number(wcRes.headers.get("x-wp-total")) || null;
+      const totalPages = Number(wcRes.headers.get("x-wp-totalpages")) || null;
+
+      if (!Array.isArray(batch) || batch.length === 0) {
+        return res.json({
+          page, per_page: perPage, batch_size: 0,
+          created, updated, errors,
+          done: true, next_page: null,
+          total_products: totalProducts, total_pages: totalPages,
+          warehouse_id: warehouseId,
+        });
+      }
+
+      // Upsert this page of parents/simples in one transaction.
+      const variableParents = [];
+      const upsert = db.transaction((rows) => {
+        for (const wc of rows) {
+          const productId = upsertWcProduct({
+            site, warehouseId, wc, nowIso,
+            wcType: wc.type === "variable" ? "variable" : "simple",
+          });
+          if (productId.created) created++; else updated++;
+          if (wc.type === "variable") {
+            variableParents.push({ wcId: wc.id, omsId: productId.id, name: wc.name });
           }
-        });
-        // Variable parents discovered in this batch — we'll fetch their
-        // variations after the batch is upserted so we have stable parent ids.
-        const variableParents = [];
-        upsert(batch);
+        }
+      });
+      upsert(batch);
 
-        // Pull variations for each variable product in this batch and upsert
-        // them as their own oms_products rows so users can edit each
-        // variation's price/stock individually.
-        for (const parent of variableParents) {
-          let variations = [];
-          try { variations = await fetchAllVariations(site, parent.wcId); }
-          catch (e) { errors.push({ wc_id: parent.wcId, error: `variations: ${e.message}` }); }
-          if (variations.length === 0) continue;
+      // Fetch variations for ALL variable parents in this page in PARALLEL
+      // (concurrency 4 — gentle on the WC server, ~4× faster than serial).
+      const CONCURRENCY = 4;
+      for (let i = 0; i < variableParents.length; i += CONCURRENCY) {
+        const slice = variableParents.slice(i, i + CONCURRENCY);
+        const results = await Promise.all(slice.map(async (parent) => {
+          try {
+            const variations = await fetchAllVariations(site, parent.wcId);
+            return { parent, variations, error: null };
+          } catch (e) {
+            return { parent, variations: [], error: e.message };
+          }
+        }));
+        for (const { parent, variations, error } of results) {
+          if (error) {
+            errors.push({ wc_id: parent.wcId, error: `variations: ${error}` });
+            continue;
+          }
+          if (variations.length === 0) {
+            // A variable parent with ZERO variations is a WC config bug —
+            // surface it so the user knows why the row isn't editable.
+            errors.push({
+              wc_id: parent.wcId,
+              error: `Variable product "${parent.name}" has no variations published in WooCommerce`,
+            });
+            continue;
+          }
           const upsertVars = db.transaction((vars) => {
             for (const v of vars) {
-              const r = upsertWcProduct({
+              const r2 = upsertWcProduct({
                 site, warehouseId, wc: v, nowIso,
                 wcType: "variation",
                 parentOmsId: parent.omsId,
                 wcParentId: parent.wcId,
-                fallbackName: db.prepare("SELECT name FROM oms_products WHERE id = ?")
-                  .get(parent.omsId)?.name,
+                fallbackName: parent.name,
               });
-              if (r.created) created++; else updated++;
+              if (r2.created) created++; else updated++;
             }
           });
           upsertVars(variations);
         }
-
-        total += batch.length;
-        if (batch.length < perPage) break;
-        page++;
       }
-      res.json({ total, created, updated, warehouse_id: warehouseId, errors });
+
+      const done = batch.length < perPage;
+      res.json({
+        page, per_page: perPage, batch_size: batch.length,
+        created, updated, errors,
+        done,
+        next_page: done ? null : page + 1,
+        total_products: totalProducts,
+        total_pages: totalPages,
+        warehouse_id: warehouseId,
+      });
     } catch (e) {
       console.error("[oms-woo] sync failed:", e);
-      res.status(502).json({ error: e.message || "Sync failed" });
+      res.status(502).json({ error: e.message || "Sync failed", page });
     }
   });
 

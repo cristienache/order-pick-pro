@@ -166,6 +166,16 @@ function WooInventory() {
     });
   }, [siteProducts, search, filter, collapsed, dirtyIds]);
 
+  // Reset to page 1 whenever the filter/search changes the visible set.
+  useEffect(() => { setPage(1); }, [search, filter, pageSize, siteId]);
+
+  // Paginated slice rendered into the table. `pageSize === 0` shows everything.
+  const pagedProducts = useMemo(() => {
+    if (pageSize === 0) return filteredProducts;
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
+
   /* ---------- Bulk operations ---------- */
   const applyBulk = (op: BulkOp) => {
     if (selectedIds.length === 0) return;

@@ -24,8 +24,8 @@ function PoListPage() {
 
   if (list.error) {
     return (
-      <div className="rounded-lg border border-amber-300/40 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm flex items-start gap-2">
-        <AlertCircle className="h-4 w-4 mt-0.5 text-amber-600" />
+      <div className="rounded-lg border border-brand-amber/40 bg-brand-amber-soft p-4 text-sm flex items-start gap-2">
+        <AlertCircle className="h-4 w-4 mt-0.5 text-brand-amber" />
         <div>
           <p className="font-semibold">Couldn't load purchase orders.</p>
           <p className="text-muted-foreground mt-1">{(list.error as Error).message}</p>

@@ -16,10 +16,13 @@ import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as AdminPagesRouteImport } from './routes/admin.pages'
 import { Route as AdminInvitesRouteImport } from './routes/admin.invites'
 import { Route as AdminBrandingRouteImport } from './routes/admin.branding'
+import { Route as AdminPagesPageIdRouteImport } from './routes/admin.pages.$pageId'
 
 const RoyalMailRoute = RoyalMailRouteImport.update({
   id: '/royal-mail',
@@ -56,6 +59,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PSlugRoute = PSlugRouteImport.update({
+  id: '/p/$slug',
+  path: '/p/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -64,6 +72,11 @@ const ApiSplatRoute = ApiSplatRouteImport.update({
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/admin/users',
   path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminPagesRoute = AdminPagesRouteImport.update({
+  id: '/admin/pages',
+  path: '/admin/pages',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminInvitesRoute = AdminInvitesRouteImport.update({
@@ -76,6 +89,11 @@ const AdminBrandingRoute = AdminBrandingRouteImport.update({
   path: '/admin/branding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminPagesPageIdRoute = AdminPagesPageIdRouteImport.update({
+  id: '/$pageId',
+  path: '/$pageId',
+  getParentRoute: () => AdminPagesRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -87,8 +105,11 @@ export interface FileRoutesByFullPath {
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
+  '/admin/pages': typeof AdminPagesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/p/$slug': typeof PSlugRoute
+  '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -100,8 +121,11 @@ export interface FileRoutesByTo {
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
+  '/admin/pages': typeof AdminPagesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/p/$slug': typeof PSlugRoute
+  '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -114,8 +138,11 @@ export interface FileRoutesById {
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
+  '/admin/pages': typeof AdminPagesRouteWithChildren
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/p/$slug': typeof PSlugRoute
+  '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -129,8 +156,11 @@ export interface FileRouteTypes {
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
+    | '/admin/pages'
     | '/admin/users'
     | '/api/$'
+    | '/p/$slug'
+    | '/admin/pages/$pageId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -142,8 +172,11 @@ export interface FileRouteTypes {
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
+    | '/admin/pages'
     | '/admin/users'
     | '/api/$'
+    | '/p/$slug'
+    | '/admin/pages/$pageId'
   id:
     | '__root__'
     | '/'
@@ -155,8 +188,11 @@ export interface FileRouteTypes {
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
+    | '/admin/pages'
     | '/admin/users'
     | '/api/$'
+    | '/p/$slug'
+    | '/admin/pages/$pageId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -169,8 +205,10 @@ export interface RootRouteChildren {
   RoyalMailRoute: typeof RoyalMailRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
+  AdminPagesRoute: typeof AdminPagesRouteWithChildren
   AdminUsersRoute: typeof AdminUsersRoute
   ApiSplatRoute: typeof ApiSplatRoute
+  PSlugRoute: typeof PSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -224,6 +262,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$slug': {
+      id: '/p/$slug'
+      path: '/p/$slug'
+      fullPath: '/p/$slug'
+      preLoaderRoute: typeof PSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -236,6 +281,13 @@ declare module '@tanstack/react-router' {
       path: '/admin/users'
       fullPath: '/admin/users'
       preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/pages': {
+      id: '/admin/pages'
+      path: '/admin/pages'
+      fullPath: '/admin/pages'
+      preLoaderRoute: typeof AdminPagesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin/invites': {
@@ -252,8 +304,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBrandingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/pages/$pageId': {
+      id: '/admin/pages/$pageId'
+      path: '/$pageId'
+      fullPath: '/admin/pages/$pageId'
+      preLoaderRoute: typeof AdminPagesPageIdRouteImport
+      parentRoute: typeof AdminPagesRoute
+    }
   }
 }
+
+interface AdminPagesRouteChildren {
+  AdminPagesPageIdRoute: typeof AdminPagesPageIdRoute
+}
+
+const AdminPagesRouteChildren: AdminPagesRouteChildren = {
+  AdminPagesPageIdRoute: AdminPagesPageIdRoute,
+}
+
+const AdminPagesRouteWithChildren = AdminPagesRoute._addFileChildren(
+  AdminPagesRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -265,8 +336,10 @@ const rootRouteChildren: RootRouteChildren = {
   RoyalMailRoute: RoyalMailRoute,
   AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
+  AdminPagesRoute: AdminPagesRouteWithChildren,
   AdminUsersRoute: AdminUsersRoute,
   ApiSplatRoute: ApiSplatRoute,
+  PSlugRoute: PSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

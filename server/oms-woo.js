@@ -345,25 +345,34 @@ export function mountOmsWoo(app, { requireAuth }) {
           failed.push({ product_id, reason: "validation" }); continue;
         }
         const prod = db.prepare(
-          "SELECT id FROM oms_products WHERE id = ? AND site_id = ?",
+          "SELECT id, dirty_fields FROM oms_products WHERE id = ? AND site_id = ?",
         ).get(product_id, site.id);
         if (!prod) { failed.push({ product_id, reason: "not_found" }); continue; }
+
+        // Track which columns the user has touched since last sync. We OR
+        // into any existing set so multiple saves accumulate.
+        let touched;
+        try { touched = new Set(JSON.parse(prod.dirty_fields || "[]")); }
+        catch { touched = new Set(); }
 
         const sets = []; const values = [];
         for (const [k, v] of Object.entries(fields)) {
           if (!ALLOWED_FIELDS.has(k)) continue;
           if (k === "stock_quantity") continue; // handled below
+          touched.add(k);
           if (k === "manage_stock") { sets.push(`manage_stock = ?`); values.push(v ? 1 : 0); continue; }
-          if (k === "name" || k === "sku") sets.push(`${k} = ?`);
-          else sets.push(`${k} = ?`);
+          sets.push(`${k} = ?`);
           values.push(v ?? null);
         }
-        if (sets.length) {
-          sets.push("dirty = 1");
-          db.prepare(
-            `UPDATE oms_products SET ${sets.join(", ")} WHERE id = ?`,
-          ).run(...values, product_id);
+        if (Object.prototype.hasOwnProperty.call(fields, "stock_quantity")) {
+          touched.add("stock_quantity");
         }
+        sets.push("dirty = 1", "dirty_fields = ?");
+        values.push(JSON.stringify([...touched]));
+        db.prepare(
+          `UPDATE oms_products SET ${sets.join(", ")} WHERE id = ?`,
+        ).run(...values, product_id);
+
         if (Object.prototype.hasOwnProperty.call(fields, "stock_quantity")) {
           const qty = Math.max(0, Math.floor(Number(fields.stock_quantity) || 0));
           const inv = db.prepare(
@@ -382,7 +391,6 @@ export function mountOmsWoo(app, { requireAuth }) {
                VALUES (?, ?, ?, 0, 0, 1)`,
             ).run(product_id, warehouseId, qty);
           }
-          db.prepare(`UPDATE oms_products SET dirty = 1 WHERE id = ?`).run(product_id);
         }
         ok++;
       }

@@ -1,22 +1,28 @@
 import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Boxes, ScrollText, Store } from "lucide-react";
+import { ClipboardList, Truck, Users } from "lucide-react";
 
-export const Route = createFileRoute("/inventory")({
-  head: () => ({ meta: [{ title: "Inventory — HeyShop" }] }),
-  component: InventoryLayout,
+export const Route = createFileRoute("/purchase-orders")({
+  head: () => ({ meta: [{ title: "Purchase Orders — HeyShop" }] }),
+  component: PoLayout,
 });
 
-function InventoryLayout() {
+function PoLayout() {
   return (
     <RequireAuth>
       <AppShell>
         <div className="space-y-4">
           <div className="flex items-center gap-1 border-b border-border/60 pb-1">
-            <SubLink to="/inventory" icon={<Boxes className="h-4 w-4" />} exact>Stock grid</SubLink>
-            <SubLink to="/inventory/woo" icon={<Store className="h-4 w-4" />}>WooCommerce</SubLink>
-            <SubLink to="/inventory/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SubLink>
+            <SubLink to="/purchase-orders" icon={<ClipboardList className="h-4 w-4" />} exact>
+              Purchase orders
+            </SubLink>
+            <SubLink to="/purchase-orders/suppliers" icon={<Users className="h-4 w-4" />}>
+              Suppliers
+            </SubLink>
+            <SubLink to="/purchase-orders/new" icon={<Truck className="h-4 w-4" />}>
+              New PO
+            </SubLink>
           </div>
           <Outlet />
         </div>

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InventoryRouteImport } from './routes/inventory'
@@ -16,10 +17,13 @@ import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PurchaseOrdersIndexRouteImport } from './routes/purchase-orders.index'
 import { Route as InventoryIndexRouteImport } from './routes/inventory.index'
+import { Route as PurchaseOrdersSuppliersRouteImport } from './routes/purchase-orders.suppliers'
+import { Route as PurchaseOrdersNewRouteImport } from './routes/purchase-orders.new'
+import { Route as PurchaseOrdersIdRouteImport } from './routes/purchase-orders.$id'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
 import { Route as InventoryWooRouteImport } from './routes/inventory.woo'
-import { Route as InventoryOrdersRouteImport } from './routes/inventory.orders'
 import { Route as InventoryAuditRouteImport } from './routes/inventory.audit'
 import { Route as IntegrationsShippingRouteImport } from './routes/integrations.shipping'
 import { Route as IntegrationsChannelsRouteImport } from './routes/integrations.channels'
@@ -33,6 +37,11 @@ import { Route as IntegrationsShippingRoyalMailRouteImport } from './routes/inte
 import { Route as IntegrationsShippingPacketaRouteImport } from './routes/integrations.shipping.packeta'
 import { Route as AdminPagesPageIdRouteImport } from './routes/admin.pages.$pageId'
 
+const PurchaseOrdersRoute = PurchaseOrdersRouteImport.update({
+  id: '/purchase-orders',
+  path: '/purchase-orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
@@ -68,10 +77,30 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PurchaseOrdersIndexRoute = PurchaseOrdersIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => PurchaseOrdersRoute,
+} as any)
 const InventoryIndexRoute = InventoryIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => InventoryRoute,
+} as any)
+const PurchaseOrdersSuppliersRoute = PurchaseOrdersSuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
+  getParentRoute: () => PurchaseOrdersRoute,
+} as any)
+const PurchaseOrdersNewRoute = PurchaseOrdersNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => PurchaseOrdersRoute,
+} as any)
+const PurchaseOrdersIdRoute = PurchaseOrdersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PurchaseOrdersRoute,
 } as any)
 const PSlugRoute = PSlugRouteImport.update({
   id: '/p/$slug',
@@ -81,11 +110,6 @@ const PSlugRoute = PSlugRouteImport.update({
 const InventoryWooRoute = InventoryWooRouteImport.update({
   id: '/woo',
   path: '/woo',
-  getParentRoute: () => InventoryRoute,
-} as any)
-const InventoryOrdersRoute = InventoryOrdersRouteImport.update({
-  id: '/orders',
-  path: '/orders',
   getParentRoute: () => InventoryRoute,
 } as any)
 const InventoryAuditRoute = InventoryAuditRouteImport.update({
@@ -160,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -167,10 +192,13 @@ export interface FileRoutesByFullPath {
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
+  '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
+  '/purchase-orders/new': typeof PurchaseOrdersNewRoute
+  '/purchase-orders/suppliers': typeof PurchaseOrdersSuppliersRoute
   '/inventory/': typeof InventoryIndexRoute
+  '/purchase-orders/': typeof PurchaseOrdersIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -190,10 +218,13 @@ export interface FileRoutesByTo {
   '/api/$': typeof ApiSplatRoute
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
+  '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
+  '/purchase-orders/new': typeof PurchaseOrdersNewRoute
+  '/purchase-orders/suppliers': typeof PurchaseOrdersSuppliersRoute
   '/inventory': typeof InventoryIndexRoute
+  '/purchase-orders': typeof PurchaseOrdersIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -209,6 +240,7 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -216,10 +248,13 @@ export interface FileRoutesById {
   '/integrations/channels': typeof IntegrationsChannelsRoute
   '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/inventory/audit': typeof InventoryAuditRoute
-  '/inventory/orders': typeof InventoryOrdersRoute
   '/inventory/woo': typeof InventoryWooRoute
   '/p/$slug': typeof PSlugRoute
+  '/purchase-orders/$id': typeof PurchaseOrdersIdRoute
+  '/purchase-orders/new': typeof PurchaseOrdersNewRoute
+  '/purchase-orders/suppliers': typeof PurchaseOrdersSuppliersRoute
   '/inventory/': typeof InventoryIndexRoute
+  '/purchase-orders/': typeof PurchaseOrdersIndexRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
   '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
   '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
@@ -236,6 +271,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/orders'
+    | '/purchase-orders'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
@@ -243,10 +279,13 @@ export interface FileRouteTypes {
     | '/integrations/channels'
     | '/integrations/shipping'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
+    | '/purchase-orders/$id'
+    | '/purchase-orders/new'
+    | '/purchase-orders/suppliers'
     | '/inventory/'
+    | '/purchase-orders/'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -266,10 +305,13 @@ export interface FileRouteTypes {
     | '/api/$'
     | '/integrations/channels'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
+    | '/purchase-orders/$id'
+    | '/purchase-orders/new'
+    | '/purchase-orders/suppliers'
     | '/inventory'
+    | '/purchase-orders'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -284,6 +326,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/orders'
+    | '/purchase-orders'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
@@ -291,10 +334,13 @@ export interface FileRouteTypes {
     | '/integrations/channels'
     | '/integrations/shipping'
     | '/inventory/audit'
-    | '/inventory/orders'
     | '/inventory/woo'
     | '/p/$slug'
+    | '/purchase-orders/$id'
+    | '/purchase-orders/new'
+    | '/purchase-orders/suppliers'
     | '/inventory/'
+    | '/purchase-orders/'
     | '/admin/pages/$pageId'
     | '/integrations/shipping/packeta'
     | '/integrations/shipping/royal-mail'
@@ -310,6 +356,7 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRouteWithChildren
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
+  PurchaseOrdersRoute: typeof PurchaseOrdersRouteWithChildren
   AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -321,6 +368,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/purchase-orders': {
+      id: '/purchase-orders'
+      path: '/purchase-orders'
+      fullPath: '/purchase-orders'
+      preLoaderRoute: typeof PurchaseOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/orders': {
       id: '/orders'
       path: '/orders'
@@ -370,12 +424,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/purchase-orders/': {
+      id: '/purchase-orders/'
+      path: '/'
+      fullPath: '/purchase-orders/'
+      preLoaderRoute: typeof PurchaseOrdersIndexRouteImport
+      parentRoute: typeof PurchaseOrdersRoute
+    }
     '/inventory/': {
       id: '/inventory/'
       path: '/'
       fullPath: '/inventory/'
       preLoaderRoute: typeof InventoryIndexRouteImport
       parentRoute: typeof InventoryRoute
+    }
+    '/purchase-orders/suppliers': {
+      id: '/purchase-orders/suppliers'
+      path: '/suppliers'
+      fullPath: '/purchase-orders/suppliers'
+      preLoaderRoute: typeof PurchaseOrdersSuppliersRouteImport
+      parentRoute: typeof PurchaseOrdersRoute
+    }
+    '/purchase-orders/new': {
+      id: '/purchase-orders/new'
+      path: '/new'
+      fullPath: '/purchase-orders/new'
+      preLoaderRoute: typeof PurchaseOrdersNewRouteImport
+      parentRoute: typeof PurchaseOrdersRoute
+    }
+    '/purchase-orders/$id': {
+      id: '/purchase-orders/$id'
+      path: '/$id'
+      fullPath: '/purchase-orders/$id'
+      preLoaderRoute: typeof PurchaseOrdersIdRouteImport
+      parentRoute: typeof PurchaseOrdersRoute
     }
     '/p/$slug': {
       id: '/p/$slug'
@@ -389,13 +471,6 @@ declare module '@tanstack/react-router' {
       path: '/woo'
       fullPath: '/inventory/woo'
       preLoaderRoute: typeof InventoryWooRouteImport
-      parentRoute: typeof InventoryRoute
-    }
-    '/inventory/orders': {
-      id: '/inventory/orders'
-      path: '/orders'
-      fullPath: '/inventory/orders'
-      preLoaderRoute: typeof InventoryOrdersRouteImport
       parentRoute: typeof InventoryRoute
     }
     '/inventory/audit': {
@@ -516,20 +591,36 @@ const IntegrationsRouteWithChildren = IntegrationsRoute._addFileChildren(
 
 interface InventoryRouteChildren {
   InventoryAuditRoute: typeof InventoryAuditRoute
-  InventoryOrdersRoute: typeof InventoryOrdersRoute
   InventoryWooRoute: typeof InventoryWooRoute
   InventoryIndexRoute: typeof InventoryIndexRoute
 }
 
 const InventoryRouteChildren: InventoryRouteChildren = {
   InventoryAuditRoute: InventoryAuditRoute,
-  InventoryOrdersRoute: InventoryOrdersRoute,
   InventoryWooRoute: InventoryWooRoute,
   InventoryIndexRoute: InventoryIndexRoute,
 }
 
 const InventoryRouteWithChildren = InventoryRoute._addFileChildren(
   InventoryRouteChildren,
+)
+
+interface PurchaseOrdersRouteChildren {
+  PurchaseOrdersIdRoute: typeof PurchaseOrdersIdRoute
+  PurchaseOrdersNewRoute: typeof PurchaseOrdersNewRoute
+  PurchaseOrdersSuppliersRoute: typeof PurchaseOrdersSuppliersRoute
+  PurchaseOrdersIndexRoute: typeof PurchaseOrdersIndexRoute
+}
+
+const PurchaseOrdersRouteChildren: PurchaseOrdersRouteChildren = {
+  PurchaseOrdersIdRoute: PurchaseOrdersIdRoute,
+  PurchaseOrdersNewRoute: PurchaseOrdersNewRoute,
+  PurchaseOrdersSuppliersRoute: PurchaseOrdersSuppliersRoute,
+  PurchaseOrdersIndexRoute: PurchaseOrdersIndexRoute,
+}
+
+const PurchaseOrdersRouteWithChildren = PurchaseOrdersRoute._addFileChildren(
+  PurchaseOrdersRouteChildren,
 )
 
 const rootRouteChildren: RootRouteChildren = {
@@ -540,6 +631,7 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRouteWithChildren,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
+  PurchaseOrdersRoute: PurchaseOrdersRouteWithChildren,
   AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,

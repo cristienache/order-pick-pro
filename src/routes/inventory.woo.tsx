@@ -25,6 +25,7 @@ import {
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
+import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),
@@ -89,6 +90,9 @@ function WooInventory() {
   const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
   // Collapsed variable-parent ids: when collapsed, hide their variation rows.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Pagination state. `pageSize === 0` means "All".
+  const [pageSize, setPageSize] = useState<PageSize>(25);
+  const [page, setPage] = useState(1);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,

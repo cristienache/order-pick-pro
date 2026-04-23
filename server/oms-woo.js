@@ -295,82 +295,46 @@ export function mountOmsWoo(app, { requireAuth }) {
         const nowIso = new Date().toISOString();
         const upsert = db.transaction((rows) => {
           for (const wc of rows) {
-            const sku = wc.sku && wc.sku.trim() ? wc.sku.trim() : `WC-${site.id}-${wc.id}`;
-            const existing = db.prepare(
-              `SELECT id FROM oms_products WHERE site_id = ? AND woo_product_id = ?`,
-            ).get(site.id, wc.id);
-            const productId = existing?.id || crypto.randomUUID();
-            const stockQty = Number.isFinite(Number(wc.stock_quantity))
-              ? Number(wc.stock_quantity) : 0;
-
-            if (existing) {
-              db.prepare(
-                `UPDATE oms_products
-                   SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
-                       description = ?, short_description = ?, stock_status = ?,
-                       manage_stock = ?, weight = ?, dirty = 0, dirty_fields = NULL,
-                       last_synced_at = ?
-                 WHERE id = ?`,
-              ).run(
-                sku, wc.name || sku,
-                num(wc.price) ?? num(wc.regular_price) ?? 0,
-                num(wc.regular_price), num(wc.sale_price),
-                wc.description ?? null, wc.short_description ?? null,
-                wc.stock_status ?? "instock",
-                wc.manage_stock ? 1 : 0,
-                num(wc.weight),
-                nowIso,
-                productId,
-              );
-              updated++;
-            } else {
-              // SKUs are UNIQUE in oms_products. If the same SKU is already
-              // taken (e.g. it was created manually before sync), suffix it.
-              let finalSku = sku;
-              let i = 1;
-              while (db.prepare("SELECT 1 FROM oms_products WHERE sku = ?").get(finalSku)) {
-                finalSku = `${sku}-WC${site.id}-${i++}`;
-                if (i > 50) break;
-              }
-              db.prepare(
-                `INSERT INTO oms_products
-                   (id, sku, name, source, base_price, woo_product_id, site_id,
-                    description, short_description, regular_price, sale_price,
-                    stock_status, manage_stock, weight, dirty, last_synced_at)
-                 VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-              ).run(
-                productId, finalSku, wc.name || finalSku,
-                num(wc.price) ?? num(wc.regular_price) ?? 0,
-                wc.id, site.id,
-                wc.description ?? null, wc.short_description ?? null,
-                num(wc.regular_price), num(wc.sale_price),
-                wc.stock_status ?? "instock",
-                wc.manage_stock ? 1 : 0,
-                num(wc.weight),
-                nowIso,
-              );
-              created++;
-            }
-
-            // Inventory mirror — one row per (product, mirror warehouse).
-            const invRow = db.prepare(
-              `SELECT version FROM oms_inventory WHERE product_id = ? AND warehouse_id = ?`,
-            ).get(productId, warehouseId);
-            if (invRow) {
-              db.prepare(
-                `UPDATE oms_inventory SET quantity = ?, version = version + 1
-                  WHERE product_id = ? AND warehouse_id = ?`,
-              ).run(stockQty, productId, warehouseId);
-            } else {
-              db.prepare(
-                `INSERT INTO oms_inventory
-                   (product_id, warehouse_id, quantity, reserved, reorder_level, version)
-                 VALUES (?, ?, ?, 0, 0, 1)`,
-              ).run(productId, warehouseId, stockQty);
+            const productId = upsertWcProduct({
+              site, warehouseId, wc, nowIso,
+              wcType: wc.type === "variable" ? "variable" : "simple",
+            });
+            if (productId.created) created++; else updated++;
+            // Stash the parent for the variation pass below.
+            if (wc.type === "variable") {
+              variableParents.push({ wcId: wc.id, omsId: productId.id });
             }
           }
         });
+        // Variable parents discovered in this batch — we'll fetch their
+        // variations after the batch is upserted so we have stable parent ids.
+        const variableParents = [];
         upsert(batch);
+
+        // Pull variations for each variable product in this batch and upsert
+        // them as their own oms_products rows so users can edit each
+        // variation's price/stock individually.
+        for (const parent of variableParents) {
+          let variations = [];
+          try { variations = await fetchAllVariations(site, parent.wcId); }
+          catch (e) { errors.push({ wc_id: parent.wcId, error: `variations: ${e.message}` }); }
+          if (variations.length === 0) continue;
+          const upsertVars = db.transaction((vars) => {
+            for (const v of vars) {
+              const r = upsertWcProduct({
+                site, warehouseId, wc: v, nowIso,
+                wcType: "variation",
+                parentOmsId: parent.omsId,
+                wcParentId: parent.wcId,
+                fallbackName: db.prepare("SELECT name FROM oms_products WHERE id = ?")
+                  .get(parent.omsId)?.name,
+              });
+              if (r.created) created++; else updated++;
+            }
+          });
+          upsertVars(variations);
+        }
+
         total += batch.length;
         if (batch.length < perPage) break;
         page++;

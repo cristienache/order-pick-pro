@@ -1371,6 +1371,522 @@ app.post("/api/packeta/test-connection", requireAuth, async (req, res) => {
   res.json({ ...result, settings: packetaRowToPublic(updated) });
 });
 
+// ---------- Packeta carrier catalog (Phase 2) ----------
+// Helper: load decrypted password for the user, or null. Used by every route
+// that hits Packeta on the user's behalf.
+function loadPacketaPassword(userId) {
+  const row = db.prepare(
+    "SELECT * FROM packeta_credentials WHERE user_id = ?",
+  ).get(userId);
+  if (!row || !row.api_password_enc) return null;
+  try {
+    return {
+      row,
+      apiPassword: decrypt(row.api_password_enc),
+      useSandbox: Boolean(row.use_sandbox),
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Fire-and-forget background sync. Triggered when the catalog is stale and
+// the UI requests carriers. Never rejects.
+async function maybeBackgroundSyncCarriers(userId) {
+  if (!isCatalogStale()) return;
+  const creds = loadPacketaPassword(userId);
+  if (!creds) return;
+  try {
+    await syncPacketaCarriers(creds.apiPassword);
+  } catch (e) {
+    console.warn("[packeta] background carrier sync failed:", e.message);
+  }
+}
+
+// List carriers from the catalog. Optionally filter by ?country=XX. Kicks
+// off a background refresh if the catalog is stale (>24h).
+app.get("/api/packeta/carriers", requireAuth, async (req, res) => {
+  const country = String(req.query.country || "").toUpperCase().slice(0, 2);
+  // Don't await — the user gets the cached list immediately, the next call
+  // will pick up the refreshed data.
+  void maybeBackgroundSyncCarriers(req.user.id);
+
+  const rows = country
+    ? db.prepare(
+        `SELECT * FROM packeta_carriers WHERE country = ? ORDER BY name COLLATE NOCASE`,
+      ).all(country)
+    : db.prepare(
+        `SELECT * FROM packeta_carriers ORDER BY country, name COLLATE NOCASE`,
+      ).all();
+
+  res.json({
+    carriers: rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      country: r.country,
+      currency: r.currency,
+      is_pickup_points: Boolean(r.is_pickup_points),
+      supports_cod: Boolean(r.supports_cod),
+      supports_age_verification: Boolean(r.supports_age_verification),
+      max_weight_kg: r.max_weight_kg,
+      disallows_cod: Boolean(r.disallows_cod),
+    })),
+    last_synced_at: getCatalogLastSyncedAt(),
+    stale: isCatalogStale(),
+  });
+});
+
+// Manual "Refresh now" trigger from the /packeta page.
+app.post("/api/packeta/carriers/sync", requireAuth, async (req, res) => {
+  const creds = loadPacketaPassword(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Add your Packeta API password first." });
+  const result = await syncPacketaCarriers(creds.apiPassword);
+  if (!result.ok) return res.status(502).json(result);
+  res.json(result);
+});
+
+// ---------- Packeta country routing (Phase 2) ----------
+const packetaRouteSchema = z.object({
+  country: z.string().trim().min(2).max(2)
+    .transform((v) => v.toUpperCase()),
+  carrier_id: z.number().int().positive(),
+  default_weight_kg: z.number().positive().max(50).default(0.5),
+  default_value: z.number().min(0).max(1_000_000).default(0),
+  sort_order: z.number().int().min(0).max(1000).optional().default(0),
+});
+
+function packetaRouteToPublic(row) {
+  return {
+    id: row.id,
+    country: row.country,
+    carrier_id: row.carrier_id,
+    default_weight_kg: row.default_weight_kg,
+    default_value: row.default_value,
+    sort_order: row.sort_order,
+    updated_at: row.updated_at,
+  };
+}
+
+app.get("/api/packeta/country-routes", requireAuth, (req, res) => {
+  const rows = db.prepare(
+    `SELECT r.*, c.name AS carrier_name, c.is_pickup_points
+     FROM packeta_country_routes r
+     LEFT JOIN packeta_carriers c
+       ON c.id = r.carrier_id AND c.country = r.country
+     WHERE r.user_id = ?
+     ORDER BY r.sort_order, r.country`,
+  ).all(req.user.id);
+  res.json({
+    routes: rows.map((r) => ({
+      ...packetaRouteToPublic(r),
+      carrier_name: r.carrier_name || null,
+      is_pickup_points: r.is_pickup_points === null ? null : Boolean(r.is_pickup_points),
+    })),
+  });
+});
+
+app.post("/api/packeta/country-routes", requireAuth, (req, res) => {
+  const parsed = packetaRouteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  // Validate the carrier exists in the catalog for this country.
+  const carrier = db.prepare(
+    "SELECT id FROM packeta_carriers WHERE id = ? AND country = ?",
+  ).get(d.carrier_id, d.country);
+  if (!carrier) {
+    return res.status(400).json({
+      error: `Carrier ${d.carrier_id} is not available for ${d.country}. Refresh the carrier list first.`,
+    });
+  }
+  try {
+    const result = db.prepare(`
+      INSERT INTO packeta_country_routes (
+        user_id, country, carrier_id, default_weight_kg, default_value, sort_order
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `).run(req.user.id, d.country, d.carrier_id, d.default_weight_kg, d.default_value, d.sort_order);
+    const row = db.prepare(
+      "SELECT * FROM packeta_country_routes WHERE id = ?",
+    ).get(result.lastInsertRowid);
+    res.json({ route: packetaRouteToPublic(row) });
+  } catch (e) {
+    if (String(e.message).includes("UNIQUE")) {
+      return res.status(409).json({ error: `${d.country} already has a route — edit it instead.` });
+    }
+    throw e;
+  }
+});
+
+app.put("/api/packeta/country-routes/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare(
+    "SELECT * FROM packeta_country_routes WHERE id = ? AND user_id = ?",
+  ).get(id, req.user.id);
+  if (!existing) return res.status(404).json({ error: "Route not found" });
+
+  const parsed = packetaRouteSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  const carrier = db.prepare(
+    "SELECT id FROM packeta_carriers WHERE id = ? AND country = ?",
+  ).get(d.carrier_id, d.country);
+  if (!carrier) {
+    return res.status(400).json({
+      error: `Carrier ${d.carrier_id} is not available for ${d.country}.`,
+    });
+  }
+  db.prepare(`
+    UPDATE packeta_country_routes
+    SET country = ?, carrier_id = ?, default_weight_kg = ?, default_value = ?,
+        sort_order = ?, updated_at = datetime('now')
+    WHERE id = ? AND user_id = ?
+  `).run(d.country, d.carrier_id, d.default_weight_kg, d.default_value, d.sort_order, id, req.user.id);
+  const row = db.prepare("SELECT * FROM packeta_country_routes WHERE id = ?").get(id);
+  res.json({ route: packetaRouteToPublic(row) });
+});
+
+app.delete("/api/packeta/country-routes/:id", requireAuth, (req, res) => {
+  const id = Number(req.params.id);
+  const r = db.prepare(
+    "DELETE FROM packeta_country_routes WHERE id = ? AND user_id = ?",
+  ).run(id, req.user.id);
+  if (r.changes === 0) return res.status(404).json({ error: "Route not found" });
+  res.json({ ok: true });
+});
+
+// ---------- Packeta per-order labels (Phase 2) ----------
+// Build the createPacket payload for a single Woo order using the user's
+// saved sender, the route configured for the destination country, and the
+// pickup point ID stored on the order (if the route is a pickup carrier).
+function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
+  const ship = (order.shipping && (order.shipping.address_1 || order.shipping.first_name))
+    ? order.shipping
+    : (order.billing || {});
+  const billing = order.billing || {};
+
+  const value = Number(order.total) || route.default_value || 0;
+  const weight = route.default_weight_kg > 0 ? route.default_weight_kg : 0.5;
+
+  const attrs = {
+    number: String(order.number || order.id),
+    name: String(ship.first_name || billing.first_name || "").slice(0, 32),
+    surname: String(ship.last_name || billing.last_name || "").slice(0, 32),
+    email: String(billing.email || ship.email || sender.sender_email || "").slice(0, 255),
+    phone: String(billing.phone || ship.phone || "").slice(0, 30),
+    addressId: route.is_pickup_points ? (pickupPointId || "") : route.carrier_id,
+    company: String(ship.company || "").slice(0, 60),
+    street: String(ship.address_1 || "").slice(0, 60),
+    houseNumber: "",
+    city: String(ship.city || "").slice(0, 50),
+    zip: String(ship.postcode || "").replace(/\s+/g, ""),
+    currency: String(order.currency || sender.currency || "CZK").toUpperCase(),
+    cod: 0,
+    value,
+    weight,
+    eshop: sender.sender_company || sender.sender_name || "Ultrax",
+  };
+
+  // Sender block printed on the label.
+  if (sender.sender_name) attrs.senderName = sender.sender_name;
+  if (sender.sender_company) attrs.senderLabel = sender.sender_company;
+
+  return attrs;
+}
+
+// Core single-label creator. Returns { status, body } so it can be used by
+// the per-order route AND the bulk endpoint without duplicating logic.
+async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, sender }) {
+  const site = loadSiteWithKeys(siteId, userId);
+  if (!site) return { status: 404, body: { error: "Site not found" } };
+
+  // Reuse cached label if one exists.
+  const existing = db.prepare(`
+    SELECT * FROM shipments
+    WHERE user_id = ? AND site_id = ? AND woocommerce_order_id = ?
+      AND carrier = 'packeta' AND voided = 0
+    ORDER BY created_at DESC LIMIT 1
+  `).get(userId, siteId, orderId);
+  if (existing && existing.label_pdf_base64) {
+    return {
+      status: 200,
+      body: { shipment: rmShipmentToPublic(existing), reused: true },
+    };
+  }
+
+  let order;
+  try {
+    order = await fetchOrderById(site, orderId);
+  } catch (e) {
+    return { status: 502, body: { error: `Could not load order from WooCommerce: ${e.message}` } };
+  }
+  if (!order) return { status: 404, body: { error: "Order not found in WooCommerce" } };
+
+  const country = String(order.shipping?.country || order.billing?.country || "")
+    .toUpperCase()
+    .slice(0, 2);
+  if (!country) {
+    return { status: 400, body: { error: "Order has no destination country." } };
+  }
+  const route = db.prepare(
+    `SELECT r.*, c.is_pickup_points
+     FROM packeta_country_routes r
+     LEFT JOIN packeta_carriers c
+       ON c.id = r.carrier_id AND c.country = r.country
+     WHERE r.user_id = ? AND r.country = ?`,
+  ).get(userId, country);
+  if (!route) {
+    return {
+      status: 400,
+      body: { error: `No Packeta route configured for ${country}. Add one on the Packeta page.` },
+    };
+  }
+  const isPickup = Boolean(route.is_pickup_points);
+  const pickupPointId = isPickup ? pickPacketaPickupPointId(order) : null;
+  if (isPickup && !pickupPointId) {
+    return {
+      status: 400,
+      body: {
+        error:
+          `Order ${order.number} ships to a pickup-point carrier but no pickup point ID was found ` +
+          `on the order. Customers normally pick this at checkout via the Packeta WooCommerce plugin.`,
+      },
+    };
+  }
+
+  const packet = buildPacketaPacketAttrs({
+    order,
+    route: { ...route, is_pickup_points: isPickup },
+    sender,
+    pickupPointId,
+  });
+
+  const created = await createPacketaPacket({
+    apiPassword: creds.apiPassword,
+    useSandbox: creds.useSandbox,
+    packet,
+  });
+  if (!created.ok) {
+    return { status: 422, body: { error: created.error || "Packeta rejected the packet.", detail: created.detail } };
+  }
+
+  const label = await getPacketaLabelPdf({
+    apiPassword: creds.apiPassword,
+    useSandbox: creds.useSandbox,
+    packetId: created.packetId,
+    format: "A6 on A6",
+  });
+  const labelBase64 = label.ok && label.buffer ? label.buffer.toString("base64") : null;
+
+  const insert = db.prepare(`
+    INSERT INTO shipments (
+      user_id, site_id, woocommerce_order_id, woocommerce_store_url,
+      tracking_number, service_code, label_pdf_base64,
+      carrier, packeta_packet_id, packeta_barcode
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'packeta', ?, ?)
+  `).run(
+    userId, siteId, orderId, site.store_url,
+    created.barcode || created.barcodeText || null,
+    `PACKETA:${route.carrier_id}`,
+    labelBase64,
+    created.packetId,
+    created.barcode || null,
+  );
+
+  if (created.barcode) {
+    try {
+      await addOrderNote(
+        site,
+        orderId,
+        `Packeta label created. Tracking: ${created.barcode}`,
+        false,
+      );
+    } catch (e) {
+      console.warn(`[packeta] WC note failed for order ${orderId}: ${e.message}`);
+    }
+  }
+
+  const saved = db.prepare("SELECT * FROM shipments WHERE id = ?").get(insert.lastInsertRowid);
+  return {
+    status: 200,
+    body: {
+      shipment: rmShipmentToPublic(saved),
+      packet_id: created.packetId,
+      barcode: created.barcode || null,
+      label_warning: label.ok ? null : (label.error || "Label PDF could not be fetched yet."),
+    },
+  };
+}
+
+app.post("/api/packeta/orders/:siteId/:orderId/label", requireAuth, async (req, res) => {
+  const siteId = Number(req.params.siteId);
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(siteId) || !Number.isInteger(orderId)) {
+    return res.status(400).json({ error: "Invalid site/order ID" });
+  }
+  const creds = loadPacketaPassword(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Add your Packeta API password first." });
+  const sender = creds.row;
+  if (!sender.sender_address_line1 || !sender.sender_city || !sender.sender_postcode) {
+    return res.status(400).json({ error: "Add a sender address on the Packeta page first." });
+  }
+  const result = await createPacketaLabelForOrder({
+    userId: req.user.id, siteId, orderId, creds, sender,
+  });
+  res.status(result.status).json(result.body);
+});
+
+// Bulk: create labels and return a single merged PDF. Skips orders that
+// can't be labelled and reports them via X-Packeta-Skipped header.
+app.post("/api/packeta/orders/bulk-labels", requireAuth, async (req, res) => {
+  const Schema = z.object({
+    selections: z.array(z.object({
+      site_id: z.number().int().positive(),
+      order_ids: z.array(z.number().int().positive()).min(1).max(200),
+    })).min(1).max(10),
+  });
+  const parsed = Schema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const creds = loadPacketaPassword(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Add your Packeta API password first." });
+  const sender = creds.row;
+  if (!sender.sender_address_line1 || !sender.sender_city || !sender.sender_postcode) {
+    return res.status(400).json({ error: "Add a sender address on the Packeta page first." });
+  }
+
+  const results = [];
+  let succeeded = 0;
+  let failed = 0;
+  for (const sel of parsed.data.selections) {
+    for (const orderId of sel.order_ids) {
+      const r = await createPacketaLabelForOrder({
+        userId: req.user.id,
+        siteId: sel.site_id,
+        orderId,
+        creds,
+        sender,
+      });
+      if (r.status === 200 && r.body.shipment) {
+        results.push({
+          site_id: sel.site_id,
+          order_id: orderId,
+          ok: true,
+          shipment: r.body.shipment,
+        });
+        succeeded++;
+      } else {
+        results.push({
+          site_id: sel.site_id,
+          order_id: orderId,
+          ok: false,
+          error: r.body?.error || `Failed (${r.status})`,
+        });
+        failed++;
+      }
+    }
+  }
+
+  res.json({ succeeded, failed, results });
+});
+
+// Stream a saved Packeta label PDF (for "Reprint").
+app.get("/api/packeta/shipments/:id/label.pdf", requireAuth, (req, res) => {
+  const row = db.prepare(
+    `SELECT label_pdf_base64, tracking_number FROM shipments
+     WHERE id = ? AND user_id = ? AND carrier = 'packeta'`,
+  ).get(Number(req.params.id), req.user.id);
+  if (!row || !row.label_pdf_base64) return res.status(404).json({ error: "Label not found" });
+  const buf = Buffer.from(row.label_pdf_base64, "base64");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", String(buf.length));
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="packeta-${row.tracking_number || "label"}.pdf"`,
+  );
+  res.send(buf);
+});
+
+// Bulk merged-PDF download for already-created Packeta shipments. Used by
+// the orders bulk-print flow after createPacketaLabelForOrder returns.
+app.get("/api/packeta/shipments/bulk/labels.pdf", requireAuth, async (req, res) => {
+  const raw = String(req.query.ids || "").trim();
+  if (!raw) return res.status(400).json({ error: "ids query param required" });
+  const ids = raw.split(",").map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  if (ids.length === 0) return res.status(400).json({ error: "No valid shipment IDs" });
+  if (ids.length > 200) return res.status(400).json({ error: "Too many shipments (max 200)" });
+
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.prepare(
+    `SELECT id, label_pdf_base64, packeta_packet_id FROM shipments
+     WHERE user_id = ? AND carrier = 'packeta' AND id IN (${placeholders})`,
+  ).all(req.user.id, ...ids);
+
+  if (rows.length === 0) return res.status(404).json({ error: "No shipments found" });
+
+  // Try Packeta's native multi-label PDF first (better tiling, single billing
+  // event). Fall back to merging cached PDFs if any packet isn't accepted.
+  const creds = loadPacketaPassword(req.user.id);
+  const packetIds = rows.map((r) => r.packeta_packet_id).filter(Boolean);
+  if (creds && packetIds.length === rows.length) {
+    const merged = await getPacketaLabelsPdf({
+      apiPassword: creds.apiPassword,
+      useSandbox: creds.useSandbox,
+      packetIds,
+      format: "A6 on A6",
+    });
+    if (merged.ok) {
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Length", String(merged.buffer.length));
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="packeta-labels-${new Date().toISOString().slice(0, 10)}.pdf"`,
+      );
+      return res.send(merged.buffer);
+    }
+  }
+
+  // Fallback: stitch the cached PDFs together with pdf-lib.
+  const { PDFDocument } = await import("pdf-lib");
+  const doc = await PDFDocument.create();
+  for (const r of rows) {
+    if (!r.label_pdf_base64) continue;
+    try {
+      const src = await PDFDocument.load(Buffer.from(r.label_pdf_base64, "base64"));
+      const pages = await doc.copyPages(src, src.getPageIndices());
+      for (const p of pages) doc.addPage(p);
+    } catch { /* skip broken page */ }
+  }
+  if (doc.getPageCount() === 0) {
+    return res.status(422).json({ error: "No printable Packeta labels found." });
+  }
+  const bytes = await doc.save();
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Length", String(bytes.length));
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename="packeta-labels-${new Date().toISOString().slice(0, 10)}.pdf"`,
+  );
+  res.send(Buffer.from(bytes));
+});
+
+// Lookup the Packeta shipment for a given Woo order — used by the order
+// drawer to render "Label created" vs "Create label".
+app.get("/api/packeta/shipments/by-order/:siteId/:orderId", requireAuth, (req, res) => {
+  const siteId = Number(req.params.siteId);
+  const orderId = Number(req.params.orderId);
+  const row = db.prepare(`
+    SELECT * FROM shipments
+    WHERE user_id = ? AND site_id = ? AND woocommerce_order_id = ?
+      AND carrier = 'packeta' AND voided = 0
+    ORDER BY created_at DESC LIMIT 1
+  `).get(req.user.id, siteId, orderId);
+  res.json({ shipment: row ? rmShipmentToPublic(row) : null });
+});
+
 // ---------- Royal Mail shipments / labels (Click & Drop) ----------
 // Click & Drop accepts many service codes and the valid set depends on the
 // customer's account (OBA contracts vs OLP "pay as you go", returns, etc.).

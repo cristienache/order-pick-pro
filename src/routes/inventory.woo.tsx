@@ -556,8 +556,9 @@ function WooInventory() {
           <Button variant="outline" size="sm" onClick={() => setShowBackups(true)}>
             <History className="mr-1.5 h-3.5 w-3.5" /> Backups
           </Button>
-          <Button variant="outline" size="sm" onClick={sync} disabled={!siteId}>
-            <RefreshCw className="mr-1.5 h-3.5 w-3.5" /> Sync from WC
+          <Button variant="outline" size="sm" onClick={sync} disabled={!siteId || syncing}>
+            {syncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+            {syncing ? "Syncing…" : "Sync from WC"}
           </Button>
           <Button variant="outline" size="sm" onClick={saveLocal} disabled={!siteId}>
             <Save className="mr-1.5 h-3.5 w-3.5" /> Save

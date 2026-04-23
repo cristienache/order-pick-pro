@@ -194,6 +194,30 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
               onChange={(e) => setApiPassword(e.target.value)}
               placeholder={settings.has_api_password ? "•••••••• (saved — leave blank to keep)" : "Paste your Packeta API password"}
               autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" />
+            <p className="text-xs text-muted-foreground">
+              Used for the SOAP/REST API (creating packets, downloading labels).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="packeta-widget-key" className="flex items-center justify-between">
+              <span>Packeta Widget API key</span>
+              {settings.has_widget_api_key && (
+                <button type="button" onClick={clearWidget}
+                  className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1">
+                  <Trash2 className="h-3 w-3" /> Remove
+                </button>
+              )}
+            </Label>
+            <Input id="packeta-widget-key" type="password" value={widgetApiKey}
+              onChange={(e) => setWidgetApiKey(e.target.value)}
+              placeholder={settings.has_widget_api_key ? "•••••••• (saved — leave blank to keep)" : "Paste your Packeta Widget API key"}
+              autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" />
+            <p className="text-xs text-muted-foreground">
+              A separate, shorter credential used for the public carrier and pickup-point feeds.
+              Required to refresh the carrier list. Find it in the Packeta client section under{" "}
+              <span className="font-medium">Settings → API</span> (labelled <em>API key</em>, not <em>API password</em>).
+            </p>
           </div>
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>

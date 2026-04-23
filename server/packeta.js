@@ -160,6 +160,102 @@ export async function testPacketaConnection({ apiPassword, useSandbox }) {
   };
 }
 
+// Verify a sender label (eshop ID) against Packeta. Packeta's API does NOT
+// expose a "list senders" method — `senderGetReturnRouting` is the only
+// sender-related endpoint, and it accepts a single label and returns either
+// the routing strings (sender exists) or a `SenderNotExists` fault.
+//
+// Return shape mirrors testPacketaConnection so the UI can reuse the same
+// rendering logic.
+export async function verifyPacketaSender({ apiPassword, useSandbox, senderLabel }) {
+  const password = normalizePacketaPassword(apiPassword);
+  if (!password) {
+    return { ok: false, status: 0, message: "API password is required" };
+  }
+  const label = String(senderLabel || "").trim();
+  if (!label) {
+    return { ok: false, status: 0, message: "Sender ID is required" };
+  }
+
+  const url = packetaBaseUrl(Boolean(useSandbox));
+  const body =
+    `<senderGetReturnRouting>` +
+      `<apiPassword>${xmlEscape(password)}</apiPassword>` +
+      `<senderLabel>${xmlEscape(label)}</senderLabel>` +
+    `</senderGetReturnRouting>`;
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/xml; charset=utf-8",
+        Accept: "text/xml, application/xml",
+      },
+      body,
+    });
+  } catch (err) {
+    return { ok: false, status: 0, message: `Network error: ${err.message}` };
+  }
+
+  const text = await res.text().catch(() => "");
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      status: res.status,
+      message: `Packeta returned HTTP ${res.status}.`,
+      detail: text.slice(0, 500),
+    };
+  }
+
+  const status = (pickTag(text, "status") || "").toLowerCase();
+  const faultCode = pickTag(text, "fault") || pickTag(text, "code");
+  const faultMessage = pickTag(text, "string") || pickTag(text, "message");
+
+  if (status === "ok") {
+    return {
+      ok: true,
+      status: res.status,
+      message: `Sender "${label}" is registered in your Packeta account.`,
+    };
+  }
+
+  if (faultCode && /WrongApiPassword|InvalidApiPassword|NotAuthenticated/i.test(faultCode)) {
+    return {
+      ok: false,
+      status: res.status,
+      message: "Packeta rejected the API password. Save a valid password first.",
+      detail: faultMessage || faultCode,
+    };
+  }
+
+  if (faultCode && /SenderNotExists|InvalidSender|SenderLabelNotFound/i.test(faultCode)) {
+    return {
+      ok: false,
+      status: res.status,
+      message: `Packeta does not recognise sender "${label}". Check the exact code in Packeta client section → Settings → Senders.`,
+      detail: faultMessage || faultCode,
+    };
+  }
+
+  if (faultCode || faultMessage) {
+    return {
+      ok: false,
+      status: res.status,
+      message: faultMessage || faultCode || "Packeta rejected the sender.",
+      detail: faultMessage || faultCode,
+    };
+  }
+
+  return {
+    ok: false,
+    status: res.status,
+    message: "Unexpected response from Packeta.",
+    detail: text.slice(0, 500),
+  };
+}
+
 // ---------- Phase 2: createPacket + label PDF ----------
 
 // Read the WC Packeta plugin's pickup-point ID off a WooCommerce order.

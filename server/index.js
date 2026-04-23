@@ -34,6 +34,7 @@ import {
 } from "./royalmail.js";
 import {
   testPacketaConnection,
+  verifyPacketaSender,
   normalizePacketaPassword,
   pickPacketaPickupPointId,
   createPacketaPacket,
@@ -1456,6 +1457,32 @@ app.post("/api/packeta/test-connection", requireAuth, async (req, res) => {
 
   const updated = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
   res.json({ ...result, settings: packetaRowToPublic(updated) });
+});
+
+// Verify a sender label (eshop ID) against Packeta's API. Packeta does not
+// expose a "list senders" endpoint — we probe the user-supplied label via
+// `senderGetReturnRouting` and surface whether it's registered.
+app.post("/api/packeta/verify-sender", requireAuth, async (req, res) => {
+  const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  if (!row || !row.api_password_enc) {
+    return res.status(400).json({ ok: false, error: "Add your Packeta API password first." });
+  }
+  const senderLabel = String(req.body?.sender_label || row.sender_label || "").trim();
+  if (!senderLabel) {
+    return res.status(400).json({ ok: false, error: "Sender ID is required." });
+  }
+  let apiPassword;
+  try {
+    apiPassword = decrypt(row.api_password_enc);
+  } catch {
+    return res.status(500).json({ ok: false, error: "Stored API password could not be decrypted." });
+  }
+  const result = await verifyPacketaSender({
+    apiPassword,
+    useSandbox: Boolean(row.use_sandbox),
+    senderLabel,
+  });
+  res.json(result);
 });
 
 // ---------- Packeta carrier catalog (Phase 2) ----------

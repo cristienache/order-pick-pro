@@ -74,6 +74,16 @@ function InventoryGrid() {
     });
   }, [products.data, sourceFilter, search, lowOnly, visibleWarehouses, invByKey]);
 
+  // Reset to page 1 whenever the filtered set shrinks/changes meaningfully.
+  useEffect(() => { setPage(1); }, [search, whFilter, sourceFilter, lowOnly, pageSize]);
+
+  // Paginated slice fed to the table. `pageSize === 0` shows everything.
+  const pagedProducts = useMemo(() => {
+    if (pageSize === 0) return filteredProducts;
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
+
   const totalsByProduct = useMemo(() => {
     const m = new Map<string, number>();
     inventory.data?.forEach((r) => m.set(r.product_id, (m.get(r.product_id) ?? 0) + r.quantity));

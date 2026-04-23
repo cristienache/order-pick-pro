@@ -416,7 +416,8 @@ export function mountOmsWoo(app, { requireAuth }) {
               p.site_id, p.description, p.short_description, p.regular_price,
               p.sale_price, p.stock_status, p.manage_stock, p.weight,
               p.image_url, p.wc_type, p.parent_product_id, p.wc_parent_id,
-              p.variation_label, p.dirty, p.dirty_fields, p.last_synced_at,
+              p.variation_label, p.wc_date_created, p.wc_date_modified,
+              p.dirty, p.dirty_fields, p.last_synced_at,
               COALESCE((SELECT quantity FROM oms_inventory
                           WHERE product_id = p.id AND warehouse_id = ?), 0) AS stock_quantity,
               COALESCE((SELECT version FROM oms_inventory

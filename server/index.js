@@ -1287,9 +1287,10 @@ app.put("/api/packeta/credentials", requireAuth, (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
-  const { api_password, use_sandbox } = parsed.data;
+  const { api_password, widget_api_key, use_sandbox } = parsed.data;
   const existing = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
 
+  // SOAP API password — same merge rules as before.
   const cleanPassword = api_password && api_password !== "__clear__"
     ? normalizePacketaPassword(api_password)
     : api_password;
@@ -1297,17 +1298,26 @@ app.put("/api/packeta/credentials", requireAuth, (req, res) => {
     ? null
     : (cleanPassword ? encrypt(cleanPassword) : (existing?.api_password_enc ?? null));
 
+  // Widget API key — same merge rules. Reuses normalizePacketaPassword which
+  // just strips whitespace/zero-width/quote chars, so it's safe for either.
+  const cleanWidget = widget_api_key && widget_api_key !== "__clear__"
+    ? normalizePacketaPassword(widget_api_key)
+    : widget_api_key;
+  const nextWidgetEnc = cleanWidget === "__clear__"
+    ? null
+    : (cleanWidget ? encrypt(cleanWidget) : (existing?.widget_api_key_enc ?? null));
+
   if (existing) {
     db.prepare(`
       UPDATE packeta_credentials
-      SET api_password_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      SET api_password_enc = ?, widget_api_key_enc = ?, use_sandbox = ?, updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(nextPasswordEnc, use_sandbox ? 1 : 0, req.user.id);
+    `).run(nextPasswordEnc, nextWidgetEnc, use_sandbox ? 1 : 0, req.user.id);
   } else {
     db.prepare(`
-      INSERT INTO packeta_credentials (user_id, api_password_enc, use_sandbox)
-      VALUES (?, ?, ?)
-    `).run(req.user.id, nextPasswordEnc, use_sandbox ? 1 : 0);
+      INSERT INTO packeta_credentials (user_id, api_password_enc, widget_api_key_enc, use_sandbox)
+      VALUES (?, ?, ?, ?)
+    `).run(req.user.id, nextPasswordEnc, nextWidgetEnc, use_sandbox ? 1 : 0);
   }
 
   const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);

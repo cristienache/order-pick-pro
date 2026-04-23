@@ -63,6 +63,7 @@ import {
 import { sendContactEmail, smtpConfig } from "./mailer.js";
 import { mountOms } from "./oms.js";
 import { mountOmsWoo } from "./oms-woo.js";
+import { mountOmsPo } from "./oms-po.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 
@@ -3192,6 +3193,8 @@ app.get("/api/ebay/accounts/:id/orders", requireAuth, async (req, res) => {
 mountOms(app, { requireAuth });
 // WooCommerce ↔ Inventory bridge (sync, bulk-edit, push, backups).
 mountOmsWoo(app, { requireAuth });
+// Purchase orders + suppliers + receive-stock + printable PDF.
+mountOmsPo(app, { requireAuth });
 
 app.listen(PORT, () => {
   console.log(`Ultrax API listening on http://127.0.0.1:${PORT}`);

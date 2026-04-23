@@ -9,8 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as RoyalMailRouteImport } from './routes/royal-mail'
-import { Route as PacketaRouteImport } from './routes/packeta'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IntegrationsRouteImport } from './routes/integrations'
@@ -18,23 +16,18 @@ import { Route as ContactRouteImport } from './routes/contact'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PSlugRouteImport } from './routes/p.$slug'
+import { Route as IntegrationsShippingRouteImport } from './routes/integrations.shipping'
+import { Route as IntegrationsChannelsRouteImport } from './routes/integrations.channels'
 import { Route as ApiSplatRouteImport } from './routes/api.$'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminInvitesRouteImport } from './routes/admin.invites'
 import { Route as AdminBrandingRouteImport } from './routes/admin.branding'
+import { Route as IntegrationsShippingIndexRouteImport } from './routes/integrations.shipping.index'
 import { Route as AdminPagesIndexRouteImport } from './routes/admin.pages.index'
+import { Route as IntegrationsShippingRoyalMailRouteImport } from './routes/integrations.shipping.royal-mail'
+import { Route as IntegrationsShippingPacketaRouteImport } from './routes/integrations.shipping.packeta'
 import { Route as AdminPagesPageIdRouteImport } from './routes/admin.pages.$pageId'
 
-const RoyalMailRoute = RoyalMailRouteImport.update({
-  id: '/royal-mail',
-  path: '/royal-mail',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PacketaRoute = PacketaRouteImport.update({
-  id: '/packeta',
-  path: '/packeta',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const OrdersRoute = OrdersRouteImport.update({
   id: '/orders',
   path: '/orders',
@@ -70,6 +63,16 @@ const PSlugRoute = PSlugRouteImport.update({
   path: '/p/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegrationsShippingRoute = IntegrationsShippingRouteImport.update({
+  id: '/shipping',
+  path: '/shipping',
+  getParentRoute: () => IntegrationsRoute,
+} as any)
+const IntegrationsChannelsRoute = IntegrationsChannelsRouteImport.update({
+  id: '/channels',
+  path: '/channels',
+  getParentRoute: () => IntegrationsRoute,
+} as any)
 const ApiSplatRoute = ApiSplatRouteImport.update({
   id: '/api/$',
   path: '/api/$',
@@ -90,11 +93,29 @@ const AdminBrandingRoute = AdminBrandingRouteImport.update({
   path: '/admin/branding',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegrationsShippingIndexRoute =
+  IntegrationsShippingIndexRouteImport.update({
+    id: '/',
+    path: '/',
+    getParentRoute: () => IntegrationsShippingRoute,
+  } as any)
 const AdminPagesIndexRoute = AdminPagesIndexRouteImport.update({
   id: '/admin/pages/',
   path: '/admin/pages/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const IntegrationsShippingRoyalMailRoute =
+  IntegrationsShippingRoyalMailRouteImport.update({
+    id: '/royal-mail',
+    path: '/royal-mail',
+    getParentRoute: () => IntegrationsShippingRoute,
+  } as any)
+const IntegrationsShippingPacketaRoute =
+  IntegrationsShippingPacketaRouteImport.update({
+    id: '/packeta',
+    path: '/packeta',
+    getParentRoute: () => IntegrationsShippingRoute,
+  } as any)
 const AdminPagesPageIdRoute = AdminPagesPageIdRouteImport.update({
   id: '/admin/pages/$pageId',
   path: '/admin/pages/$pageId',
@@ -105,53 +126,61 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/contact': typeof ContactRoute
-  '/integrations': typeof IntegrationsRoute
+  '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
-  '/packeta': typeof PacketaRoute
-  '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/integrations/channels': typeof IntegrationsChannelsRoute
+  '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/p/$slug': typeof PSlugRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
+  '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
+  '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
   '/admin/pages/': typeof AdminPagesIndexRoute
+  '/integrations/shipping/': typeof IntegrationsShippingIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/contact': typeof ContactRoute
-  '/integrations': typeof IntegrationsRoute
+  '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
-  '/packeta': typeof PacketaRoute
-  '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/integrations/channels': typeof IntegrationsChannelsRoute
   '/p/$slug': typeof PSlugRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
+  '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
+  '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
   '/admin/pages': typeof AdminPagesIndexRoute
+  '/integrations/shipping': typeof IntegrationsShippingIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
   '/contact': typeof ContactRoute
-  '/integrations': typeof IntegrationsRoute
+  '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
-  '/packeta': typeof PacketaRoute
-  '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
   '/api/$': typeof ApiSplatRoute
+  '/integrations/channels': typeof IntegrationsChannelsRoute
+  '/integrations/shipping': typeof IntegrationsShippingRouteWithChildren
   '/p/$slug': typeof PSlugRoute
   '/admin/pages/$pageId': typeof AdminPagesPageIdRoute
+  '/integrations/shipping/packeta': typeof IntegrationsShippingPacketaRoute
+  '/integrations/shipping/royal-mail': typeof IntegrationsShippingRoyalMailRoute
   '/admin/pages/': typeof AdminPagesIndexRoute
+  '/integrations/shipping/': typeof IntegrationsShippingIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -162,15 +191,18 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
-    | '/packeta'
-    | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
+    | '/integrations/channels'
+    | '/integrations/shipping'
     | '/p/$slug'
     | '/admin/pages/$pageId'
+    | '/integrations/shipping/packeta'
+    | '/integrations/shipping/royal-mail'
     | '/admin/pages/'
+    | '/integrations/shipping/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -179,15 +211,17 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
-    | '/packeta'
-    | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
+    | '/integrations/channels'
     | '/p/$slug'
     | '/admin/pages/$pageId'
+    | '/integrations/shipping/packeta'
+    | '/integrations/shipping/royal-mail'
     | '/admin/pages'
+    | '/integrations/shipping'
   id:
     | '__root__'
     | '/'
@@ -196,26 +230,27 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
-    | '/packeta'
-    | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
     | '/api/$'
+    | '/integrations/channels'
+    | '/integrations/shipping'
     | '/p/$slug'
     | '/admin/pages/$pageId'
+    | '/integrations/shipping/packeta'
+    | '/integrations/shipping/royal-mail'
     | '/admin/pages/'
+    | '/integrations/shipping/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
   ContactRoute: typeof ContactRoute
-  IntegrationsRoute: typeof IntegrationsRoute
+  IntegrationsRoute: typeof IntegrationsRouteWithChildren
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
-  PacketaRoute: typeof PacketaRoute
-  RoyalMailRoute: typeof RoyalMailRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -227,20 +262,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/royal-mail': {
-      id: '/royal-mail'
-      path: '/royal-mail'
-      fullPath: '/royal-mail'
-      preLoaderRoute: typeof RoyalMailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/packeta': {
-      id: '/packeta'
-      path: '/packeta'
-      fullPath: '/packeta'
-      preLoaderRoute: typeof PacketaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/orders': {
       id: '/orders'
       path: '/orders'
@@ -290,6 +311,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/integrations/shipping': {
+      id: '/integrations/shipping'
+      path: '/shipping'
+      fullPath: '/integrations/shipping'
+      preLoaderRoute: typeof IntegrationsShippingRouteImport
+      parentRoute: typeof IntegrationsRoute
+    }
+    '/integrations/channels': {
+      id: '/integrations/channels'
+      path: '/channels'
+      fullPath: '/integrations/channels'
+      preLoaderRoute: typeof IntegrationsChannelsRouteImport
+      parentRoute: typeof IntegrationsRoute
+    }
     '/api/$': {
       id: '/api/$'
       path: '/api/$'
@@ -318,12 +353,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBrandingRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/integrations/shipping/': {
+      id: '/integrations/shipping/'
+      path: '/'
+      fullPath: '/integrations/shipping/'
+      preLoaderRoute: typeof IntegrationsShippingIndexRouteImport
+      parentRoute: typeof IntegrationsShippingRoute
+    }
     '/admin/pages/': {
       id: '/admin/pages/'
       path: '/admin/pages'
       fullPath: '/admin/pages/'
       preLoaderRoute: typeof AdminPagesIndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/integrations/shipping/royal-mail': {
+      id: '/integrations/shipping/royal-mail'
+      path: '/royal-mail'
+      fullPath: '/integrations/shipping/royal-mail'
+      preLoaderRoute: typeof IntegrationsShippingRoyalMailRouteImport
+      parentRoute: typeof IntegrationsShippingRoute
+    }
+    '/integrations/shipping/packeta': {
+      id: '/integrations/shipping/packeta'
+      path: '/packeta'
+      fullPath: '/integrations/shipping/packeta'
+      preLoaderRoute: typeof IntegrationsShippingPacketaRouteImport
+      parentRoute: typeof IntegrationsShippingRoute
     }
     '/admin/pages/$pageId': {
       id: '/admin/pages/$pageId'
@@ -335,15 +391,42 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface IntegrationsShippingRouteChildren {
+  IntegrationsShippingPacketaRoute: typeof IntegrationsShippingPacketaRoute
+  IntegrationsShippingRoyalMailRoute: typeof IntegrationsShippingRoyalMailRoute
+  IntegrationsShippingIndexRoute: typeof IntegrationsShippingIndexRoute
+}
+
+const IntegrationsShippingRouteChildren: IntegrationsShippingRouteChildren = {
+  IntegrationsShippingPacketaRoute: IntegrationsShippingPacketaRoute,
+  IntegrationsShippingRoyalMailRoute: IntegrationsShippingRoyalMailRoute,
+  IntegrationsShippingIndexRoute: IntegrationsShippingIndexRoute,
+}
+
+const IntegrationsShippingRouteWithChildren =
+  IntegrationsShippingRoute._addFileChildren(IntegrationsShippingRouteChildren)
+
+interface IntegrationsRouteChildren {
+  IntegrationsChannelsRoute: typeof IntegrationsChannelsRoute
+  IntegrationsShippingRoute: typeof IntegrationsShippingRouteWithChildren
+}
+
+const IntegrationsRouteChildren: IntegrationsRouteChildren = {
+  IntegrationsChannelsRoute: IntegrationsChannelsRoute,
+  IntegrationsShippingRoute: IntegrationsShippingRouteWithChildren,
+}
+
+const IntegrationsRouteWithChildren = IntegrationsRoute._addFileChildren(
+  IntegrationsRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
   ContactRoute: ContactRoute,
-  IntegrationsRoute: IntegrationsRoute,
+  IntegrationsRoute: IntegrationsRouteWithChildren,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
-  PacketaRoute: PacketaRoute,
-  RoyalMailRoute: RoyalMailRoute,
   AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,

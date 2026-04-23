@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet, Link } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
-import { Boxes, ScrollText, Truck } from "lucide-react";
+import { Boxes, ScrollText, Truck, Store } from "lucide-react";
 
 export const Route = createFileRoute("/inventory")({
   head: () => ({ meta: [{ title: "Inventory — HeyShop" }] }),
@@ -15,6 +15,7 @@ function InventoryLayout() {
         <div className="space-y-4">
           <div className="flex items-center gap-1 border-b border-border/60 pb-1">
             <SubLink to="/inventory" icon={<Boxes className="h-4 w-4" />} exact>Stock grid</SubLink>
+            <SubLink to="/inventory/woo" icon={<Store className="h-4 w-4" />}>WooCommerce</SubLink>
             <SubLink to="/inventory/orders" icon={<Truck className="h-4 w-4" />}>Orders & routing</SubLink>
             <SubLink to="/inventory/audit" icon={<ScrollText className="h-4 w-4" />}>Audit</SubLink>
           </div>

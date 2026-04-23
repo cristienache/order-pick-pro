@@ -645,3 +645,39 @@ function EbaySection() {
     </Card>
   );
 }
+
+// ---------- Shipping carrier tile ----------
+// Small, Link-wrapped card that points at one of the dedicated carrier
+// settings pages (Royal Mail, Packeta). Accepts either a Lucide icon or a
+// logo image so we can mix branded logos with neutral icons.
+function CarrierTile({
+  to, name, description, icon, logo,
+}: {
+  to: "/royal-mail" | "/packeta";
+  name: string;
+  description: string;
+  icon?: React.ReactNode;
+  logo?: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-start gap-3 rounded-lg border p-3 hover:border-foreground/40 hover:bg-accent/40 transition-colors"
+    >
+      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md border bg-background">
+        {logo ? (
+          <img src={logo} alt={`${name} logo`} className="h-9 w-9 object-contain" />
+        ) : (
+          icon
+        )}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1 font-semibold text-sm">
+          {name}
+          <ArrowRight className="h-3.5 w-3.5 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+        </div>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+      </div>
+    </Link>
+  );
+}

@@ -1937,7 +1937,7 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
   `).run(
     userId, siteId, orderId, site.store_url,
     created.barcode || created.barcodeText || null,
-    `PACKETA:${route.carrier_id}`,
+    `PACKETA:${resolved.route?.carrier_id ?? resolved.addressId ?? "wc-plugin"}`,
     labelBase64,
     created.packetId,
     created.barcode || null,

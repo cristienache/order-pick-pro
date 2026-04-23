@@ -371,6 +371,40 @@ export function mountOmsWoo(app, { requireAuth }) {
     res.json(stats);
   });
 
+  // ----- List WC products for a site (with all extra columns the editor needs) -----
+  // Returns parents + variations sorted so variations come right after their
+  // parent. Excludes variable PARENTS' stock (parents have no stock of their
+  // own; only variations carry quantity).
+  app.get(`${r}/products`, requireAuth, (req, res) => {
+    const siteId = Number(req.query.site_id);
+    if (!Number.isInteger(siteId)) {
+      return res.status(422).json({ error: "site_id required" });
+    }
+    let site;
+    try { site = getSiteForUser(req.user.id, siteId); }
+    catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+    const warehouseId = ensureMirrorWarehouse(site);
+    const rows = db.prepare(
+      `SELECT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id,
+              p.site_id, p.description, p.short_description, p.regular_price,
+              p.sale_price, p.stock_status, p.manage_stock, p.weight,
+              p.image_url, p.wc_type, p.parent_product_id, p.wc_parent_id,
+              p.variation_label, p.dirty, p.dirty_fields, p.last_synced_at,
+              COALESCE((SELECT quantity FROM oms_inventory
+                          WHERE product_id = p.id AND warehouse_id = ?), 0) AS stock_quantity,
+              COALESCE((SELECT version FROM oms_inventory
+                          WHERE product_id = p.id AND warehouse_id = ?), 1) AS inventory_version
+         FROM oms_products p
+        WHERE p.site_id = ?
+        ORDER BY COALESCE(p.parent_product_id, p.id), p.wc_type DESC, p.name ASC`,
+    ).all(warehouseId, warehouseId, site.id);
+    res.json(rows.map((r) => ({
+      ...r,
+      manage_stock: !!r.manage_stock,
+      dirty: !!r.dirty,
+    })));
+  });
+
   // ----- Sync a site's WC catalog into oms_products -----
   app.post(`${r}/sync/:siteId`, requireAuth, async (req, res) => {
     let site;

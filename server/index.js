@@ -3186,6 +3186,10 @@ app.get("/api/ebay/accounts/:id/orders", requireAuth, async (req, res) => {
 //
 // We verify the HMAC signature, then fire scripts/deploy.sh in the background
 // and return 202 immediately so GitHub doesn't time out waiting for the build.
+// ---------- HeyShop Inventory ("OMS") module ----------
+// All /api/oms/* endpoints. Schema, seed, and handlers live in ./oms.js.
+mountOms(app, { requireAuth });
+
 app.listen(PORT, () => {
   console.log(`Ultrax API listening on http://127.0.0.1:${PORT}`);
   console.log(`Master admin: ${ADMIN_EMAIL}`);

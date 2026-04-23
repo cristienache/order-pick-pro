@@ -1943,17 +1943,24 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
     created.barcode || null,
   );
 
+  // Notify the customer with the tracking number (customer_note=true emails them)
+  // and best-effort mark the order as completed in WooCommerce.
   if (created.barcode) {
     try {
       await addOrderNote(
         site,
         orderId,
         `Packeta label created. Tracking: ${created.barcode}`,
-        false,
+        true,
       );
     } catch (e) {
-      console.warn(`[packeta] WC note failed for order ${orderId}: ${e.message}`);
+      console.warn(`[packeta] WC customer note failed for order ${orderId}: ${e.message}`);
     }
+  }
+  try {
+    await updateOrder(site, orderId, { status: "completed" });
+  } catch (e) {
+    console.warn(`[packeta] WC complete failed for order ${orderId}: ${e.message}`);
   }
 
   const saved = db.prepare("SELECT * FROM shipments WHERE id = ?").get(insert.lastInsertRowid);

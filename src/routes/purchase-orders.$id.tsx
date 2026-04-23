@@ -382,4 +382,4 @@ function Row({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
-type usePo = ReturnType<typeof poApi.pos.get> extends Promise<infer T> ? T : never;
+

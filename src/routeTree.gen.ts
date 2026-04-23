@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SignupRouteImport } from './routes/signup'
 import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
@@ -37,6 +38,11 @@ import { Route as IntegrationsShippingRoyalMailRouteImport } from './routes/inte
 import { Route as IntegrationsShippingPacketaRouteImport } from './routes/integrations.shipping.packeta'
 import { Route as AdminPagesPageIdRouteImport } from './routes/admin.pages.$pageId'
 
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PurchaseOrdersRoute = PurchaseOrdersRouteImport.update({
   id: '/purchase-orders',
   path: '/purchase-orders',
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
+  '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -212,6 +219,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -241,6 +249,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
   '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
+  '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
   '/admin/users': typeof AdminUsersRoute
@@ -272,6 +281,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/orders'
     | '/purchase-orders'
+    | '/signup'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
@@ -299,6 +309,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
+    | '/signup'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
@@ -327,6 +338,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/orders'
     | '/purchase-orders'
+    | '/signup'
     | '/admin/branding'
     | '/admin/invites'
     | '/admin/users'
@@ -357,6 +369,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
   PurchaseOrdersRoute: typeof PurchaseOrdersRouteWithChildren
+  SignupRoute: typeof SignupRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
   AdminUsersRoute: typeof AdminUsersRoute
@@ -368,6 +381,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/purchase-orders': {
       id: '/purchase-orders'
       path: '/purchase-orders'
@@ -632,6 +652,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
   PurchaseOrdersRoute: PurchaseOrdersRouteWithChildren,
+  SignupRoute: SignupRoute,
   AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
   AdminUsersRoute: AdminUsersRoute,
@@ -643,3 +664,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

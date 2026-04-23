@@ -559,6 +559,53 @@ function PicklistPage() {
     } finally { setBulkBusy(false); }
   };
 
+  // Bulk Packeta: create labels for every selected order, merge into a
+  // single PDF, and open it for printing. Skipped orders (missing route,
+  // missing pickup point, etc.) are reported in the toast summary.
+  const bulkPacketaLabels = async () => {
+    const selections = buildSelections();
+    if (selections.length === 0) { toast.error("Select at least one order"); return; }
+    setBulkBusy(true);
+    try {
+      const r = await api<{
+        succeeded: number;
+        failed: number;
+        results: { site_id: number; order_id: number; ok: boolean; shipment?: RmShipment; error?: string }[];
+      }>("/api/packeta/orders/bulk-labels", { body: { selections } });
+
+      const shipmentIds = r.results
+        .filter((x) => x.ok && x.shipment?.id)
+        .map((x) => x.shipment!.id);
+
+      if (shipmentIds.length === 0) {
+        const firstErr = r.results.find((x) => !x.ok)?.error;
+        toast.error(`Failed to create any Packeta labels${firstErr ? `: ${firstErr}` : ""}`);
+        return;
+      }
+
+      const blob = await apiBlob(
+        `/api/packeta/shipments/bulk/labels.pdf?ids=${shipmentIds.join(",")}`,
+      );
+      void printPdfBlob(
+        blob,
+        `packeta-labels-${new Date().toISOString().slice(0, 10)}.pdf`,
+      );
+
+      if (r.failed === 0) {
+        toast.success(`Created ${r.succeeded} Packeta label(s)`);
+      } else {
+        const firstErr = r.results.find((x) => !x.ok)?.error;
+        toast.warning(
+          `Created ${r.succeeded}, skipped ${r.failed}`,
+          { description: firstErr ? firstErr.slice(0, 120) : undefined },
+        );
+      }
+      loadOrders(false);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Bulk Packeta failed");
+    } finally { setBulkBusy(false); }
+  };
+
   if (loadingSites) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
@@ -668,6 +715,15 @@ function PicklistPage() {
                       disabled={bulkBusy || totalSelected === 0}
                     >
                       <Printer className="h-4 w-4" /> Print Royal Mail labels
+                    </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Packeta (EU)</DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onClick={bulkPacketaLabels}
+                      disabled={bulkBusy || totalSelected === 0}
+                    >
+                      <Package className="h-4 w-4" /> Create &amp; print Packeta labels
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>

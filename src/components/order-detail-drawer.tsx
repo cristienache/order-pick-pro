@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
-  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink,
+  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink, Package,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
@@ -89,16 +89,23 @@ type RmStatus = {
   configured: boolean;
   shipment: RmShipment | null;
 };
+// Same idea for Packeta.
+type PacketaStatus = {
+  configured: boolean;
+  shipment: RmShipment | null;
+};
 
 export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: Props) {
   const open = siteId != null && orderId != null;
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<{ order: WCOrder; notes: WCNote[] } | null>(null);
   const [rm, setRm] = useState<RmStatus | null>(null);
+  const [pk, setPk] = useState<PacketaStatus | null>(null);
+  const [pkBusy, setPkBusy] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) { setData(null); setRm(null); setLabelOpen(false); return; }
+    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); return; }
     let cancelled = false;
     setLoading(true);
     api<{ order: WCOrder; notes: WCNote[] }>(`/api/sites/${siteId}/orders/${orderId}`)
@@ -125,8 +132,50 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
         shipment: ship?.shipment ?? null,
       });
     });
+
+    // Same for Packeta. `has_api_password` mirrors `has_api_key`.
+    Promise.all([
+      api<{ settings: { has_api_password: boolean } | null }>(
+        "/api/packeta/settings",
+      ).catch(() => null),
+      api<{ shipment: RmShipment | null }>(
+        `/api/packeta/shipments/by-order/${siteId}/${orderId}`,
+      ).catch(() => null),
+    ]).then(([s, ship]) => {
+      if (cancelled) return;
+      setPk({
+        configured: Boolean(s?.settings?.has_api_password),
+        shipment: ship?.shipment ?? null,
+      });
+    });
     return () => { cancelled = true; };
   }, [open, siteId, orderId]);
+
+  // Create (or reuse) a Packeta label for this order, then open the PDF.
+  const createPacketaLabel = async () => {
+    if (siteId == null || orderId == null) return;
+    setPkBusy(true);
+    try {
+      const r = await api<{ shipment: RmShipment; label_warning?: string | null }>(
+        `/api/packeta/orders/${siteId}/${orderId}/label`,
+        { method: "POST" },
+      );
+      setPk((prev) => prev ? { ...prev, shipment: r.shipment } : prev);
+      if (r.label_warning) toast.warning(r.label_warning);
+      else toast.success("Packeta label created");
+      // Open the merged PDF in a new tab for printing.
+      window.open(`/api/packeta/shipments/${r.shipment.id}/label.pdf`, "_blank", "noopener");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create Packeta label");
+    } finally {
+      setPkBusy(false);
+    }
+  };
+
+  const reprintPacketaLabel = () => {
+    if (!pk?.shipment) return;
+    window.open(`/api/packeta/shipments/${pk.shipment.id}/label.pdf`, "_blank", "noopener");
+  };
 
   const order = data?.order;
   const notes = data?.notes ?? [];
@@ -322,7 +371,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
                       <span>Connect Royal Mail to print labels.</span>
                     </div>
                     <Button asChild size="sm" variant="outline">
-                      <Link to="/royal-mail">Set up</Link>
+                      <Link to="/integrations/shipping/royal-mail">Set up</Link>
                     </Button>
                   </div>
                 ) : rm.shipment ? (
@@ -342,6 +391,46 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
                     className="w-full"
                   >
                     <Truck className="h-3.5 w-3.5" /> Create shipping label
+                  </Button>
+                )}
+              </>
+            )}
+
+            {/* Packeta label action — same shape as Royal Mail above. */}
+            {pk && (
+              <>
+                <Separator />
+                {!pk.configured ? (
+                  <div className="flex items-center justify-between gap-3 rounded-md border border-dashed p-3 text-sm">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Package className="h-4 w-4" />
+                      <span>Connect Packeta to print EU labels.</span>
+                    </div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link to="/integrations/shipping/packeta">Set up</Link>
+                    </Button>
+                  </div>
+                ) : pk.shipment ? (
+                  <Button
+                    onClick={reprintPacketaLabel}
+                    variant="outline"
+                    size="sm"
+                    className="w-full"
+                  >
+                    <Package className="h-3.5 w-3.5" />
+                    Reprint Packeta label · {pk.shipment.packeta_barcode || pk.shipment.tracking_number || "created"}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={createPacketaLabel}
+                    size="sm"
+                    className="w-full"
+                    disabled={pkBusy}
+                  >
+                    {pkBusy
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      : <Package className="h-3.5 w-3.5" />}
+                    Create Packeta label (4×6")
                   </Button>
                 )}
               </>

@@ -21,6 +21,8 @@ db.exec(`
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('user','admin')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('pending','active','rejected')),
+    approval_token TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 

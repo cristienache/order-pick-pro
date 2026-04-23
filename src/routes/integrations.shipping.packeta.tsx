@@ -36,6 +36,7 @@ export const Route = createFileRoute("/integrations/shipping/packeta")({
 
 type PacketaSettings = {
   has_api_password: boolean;
+  has_widget_api_key: boolean;
   use_sandbox: boolean;
   sender_name: string | null;
   sender_company: string | null;
@@ -82,7 +83,7 @@ function PacketaPage() {
 
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />
-      <CountryRoutesCard hasApiPassword={settings.has_api_password} />
+      <CountryRoutesCard hasApiPassword={settings.has_api_password && settings.has_widget_api_key} />
     </div>
   );
 }
@@ -91,6 +92,7 @@ function PacketaPage() {
 
 function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; onChanged: () => Promise<void> }) {
   const [apiPassword, setApiPassword] = useState("");
+  const [widgetApiKey, setWidgetApiKey] = useState("");
   const [useSandbox, setUseSandbox] = useState(settings.use_sandbox);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -103,8 +105,10 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
     try {
       const payload: Record<string, unknown> = { use_sandbox: useSandbox };
       if (apiPassword.trim()) payload.api_password = apiPassword.trim();
+      if (widgetApiKey.trim()) payload.widget_api_key = widgetApiKey.trim();
       await api("/api/packeta/credentials", { method: "PUT", body: payload });
       setApiPassword("");
+      setWidgetApiKey("");
       await onChanged();
       toast.success("Credentials saved");
     } catch (err) {
@@ -118,6 +122,20 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
       await api("/api/packeta/credentials", {
         method: "PUT",
         body: { api_password: "__clear__", use_sandbox: useSandbox },
+      });
+      await onChanged();
+      toast.success("Removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Remove failed");
+    }
+  };
+
+  const clearWidget = async () => {
+    if (!confirm("Remove the saved Widget API key?")) return;
+    try {
+      await api("/api/packeta/credentials", {
+        method: "PUT",
+        body: { widget_api_key: "__clear__", use_sandbox: useSandbox },
       });
       await onChanged();
       toast.success("Removed");

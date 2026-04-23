@@ -63,7 +63,8 @@ type ProxyCtx = { request: Request; params: { _splat?: string } };
 const handler = ({ request, params }: ProxyCtx) =>
   proxyRequest(request, params._splat ?? "");
 
-export const Route = createFileRoute("/api/$")({
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = (createFileRoute as any)("/api/$")({
   server: {
     handlers: {
       GET: handler,
@@ -74,4 +75,4 @@ export const Route = createFileRoute("/api/$")({
       OPTIONS: handler,
     },
   },
-} as Parameters<typeof createFileRoute<"/api/$">>[0]);
+});

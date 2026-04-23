@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import jwt from "jsonwebtoken";
 
 import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";

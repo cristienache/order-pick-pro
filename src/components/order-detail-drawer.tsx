@@ -89,12 +89,19 @@ type RmStatus = {
   configured: boolean;
   shipment: RmShipment | null;
 };
+// Same idea for Packeta.
+type PacketaStatus = {
+  configured: boolean;
+  shipment: RmShipment | null;
+};
 
 export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: Props) {
   const open = siteId != null && orderId != null;
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<{ order: WCOrder; notes: WCNote[] } | null>(null);
   const [rm, setRm] = useState<RmStatus | null>(null);
+  const [pk, setPk] = useState<PacketaStatus | null>(null);
+  const [pkBusy, setPkBusy] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
 
   useEffect(() => {

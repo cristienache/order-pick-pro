@@ -518,11 +518,14 @@ export function mountOms(app, { requireAuth }) {
           ).run(crypto.randomUUID(), oid, it.product_id, it.quantity);
         }
 
-        // ---- Greedy nearest-warehouse routing ----
+        // ---- Greedy nearest-warehouse routing (scoped to caller's warehouses) ----
         const customer = { lat: body.customer_lat, lng: body.customer_lng };
-        const warehouses = db.prepare(
-          `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1`,
-        ).all().sort((a, b) => manhattan(a, customer) - manhattan(b, customer));
+        const whSql = req.user.role === "admin"
+          ? `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1`
+          : `SELECT id, lat, lng FROM oms_warehouses WHERE is_active = 1 AND user_id = ?`;
+        const whParams = req.user.role === "admin" ? [] : [req.user.id];
+        const warehouses = db.prepare(whSql).all(...whParams)
+          .sort((a, b) => manhattan(a, customer) - manhattan(b, customer));
 
         // Local working copy of inventory so allocations within the same
         // request consume from the shared pool.

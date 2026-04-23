@@ -459,19 +459,29 @@ export function mountOms(app, { requireAuth }) {
 
   // ---------- Orders ----------
   app.get(`${r}/orders`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
     const limitRaw = Number(req.query.limit);
     const limit = Math.min(Math.max(Number.isFinite(limitRaw) ? limitRaw : 100, 1), 500);
+    const where = profile.role === "admin" ? "" : "WHERE o.user_id = ?";
+    const params = profile.role === "admin" ? [limit] : [req.user.id, limit];
     const rows = db.prepare(
       `SELECT o.*,
               (SELECT COUNT(*) FROM oms_shipments s WHERE s.order_id = o.id) AS shipment_count
          FROM oms_orders o
+         ${where}
         ORDER BY o.created_at DESC
         LIMIT ?`,
-    ).all(limit);
+    ).all(...params);
     res.json(rows);
   });
 
   app.get(`${r}/orders/:id`, requireAuth, (req, res) => {
+    const profile = getOmsProfile(req.user);
+    const order = db.prepare("SELECT user_id FROM oms_orders WHERE id = ?").get(req.params.id);
+    if (!order) return res.status(404).json({ error: "Not found" });
+    if (profile.role !== "admin" && order.user_id !== req.user.id) {
+      return res.status(404).json({ error: "Not found" });
+    }
     const detail = loadOrderDetail(req.params.id);
     if (!detail) return res.status(404).json({ error: "Not found" });
     res.json(detail);

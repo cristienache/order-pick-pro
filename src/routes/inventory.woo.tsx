@@ -85,6 +85,10 @@ function WooInventory() {
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
+  // Filter chip — narrows the visible row set without losing draft state.
+  const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
+  // Collapsed variable-parent ids: when collapsed, hide their variation rows.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -114,14 +118,6 @@ function WooInventory() {
     setSelected(new Set());
   }, [products.data]);
 
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return siteProducts;
-    return siteProducts.filter(
-      (p) => p.sku.toLowerCase().includes(term) || p.name.toLowerCase().includes(term),
-    );
-  }, [siteProducts, search]);
-
   const updateDraft = (pid: string, patch: Partial<DraftRow>) =>
     setDrafts((d) => ({ ...d, [pid]: { ...d[pid], ...patch } }));
 
@@ -144,6 +140,118 @@ function WooInventory() {
         d.description !== o.description;
     }).map((p) => p.id);
   }, [siteProducts, drafts, originals]);
+
+  // Filtered visible rows. Filter chip + search work together. Collapsed
+  // variable-parents hide their variation rows.
+  const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const dirtySet = new Set(dirtyIds);
+    return siteProducts.filter((p) => {
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) {
+        return false;
+      }
+      if (p.parent_product_id && collapsed.has(p.parent_product_id)) return false;
+      switch (filter) {
+        case "dirty": return dirtySet.has(p.id);
+        case "variations": return p.wc_type === "variation";
+        case "parents": return p.wc_type !== "variation";
+        case "low": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5;
+        case "outofstock": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) <= 0;
+        default: return true;
+      }
+    });
+  }, [siteProducts, search, filter, collapsed, dirtyIds]);
+
+  /* ---------- Bulk operations ---------- */
+  const applyBulk = (op: BulkOp) => {
+    if (selectedIds.length === 0) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const pid of selectedIds) {
+        const d = next[pid]; if (!d) continue;
+        const patch: Partial<DraftRow> = {};
+        if (op.kind === "price") {
+          const cur = Number(op.field === "regular_price" ? d.regular_price : d.sale_price) || 0;
+          let n = cur;
+          switch (op.mode) {
+            case "set": n = op.value; break;
+            case "incPct": n = cur * (1 + op.value / 100); break;
+            case "decPct": n = cur * (1 - op.value / 100); break;
+            case "incAmt": n = cur + op.value; break;
+            case "decAmt": n = cur - op.value; break;
+            case "round": n = Math.max(0, Math.floor(cur) + 0.99); break;
+          }
+          n = Math.max(0, Math.round(n * 100) / 100);
+          patch[op.field] = n.toFixed(2);
+        } else if (op.kind === "stock") {
+          const cur = Number(d.stock_quantity) || 0;
+          const n = op.mode === "set" ? op.value : op.mode === "inc" ? cur + op.value : Math.max(0, cur - op.value);
+          patch.stock_quantity = String(Math.max(0, Math.floor(n)));
+          patch.manage_stock = true;
+        } else if (op.kind === "status") {
+          patch.stock_status = op.value;
+        } else if (op.kind === "manage") {
+          patch.manage_stock = op.value;
+        } else if (op.kind === "weight") {
+          patch.weight = op.value.toFixed(3);
+        } else if (op.kind === "find") {
+          const src = op.field === "name" ? d.name : d.description;
+          patch[op.field] = src.split(op.find).join(op.replace);
+        }
+        next[pid] = { ...d, ...patch };
+      }
+      return next;
+    });
+    toast.success(`Applied to ${selectedIds.length} row${selectedIds.length === 1 ? "" : "s"}`);
+  };
+
+  /** Copy a variable parent's edits down to ALL of its variation rows. */
+  const copyParentToVariations = (parentId: string) => {
+    const parentDraft = drafts[parentId];
+    const variations = siteProducts.filter((p) => p.parent_product_id === parentId);
+    if (!parentDraft || variations.length === 0) {
+      toast.info("No variations under this product"); return;
+    }
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const v of variations) {
+        const cur = next[v.id]; if (!cur) continue;
+        next[v.id] = {
+          ...cur,
+          regular_price: parentDraft.regular_price || cur.regular_price,
+          sale_price: parentDraft.sale_price,
+          weight: parentDraft.weight || cur.weight,
+          stock_status: parentDraft.stock_status,
+        };
+      }
+      return next;
+    });
+    toast.success(`Copied to ${variations.length} variation${variations.length === 1 ? "" : "s"}`);
+  };
+
+  /** Export the currently filtered + draft-edited rows as CSV. */
+  const exportCsv = () => {
+    const cols = ["sku", "name", "type", "regular_price", "sale_price", "stock_quantity", "stock_status", "manage_stock", "weight"];
+    const rows = filteredProducts.map((p) => {
+      const d = drafts[p.id] || ({} as DraftRow);
+      return [
+        d.sku ?? p.sku, d.name ?? p.name, p.wc_type,
+        d.regular_price ?? "", d.sale_price ?? "",
+        d.stock_quantity ?? "", d.stock_status ?? "",
+        d.manage_stock ? "yes" : "no", d.weight ?? "",
+      ];
+    });
+    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `wc-inventory-${site?.name ?? "export"}-${Date.now()}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const toggleCollapse = (parentId: string) =>
+    setCollapsed((s) => { const n = new Set(s); n.has(parentId) ? n.delete(parentId) : n.add(parentId); return n; });
 
   /* ---------- Mutations ---------- */
   const sync = async () => {

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { api, type Site, type EbayAccount } from "@/lib/api";
 import { RequireAuth } from "@/components/require-auth";
@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Plus, Trash2, Loader2, Store, MapPin, KeyRound, Link2 } from "lucide-react";
+import { Plus, Trash2, Loader2, Store, MapPin, KeyRound, Link2, Truck, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
 import wooLogo from "@/assets/integrations/woocommerce.svg";
 import shopifyLogo from "@/assets/integrations/shopify.svg";
@@ -384,6 +384,32 @@ function SitesPage() {
 
       {/* eBay accounts (live OAuth) */}
       <EbaySection />
+
+      {/* Shipping carriers — links to dedicated settings pages. */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Shipping carriers</CardTitle>
+          <CardDescription>
+            Connect carriers to generate shipping labels straight from the order drawer.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <CarrierTile
+              to="/royal-mail"
+              icon={<Truck className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />}
+              name="Royal Mail"
+              description="UK shipments via Click & Drop."
+            />
+            <CarrierTile
+              to="/packeta"
+              logo={packetaLogo}
+              name="Packeta"
+              description="EU shipments — pickup points & home delivery."
+            />
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Other channels — visible so users know they're planned, but not yet
           wired to a backend connector. */}

@@ -244,7 +244,8 @@ export function mountOmsWoo(app, { requireAuth }) {
                 `UPDATE oms_products
                    SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
                        description = ?, short_description = ?, stock_status = ?,
-                       manage_stock = ?, weight = ?, dirty = 0, last_synced_at = ?
+                       manage_stock = ?, weight = ?, dirty = 0, dirty_fields = NULL,
+                       last_synced_at = ?
                  WHERE id = ?`,
               ).run(
                 sku, wc.name || sku,

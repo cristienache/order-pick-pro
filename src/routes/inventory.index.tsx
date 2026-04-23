@@ -241,7 +241,7 @@ function InventoryGrid() {
         </div>
       </div>
 
-      <div className="overflow-auto border border-t-0 rounded-b-lg">
+      <div className="overflow-auto border border-t-0">
         {(products.isLoading || warehouses.isLoading || inventory.isLoading) ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">Loading inventory…</div>
         ) : (
@@ -268,7 +268,7 @@ function InventoryGrid() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((p, rIdx) => {
+              {pagedProducts.map((p, rIdx) => {
                 const isLowRow = visibleWarehouses.some((w) => {
                   const r = invByKey.get(`${p.id}:${w.id}`);
                   return r && r.quantity <= r.reorder_level;
@@ -336,6 +336,14 @@ function InventoryGrid() {
           </table>
         )}
       </div>
+
+      <PaginationBar
+        total={filteredProducts.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       <BulkEditDialog
         open={bulkOpen}

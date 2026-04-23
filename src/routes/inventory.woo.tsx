@@ -25,6 +25,7 @@ import {
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
+import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),
@@ -89,6 +90,9 @@ function WooInventory() {
   const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
   // Collapsed variable-parent ids: when collapsed, hide their variation rows.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Pagination state. `pageSize === 0` means "All".
+  const [pageSize, setPageSize] = useState<PageSize>(25);
+  const [page, setPage] = useState(1);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -161,6 +165,16 @@ function WooInventory() {
       }
     });
   }, [siteProducts, search, filter, collapsed, dirtyIds]);
+
+  // Reset to page 1 whenever the filter/search changes the visible set.
+  useEffect(() => { setPage(1); }, [search, filter, pageSize, siteId]);
+
+  // Paginated slice rendered into the table. `pageSize === 0` shows everything.
+  const pagedProducts = useMemo(() => {
+    if (pageSize === 0) return filteredProducts;
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
 
   /* ---------- Bulk operations ---------- */
   const applyBulk = (op: BulkOp) => {
@@ -489,7 +503,7 @@ function WooInventory() {
       )}
 
       {/* Grid */}
-      <div className="overflow-auto border border-t-0 rounded-b-lg">
+      <div className="overflow-auto border border-t-0">
         {products.isLoading ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
@@ -525,7 +539,7 @@ function WooInventory() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((p) => {
+              {pagedProducts.map((p) => {
                 const d = drafts[p.id];
                 if (!d) return null;
                 const isDirty = dirtyIds.includes(p.id);
@@ -715,6 +729,14 @@ function WooInventory() {
           </table>
         )}
       </div>
+
+      <PaginationBar
+        total={filteredProducts.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       {/* Push dialog */}
       <PushToWcDialog

@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StockCell } from "@/components/inventory/stock-cell";
 import { BulkEditDialog, type BulkTarget } from "@/components/inventory/bulk-edit-dialog";
+import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -37,6 +38,9 @@ function InventoryGrid() {
   const [lowOnly, setLowOnly] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
+  // Pagination state. `pageSize === 0` means "All".
+  const [pageSize, setPageSize] = useState<PageSize>(25);
+  const [page, setPage] = useState(1);
 
   const visibleWarehouses = useMemo(() => {
     if (!warehouses.data) return [];
@@ -69,6 +73,16 @@ function InventoryGrid() {
       return true;
     });
   }, [products.data, sourceFilter, search, lowOnly, visibleWarehouses, invByKey]);
+
+  // Reset to page 1 whenever the filtered set shrinks/changes meaningfully.
+  useEffect(() => { setPage(1); }, [search, whFilter, sourceFilter, lowOnly, pageSize]);
+
+  // Paginated slice fed to the table. `pageSize === 0` shows everything.
+  const pagedProducts = useMemo(() => {
+    if (pageSize === 0) return filteredProducts;
+    const start = (page - 1) * pageSize;
+    return filteredProducts.slice(start, start + pageSize);
+  }, [filteredProducts, page, pageSize]);
 
   const totalsByProduct = useMemo(() => {
     const m = new Map<string, number>();
@@ -227,7 +241,7 @@ function InventoryGrid() {
         </div>
       </div>
 
-      <div className="overflow-auto border border-t-0 rounded-b-lg">
+      <div className="overflow-auto border border-t-0">
         {(products.isLoading || warehouses.isLoading || inventory.isLoading) ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">Loading inventory…</div>
         ) : (
@@ -254,7 +268,7 @@ function InventoryGrid() {
               </tr>
             </thead>
             <tbody>
-              {filteredProducts.map((p, rIdx) => {
+              {pagedProducts.map((p, rIdx) => {
                 const isLowRow = visibleWarehouses.some((w) => {
                   const r = invByKey.get(`${p.id}:${w.id}`);
                   return r && r.quantity <= r.reorder_level;
@@ -322,6 +336,14 @@ function InventoryGrid() {
           </table>
         )}
       </div>
+
+      <PaginationBar
+        total={filteredProducts.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       <BulkEditDialog
         open={bulkOpen}

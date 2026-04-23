@@ -43,6 +43,8 @@ import {
   createPacketaPacket,
   getPacketaLabelPdf,
   getPacketaLabelsPdf,
+  getPacketaCourierNumber,
+  getPacketaCourierLabelPdf,
 } from "./packeta.js";
 import {
   syncPacketaCarriers,

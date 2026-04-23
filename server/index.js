@@ -1224,6 +1224,10 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
 // AES-GCM encrypted at rest in packeta_credentials.api_password_enc.
 const packetaCredsSchema = z.object({
   api_password: z.string().trim().min(1).max(500).optional(),
+  // Separate Widget API key (~16 chars). Required for the public carrier
+  // and PUDO JSON feeds at pickup-point.api.packeta.com. Send "__clear__"
+  // to remove. Empty/missing => leave existing alone.
+  widget_api_key: z.string().trim().min(1).max(500).optional(),
   use_sandbox: z.boolean().optional().default(false),
 });
 const packetaSenderSchema = z.object({
@@ -1243,6 +1247,7 @@ function packetaRowToPublic(row) {
   if (!row) {
     return {
       has_api_password: false,
+      has_widget_api_key: false,
       use_sandbox: false,
       sender_name: null, sender_company: null,
       sender_address_line1: null, sender_address_line2: null,
@@ -1253,6 +1258,7 @@ function packetaRowToPublic(row) {
   }
   return {
     has_api_password: Boolean(row.api_password_enc),
+    has_widget_api_key: Boolean(row.widget_api_key_enc),
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,

@@ -40,7 +40,7 @@ export const BRANDING_FALLBACK: Branding = {
 
 /** Keys we recognise inside `nav_labels`. Anything else is ignored. */
 export const NAV_KEYS = [
-  "home", "orders", "integrations", "royal_mail", "users", "invites",
+  "home", "orders", "integrations", "royal_mail", "packeta", "users", "invites",
 ] as const;
 export type NavKey = (typeof NAV_KEYS)[number];
 
@@ -50,6 +50,7 @@ export const NAV_DEFAULT_LABELS: Record<NavKey, string> = {
   orders: "Orders",
   integrations: "Integrations",
   royal_mail: "Royal Mail",
+  packeta: "Packeta",
   users: "Users",
   invites: "Invites",
 };

@@ -32,6 +32,7 @@ import {
   normalizeCndCreateResponse,
   normalizeRmApiKey,
 } from "./royalmail.js";
+import { testPacketaConnection, normalizePacketaPassword } from "./packeta.js";
 import {
   ebayConfig,
   buildAuthorizeUrl,
@@ -1204,6 +1205,158 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
 
   const updated = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
   res.json({ ...result, settings: rmRowToPublic(updated) });
+});
+
+// ---------- Packeta (REST/XML API) ----------
+// Phase 1: connect + sender address only. The API password is stored
+// AES-GCM encrypted at rest in packeta_credentials.api_password_enc.
+const packetaCredsSchema = z.object({
+  api_password: z.string().trim().min(1).max(500).optional(),
+  use_sandbox: z.boolean().optional().default(false),
+});
+const packetaSenderSchema = z.object({
+  sender_name: optAddrField(100),
+  sender_company: optAddrField(100),
+  sender_address_line1: optAddrField(150),
+  sender_address_line2: optAddrField(150),
+  sender_city: optAddrField(80),
+  sender_postcode: optAddrField(20),
+  sender_country: z.string().trim().min(2).max(3).optional().default("CZ"),
+  sender_phone: optAddrField(40),
+  sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
+});
+
+// Public-safe view: never returns the encrypted credential blob.
+function packetaRowToPublic(row) {
+  if (!row) {
+    return {
+      has_api_password: false,
+      use_sandbox: false,
+      sender_name: null, sender_company: null,
+      sender_address_line1: null, sender_address_line2: null,
+      sender_city: null, sender_postcode: null,
+      sender_country: "CZ", sender_phone: null, sender_email: null,
+      last_tested_at: null, last_test_ok: null, last_test_message: null,
+    };
+  }
+  return {
+    has_api_password: Boolean(row.api_password_enc),
+    use_sandbox: Boolean(row.use_sandbox),
+    sender_name: row.sender_name,
+    sender_company: row.sender_company,
+    sender_address_line1: row.sender_address_line1,
+    sender_address_line2: row.sender_address_line2,
+    sender_city: row.sender_city,
+    sender_postcode: row.sender_postcode,
+    sender_country: row.sender_country || "CZ",
+    sender_phone: row.sender_phone,
+    sender_email: row.sender_email,
+    last_tested_at: row.last_tested_at,
+    last_test_ok: row.last_test_ok === null ? null : Boolean(row.last_test_ok),
+    last_test_message: row.last_test_message,
+  };
+}
+
+app.get("/api/packeta/settings", requireAuth, (req, res) => {
+  const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: packetaRowToPublic(row) });
+});
+
+// Update credentials only. Empty/missing field => leave existing alone.
+// Send the literal string "__clear__" to remove the saved password.
+app.put("/api/packeta/credentials", requireAuth, (req, res) => {
+  const parsed = packetaCredsSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const { api_password, use_sandbox } = parsed.data;
+  const existing = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+
+  const cleanPassword = api_password && api_password !== "__clear__"
+    ? normalizePacketaPassword(api_password)
+    : api_password;
+  const nextPasswordEnc = cleanPassword === "__clear__"
+    ? null
+    : (cleanPassword ? encrypt(cleanPassword) : (existing?.api_password_enc ?? null));
+
+  if (existing) {
+    db.prepare(`
+      UPDATE packeta_credentials
+      SET api_password_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(nextPasswordEnc, use_sandbox ? 1 : 0, req.user.id);
+  } else {
+    db.prepare(`
+      INSERT INTO packeta_credentials (user_id, api_password_enc, use_sandbox)
+      VALUES (?, ?, ?)
+    `).run(req.user.id, nextPasswordEnc, use_sandbox ? 1 : 0);
+  }
+
+  const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: packetaRowToPublic(row) });
+});
+
+app.put("/api/packeta/sender", requireAuth, (req, res) => {
+  const parsed = packetaSenderSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const d = parsed.data;
+  const existing = db.prepare("SELECT user_id FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  if (existing) {
+    db.prepare(`
+      UPDATE packeta_credentials
+      SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
+          sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
+          updated_at = datetime('now')
+      WHERE user_id = ?
+    `).run(
+      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
+      req.user.id,
+    );
+  } else {
+    db.prepare(`
+      INSERT INTO packeta_credentials (
+        user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
+        sender_city, sender_postcode, sender_country, sender_phone, sender_email
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      req.user.id,
+      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
+    );
+  }
+  const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ settings: packetaRowToPublic(row) });
+});
+
+// Test connection — pulls the saved password, calls Packeta, persists the
+// outcome so the dashboard chip shows the latest status. Never echoes the
+// password back.
+app.post("/api/packeta/test-connection", requireAuth, async (req, res) => {
+  const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  if (!row || !row.api_password_enc) {
+    return res.status(400).json({ ok: false, error: "Add your Packeta API password first." });
+  }
+  let apiPassword;
+  try {
+    apiPassword = decrypt(row.api_password_enc);
+  } catch {
+    return res.status(500).json({ ok: false, error: "Stored API password could not be decrypted." });
+  }
+  const result = await testPacketaConnection({
+    apiPassword,
+    useSandbox: Boolean(row.use_sandbox),
+  });
+  db.prepare(`
+    UPDATE packeta_credentials
+    SET last_tested_at = datetime('now'), last_test_ok = ?, last_test_message = ?
+    WHERE user_id = ?
+  `).run(result.ok ? 1 : 0, result.message || null, req.user.id);
+
+  const updated = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
+  res.json({ ...result, settings: packetaRowToPublic(updated) });
 });
 
 // ---------- Royal Mail shipments / labels (Click & Drop) ----------

@@ -241,4 +241,29 @@ db.exec(`
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_pages_published ON pages(published);
+
+  -- Packeta credentials + sender address (one row per user). Mirrors the
+  -- royal_mail_credentials shape. The API password is encrypted at rest with
+  -- the same AES-256-GCM helper used for WooCommerce keys. Sender fields
+  -- are stored in plain text so the UI can display them.
+  CREATE TABLE IF NOT EXISTS packeta_credentials (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    api_password_enc TEXT,
+    use_sandbox INTEGER NOT NULL DEFAULT 0,
+    -- Sender block printed on labels (Phase 2+).
+    sender_name TEXT,
+    sender_company TEXT,
+    sender_address_line1 TEXT,
+    sender_address_line2 TEXT,
+    sender_city TEXT,
+    sender_postcode TEXT,
+    sender_country TEXT NOT NULL DEFAULT 'CZ',
+    sender_phone TEXT,
+    sender_email TEXT,
+    -- Last "Test connection" outcome so the UI can show a status chip.
+    last_tested_at TEXT,
+    last_test_ok INTEGER,
+    last_test_message TEXT,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);

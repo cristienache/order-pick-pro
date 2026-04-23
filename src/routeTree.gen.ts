@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RoyalMailRouteImport } from './routes/royal-mail'
+import { Route as PacketaRouteImport } from './routes/packeta'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IntegrationsRouteImport } from './routes/integrations'
@@ -27,6 +28,11 @@ import { Route as AdminPagesPageIdRouteImport } from './routes/admin.pages.$page
 const RoyalMailRoute = RoyalMailRouteImport.update({
   id: '/royal-mail',
   path: '/royal-mail',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PacketaRoute = PacketaRouteImport.update({
+  id: '/packeta',
+  path: '/packeta',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrdersRoute = OrdersRouteImport.update({
@@ -102,6 +108,7 @@ export interface FileRoutesByFullPath {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/packeta': typeof PacketaRoute
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -118,6 +125,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/packeta': typeof PacketaRoute
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -135,6 +143,7 @@ export interface FileRoutesById {
   '/integrations': typeof IntegrationsRoute
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/packeta': typeof PacketaRoute
   '/royal-mail': typeof RoyalMailRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -153,6 +162,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
+    | '/packeta'
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
@@ -169,6 +179,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
+    | '/packeta'
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
@@ -185,6 +196,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
+    | '/packeta'
     | '/royal-mail'
     | '/admin/branding'
     | '/admin/invites'
@@ -202,6 +214,7 @@ export interface RootRouteChildren {
   IntegrationsRoute: typeof IntegrationsRoute
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
+  PacketaRoute: typeof PacketaRoute
   RoyalMailRoute: typeof RoyalMailRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
   AdminInvitesRoute: typeof AdminInvitesRoute
@@ -219,6 +232,13 @@ declare module '@tanstack/react-router' {
       path: '/royal-mail'
       fullPath: '/royal-mail'
       preLoaderRoute: typeof RoyalMailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/packeta': {
+      id: '/packeta'
+      path: '/packeta'
+      fullPath: '/packeta'
+      preLoaderRoute: typeof PacketaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orders': {
@@ -322,6 +342,7 @@ const rootRouteChildren: RootRouteChildren = {
   IntegrationsRoute: IntegrationsRoute,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
+  PacketaRoute: PacketaRoute,
   RoyalMailRoute: RoyalMailRoute,
   AdminBrandingRoute: AdminBrandingRoute,
   AdminInvitesRoute: AdminInvitesRoute,
@@ -334,3 +355,12 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { createStart } from '@tanstack/react-start'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+  }
+}

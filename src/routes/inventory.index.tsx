@@ -34,23 +34,24 @@ function InventoryGrid() {
   const isAdmin = session.data?.roles.includes("admin") ?? false;
   const assignedWh = session.data?.warehouse_ids ?? [];
 
-  const [search, setSearch] = useState("");
-  const [whFilter, setWhFilter] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [lowOnly, setLowOnly] = useState(false);
+  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "sku" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   // Pagination state. `pageSize === 0` means "All".
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [page, setPage] = useState(1);
 
-  const visibleWarehouses = useMemo(() => {
+  // Warehouses available to this user (admin = all, else only assigned).
+  const userWarehouses = useMemo(() => {
     if (!warehouses.data) return [];
-    let list = warehouses.data;
-    if (!isAdmin && assignedWh.length) list = list.filter((w) => assignedWh.includes(w.id));
-    if (whFilter !== "all") list = list.filter((w) => w.id === whFilter);
-    return list;
-  }, [warehouses.data, isAdmin, assignedWh, whFilter]);
+    return isAdmin ? warehouses.data : warehouses.data.filter((w) => assignedWh.includes(w.id));
+  }, [warehouses.data, isAdmin, assignedWh]);
+
+  // Columns shown in the grid — narrowed by the multi-warehouse filter.
+  const visibleWarehouses = useMemo(() => {
+    if (filters.warehouseIds.length === 0) return userWarehouses;
+    return userWarehouses.filter((w) => filters.warehouseIds.includes(w.id));
+  }, [userWarehouses, filters.warehouseIds]);
 
   const invByKey = useMemo(() => {
     const m = new Map<string, NonNullable<typeof inventory.data>[number]>();
@@ -58,26 +59,60 @@ function InventoryGrid() {
     return m;
   }, [inventory.data]);
 
+  // Per-product helpers used by stockState filter and sorting.
+  const productStock = (pid: string) => {
+    let qty = 0; let low = false;
+    for (const w of visibleWarehouses) {
+      const r = invByKey.get(`${pid}:${w.id}`);
+      if (!r) continue;
+      qty += r.quantity;
+      if (r.quantity <= r.reorder_level) low = true;
+    }
+    return { qty, low };
+  };
+
   const filteredProducts = useMemo(() => {
     if (!products.data) return [];
-    return products.data.filter((p) => {
-      if (sourceFilter !== "all" && p.source !== sourceFilter) return false;
-      const term = search.trim().toLowerCase();
-      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term))
-        return false;
-      if (lowOnly) {
-        const anyLow = visibleWarehouses.some((w) => {
-          const r = invByKey.get(`${p.id}:${w.id}`);
-          return r && r.quantity <= r.reorder_level;
-        });
-        if (!anyLow) return false;
+    const term = filters.search.trim().toLowerCase();
+    const pMin = filters.priceMin ? Number(filters.priceMin) : null;
+    const pMax = filters.priceMax ? Number(filters.priceMax) : null;
+
+    const list = products.data.filter((p) => {
+      if (filters.source !== "all" && p.source !== filters.source) return false;
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) return false;
+      if (pMin != null && p.base_price < pMin) return false;
+      if (pMax != null && p.base_price > pMax) return false;
+      if (filters.stockState !== "any") {
+        const { qty, low } = productStock(p.id);
+        if (filters.stockState === "out" && qty > 0) return false;
+        if (filters.stockState === "inStock" && qty <= 0) return false;
+        if (filters.stockState === "low" && !low) return false;
+        if (filters.stockState === "over" && qty <= 100) return false;
       }
       return true;
     });
-  }, [products.data, sourceFilter, search, lowOnly, visibleWarehouses, invByKey]);
+
+    // Sort
+    const dir = filters.sortDir === "asc" ? 1 : -1;
+    const totalsLocal = (pid: string) => {
+      let t = 0;
+      for (const w of visibleWarehouses) t += invByKey.get(`${pid}:${w.id}`)?.quantity ?? 0;
+      return t;
+    };
+    list.sort((a, b) => {
+      switch (filters.sortKey) {
+        case "sku": return a.sku.localeCompare(b.sku) * dir;
+        case "regular_price": return (a.base_price - b.base_price) * dir;
+        case "stock_quantity": return (totalsLocal(a.id) - totalsLocal(b.id)) * dir;
+        case "name":
+        default: return a.name.localeCompare(b.name) * dir;
+      }
+    });
+    return list;
+  }, [products.data, filters, invByKey, visibleWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset to page 1 whenever the filtered set shrinks/changes meaningfully.
-  useEffect(() => { setPage(1); }, [search, whFilter, sourceFilter, lowOnly, pageSize]);
+  useEffect(() => { setPage(1); }, [filters, pageSize]);
 
   // Paginated slice fed to the table. `pageSize === 0` shows everything.
   const pagedProducts = useMemo(() => {

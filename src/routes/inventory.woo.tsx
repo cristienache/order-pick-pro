@@ -524,6 +524,15 @@ function WooInventory() {
             {syncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
             {syncing ? "Syncing…" : "Sync from WC"}
           </Button>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => { setWipeText(""); setWipeOpen(true); }}
+            disabled={!siteId || syncing || siteProducts.length === 0}
+            className="text-destructive hover:text-destructive"
+            title="Delete all imported products for this site"
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Wipe & re-sync
+          </Button>
           <Button variant="outline" size="sm" onClick={saveLocal} disabled={!siteId}>
             <Save className="mr-1.5 h-3.5 w-3.5" /> Save
           </Button>

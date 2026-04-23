@@ -42,6 +42,19 @@ const PRODUCT_EXTRA_COLS = [
   // Drives the WC push to send ONLY user-touched fields, so we never
   // overwrite WC values we don't have locally (e.g. real sale_price).
   ["dirty_fields", "TEXT"],
+  // Small thumbnail URL pulled from the WC product images[0].src — used in
+  // the inventory grid so the user can recognise rows at a glance.
+  ["image_url", "TEXT"],
+  // Variable-product support. A "variable" parent is the umbrella row that
+  // carries the catalogue copy (name, description, image). Each "variation"
+  // is a sellable child with its own SKU, prices, weight and stock. The
+  // parent links to its WC product id; the variation also stores the WC
+  // parent product id so we can target /products/{parent}/variations/{id}
+  // when pushing.
+  ["wc_type", "TEXT NOT NULL DEFAULT 'simple'"],   // simple | variable | variation
+  ["parent_product_id", "TEXT"],                   // oms_products.id of the variable parent
+  ["wc_parent_id", "INTEGER"],                     // WC parent product id (for variations)
+  ["variation_label", "TEXT"],                     // e.g. "Red / Large" — derived from attributes
 ];
 for (const [col, type] of PRODUCT_EXTRA_COLS) {
   if (!productCols.has(col)) db.exec(`ALTER TABLE oms_products ADD COLUMN ${col} ${type}`);

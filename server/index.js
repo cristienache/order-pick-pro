@@ -890,7 +890,69 @@ app.get("/api/sites/:id/orders/:orderId", requireAuth, async (req, res) => {
   }
 });
 
-// ---------- Bulk actions ----------
+// Edit a WooCommerce order's shipping and/or billing address from inside the
+// app. Pushes the patch straight to WC via the REST API and returns the
+// freshly-loaded order so the drawer can re-render with the saved values.
+//
+// We intentionally accept ONLY address fields here — not totals, line items,
+// statuses, etc. — to keep the surface area tight.
+const wcAddressSchema = z.object({
+  first_name: z.string().trim().max(60).optional(),
+  last_name: z.string().trim().max(60).optional(),
+  company: z.string().trim().max(100).optional(),
+  address_1: z.string().trim().max(200).optional(),
+  address_2: z.string().trim().max(200).optional(),
+  city: z.string().trim().max(100).optional(),
+  state: z.string().trim().max(100).optional(),
+  postcode: z.string().trim().max(20).optional(),
+  // WC stores country as ISO-2 (e.g. "GB", "NL"). Keep it lenient — some
+  // legacy stores have full names — but cap length.
+  country: z.string().trim().max(60).optional(),
+  // billing-only fields. WC ignores them on shipping.
+  email: z.string().trim().email().max(254).optional().or(z.literal("")),
+  phone: z.string().trim().max(40).optional(),
+}).strict();
+
+const orderAddressesSchema = z.object({
+  shipping: wcAddressSchema.optional(),
+  billing: wcAddressSchema.optional(),
+}).refine((v) => v.shipping || v.billing, {
+  message: "Provide a shipping and/or billing address.",
+});
+
+app.put("/api/sites/:id/orders/:orderId/addresses", requireAuth, async (req, res) => {
+  const site = loadSiteWithKeys(Number(req.params.id), req.user.id);
+  if (!site) return res.status(404).json({ error: "Not found" });
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ error: "Invalid order id" });
+  }
+  const parsed = orderAddressesSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const patch = {};
+  if (parsed.data.shipping) {
+    // WC's shipping address has no email/phone fields — strip them defensively.
+    const { email: _e, phone: _p, ...shippingFields } = parsed.data.shipping;
+    patch.shipping = shippingFields;
+  }
+  if (parsed.data.billing) {
+    patch.billing = parsed.data.billing;
+  }
+  try {
+    await updateOrder(site, orderId, patch);
+    // Re-fetch so the client sees exactly what WC stored (it normalises
+    // some fields, e.g. uppercases country codes).
+    const [order, notes] = await Promise.all([
+      fetchOrderById(site, orderId),
+      fetchOrderNotes(site, orderId),
+    ]);
+    res.json({ order, notes });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Failed to update order in WooCommerce" });
+  }
+});
 async function processBulk(selections, userId, perOrder) {
   const results = [];
   for (const sel of selections) {

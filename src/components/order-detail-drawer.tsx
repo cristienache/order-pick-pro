@@ -7,11 +7,12 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import {
-  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink, Package,
+  Loader2, Mail, Phone, MapPin, Truck, Receipt, MessageSquare, ExternalLink, Package, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { RoyalMailLabelDialog } from "@/components/royal-mail-label-dialog";
+import { EditAddressDialog } from "@/components/edit-address-dialog";
 
 // Subset of WooCommerce order shape we render.
 type WCAddress = {
@@ -63,23 +64,44 @@ function fmtAttrs(item: WCLineItem): string {
     .join(" \u00B7 ");
 }
 
-function AddressBlock({ a, label }: { a?: WCAddress; label: string }) {
-  if (!a) return null;
-  const name = `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim();
-  const cityLine = [a.city, a.state, a.postcode].filter(Boolean).join(", ");
-  const lines = [name, a.company, a.address_1, a.address_2, cityLine, a.country]
-    .map((s) => (s || "").trim()).filter(Boolean);
-  if (lines.length === 0) return null;
+function AddressBlock({
+  a, label, onEdit,
+}: {
+  a?: WCAddress;
+  label: string;
+  onEdit?: () => void;
+}) {
+  const name = a ? `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim() : "";
+  const cityLine = a ? [a.city, a.state, a.postcode].filter(Boolean).join(", ") : "";
+  const lines = a
+    ? [name, a.company, a.address_1, a.address_2, cityLine, a.country]
+        .map((s) => (s || "").trim()).filter(Boolean)
+    : [];
   return (
     <div className="text-sm">
-      <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-        <MapPin className="h-3 w-3" /> {label}
+      <div className="text-xs text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center justify-between gap-2">
+        <span className="flex items-center gap-1.5">
+          <MapPin className="h-3 w-3" /> {label}
+        </span>
+        {onEdit && (
+          <button
+            type="button"
+            onClick={onEdit}
+            className="inline-flex items-center gap-1 text-[11px] normal-case tracking-normal text-muted-foreground hover:text-foreground"
+          >
+            <Pencil className="h-3 w-3" /> Edit
+          </button>
+        )}
       </div>
-      <div className="space-y-0.5 text-foreground">
-        {lines.map((l, i) => (
-          <div key={i} className={i === 0 ? "font-medium" : ""}>{l}</div>
-        ))}
-      </div>
+      {lines.length === 0 ? (
+        <div className="text-xs text-muted-foreground italic">No address on file</div>
+      ) : (
+        <div className="space-y-0.5 text-foreground">
+          {lines.map((l, i) => (
+            <div key={i} className={i === 0 ? "font-medium" : ""}>{l}</div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -103,9 +125,10 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
   const [pk, setPk] = useState<PacketaStatus | null>(null);
   const [pkBusy, setPkBusy] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<"shipping" | "billing" | null>(null);
 
   useEffect(() => {
-    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); return; }
+    if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); setEditingAddress(null); return; }
     let cancelled = false;
     setLoading(true);
     api<{ order: WCOrder; notes: WCNote[] }>(`/api/sites/${siteId}/orders/${orderId}`)
@@ -271,8 +294,16 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
 
             {/* Addresses side-by-side */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <AddressBlock a={order.shipping} label="Ship to" />
-              <AddressBlock a={order.billing} label="Bill to" />
+              <AddressBlock
+                a={order.shipping}
+                label="Ship to"
+                onEdit={siteId != null ? () => setEditingAddress("shipping") : undefined}
+              />
+              <AddressBlock
+                a={order.billing}
+                label="Bill to"
+                onEdit={siteId != null ? () => setEditingAddress("billing") : undefined}
+              />
             </div>
 
             <Separator />
@@ -465,6 +496,20 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
           initialShipment={rm?.shipment ?? null}
           onCreated={(s) => setRm((prev) => prev ? { ...prev, shipment: s } : prev)}
           onVoided={() => setRm((prev) => prev ? { ...prev, shipment: null } : prev)}
+        />
+      )}
+
+      {order && siteId != null && (
+        <EditAddressDialog
+          open={editingAddress !== null}
+          onOpenChange={(o) => { if (!o) setEditingAddress(null); }}
+          siteId={siteId}
+          orderId={order.id}
+          kind={editingAddress ?? "shipping"}
+          initial={editingAddress === "billing" ? order.billing : order.shipping}
+          onSaved={(payload) =>
+            setData(payload as { order: WCOrder; notes: WCNote[] })
+          }
         />
       )}
     </Sheet>

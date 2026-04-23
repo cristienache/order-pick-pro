@@ -730,6 +730,14 @@ function WooInventory() {
         )}
       </div>
 
+      <PaginationBar
+        total={filteredProducts.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
+
       {/* Push dialog */}
       <PushToWcDialog
         open={pushOpen}

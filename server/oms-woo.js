@@ -297,6 +297,7 @@ function upsertWcProduct({
              description = ?, short_description = ?, stock_status = ?,
              manage_stock = ?, weight = ?, image_url = ?, wc_type = ?,
              parent_product_id = ?, wc_parent_id = ?, variation_label = ?,
+             wc_date_created = ?, wc_date_modified = ?,
              dirty = 0, dirty_fields = NULL, last_synced_at = ?
        WHERE id = ?`,
     ).run(
@@ -308,6 +309,8 @@ function upsertWcProduct({
       wc.manage_stock ? 1 : 0,
       num(wc.weight),
       thumb, wcType, parentOmsId, wcParentId, label,
+      wc.date_created_gmt || wc.date_created || null,
+      wc.date_modified_gmt || wc.date_modified || null,
       nowIso,
       productId,
     );
@@ -318,8 +321,9 @@ function upsertWcProduct({
           description, short_description, regular_price, sale_price,
           stock_status, manage_stock, weight, image_url, wc_type,
           parent_product_id, wc_parent_id, variation_label,
+          wc_date_created, wc_date_modified,
           dirty, last_synced_at)
-       VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+       VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
     ).run(
       productId, finalSku, displayName,
       num(wc.price) ?? num(wc.regular_price) ?? 0,
@@ -330,6 +334,8 @@ function upsertWcProduct({
       wc.manage_stock ? 1 : 0,
       num(wc.weight),
       thumb, wcType, parentOmsId, wcParentId, label,
+      wc.date_created_gmt || wc.date_created || null,
+      wc.date_modified_gmt || wc.date_modified || null,
       nowIso,
     );
     created = true;

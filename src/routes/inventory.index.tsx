@@ -225,42 +225,19 @@ function InventoryGrid() {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b bg-card px-4 py-2.5 rounded-t-lg">
-        <h1 className="mr-2 text-sm font-semibold">Global inventory</h1>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="SKU or name…"
-            className="h-8 w-56 pl-7 text-xs"
+      <div className="flex flex-col gap-2 border-b bg-card px-4 py-2.5 rounded-t-lg">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="mr-2 text-sm font-semibold">Global inventory</h1>
+          <InventoryFilterBar
+            presetKey="oms-global"
+            value={filters}
+            onChange={setFilters}
+            availableFields={["search", "source", "warehouse", "stockState", "priceRange"]}
+            warehouseOptions={userWarehouses.map((w) => ({ id: w.id, label: `${w.code} — ${w.name}` }))}
+            sortOptions={SORT_OPTIONS}
+            counts={{ total: products.data?.length ?? 0, visible: filteredProducts.length }}
           />
         </div>
-        <Select value={whFilter} onValueChange={setWhFilter}>
-          <SelectTrigger className="h-8 w-[160px] text-xs">
-            <SelectValue placeholder="Warehouse" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All warehouses</SelectItem>
-            {warehouses.data?.map((w) => (
-              <SelectItem key={w.id} value={w.id}>{w.code} — {w.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            <SelectItem value="oms">OMS</SelectItem>
-            <SelectItem value="woo">WooCommerce</SelectItem>
-          </SelectContent>
-        </Select>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Checkbox checked={lowOnly} onCheckedChange={(v) => setLowOnly(!!v)} />
-          <Filter className="h-3 w-3" /> Low stock only
-        </label>
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="font-mono text-[10px]">{selected.size} selected</Badge>
           {selected.size > 0 && (

@@ -1542,7 +1542,9 @@ app.post("/api/packeta/country-routes", requireAuth, (req, res) => {
     res.json({ route: packetaRouteToPublic(row) });
   } catch (e) {
     if (String(e.message).includes("UNIQUE")) {
-      return res.status(409).json({ error: `${d.country} already has a route — edit it instead.` });
+      return res.status(409).json({
+        error: `${d.country} already has a route for this carrier — edit it instead.`,
+      });
     }
     throw e;
   }
@@ -1660,21 +1662,31 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
   if (!country) {
     return { status: 400, body: { error: "Order has no destination country." } };
   }
-  const route = db.prepare(
+  // A country can have multiple routes (e.g. Home delivery + Pickup point).
+  // Pick the right one based on whether the order carries a Packeta pickup
+  // point ID: if it does, use a pickup-point route; otherwise use a home
+  // delivery route. Falls back to the first available route either way.
+  const candidates = db.prepare(
     `SELECT r.*, c.is_pickup_points
      FROM packeta_country_routes r
      LEFT JOIN packeta_carriers c
        ON c.id = r.carrier_id AND c.country = r.country
-     WHERE r.user_id = ? AND r.country = ?`,
-  ).get(userId, country);
-  if (!route) {
+     WHERE r.user_id = ? AND r.country = ?
+     ORDER BY r.sort_order, r.id`,
+  ).all(userId, country);
+  if (candidates.length === 0) {
     return {
       status: 400,
       body: { error: `No Packeta route configured for ${country}. Add one on the Packeta page.` },
     };
   }
+  const orderPickupPointId = pickPacketaPickupPointId(order);
+  const route =
+    (orderPickupPointId
+      ? candidates.find((r) => Boolean(r.is_pickup_points))
+      : candidates.find((r) => !r.is_pickup_points)) || candidates[0];
   const isPickup = Boolean(route.is_pickup_points);
-  const pickupPointId = isPickup ? pickPacketaPickupPointId(order) : null;
+  const pickupPointId = isPickup ? orderPickupPointId : null;
   if (isPickup && !pickupPointId) {
     return {
       status: 400,

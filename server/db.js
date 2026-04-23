@@ -297,10 +297,11 @@ db.exec(`
     default_weight_kg REAL NOT NULL DEFAULT 0.5,
     default_value REAL NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (user_id, country)
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_packeta_routes_user ON packeta_country_routes(user_id);
+  CREATE INDEX IF NOT EXISTS idx_packeta_routes_user_country
+    ON packeta_country_routes(user_id, country);
 `);
 
 // Packeta label cache columns on shipments-equivalent storage. We piggy-back on
@@ -334,4 +335,48 @@ const packetaCols = new Set(
 );
 if (!packetaCols.has("widget_api_key_enc")) {
   db.exec(`ALTER TABLE packeta_credentials ADD COLUMN widget_api_key_enc TEXT`);
+}
+
+// Phase 2.1: drop the UNIQUE(user_id, country) constraint on
+// packeta_country_routes so a single country can have multiple carriers
+// (e.g. NL: Home delivery + Pickup point). SQLite can't drop a constraint
+// in-place, so we rebuild the table when the old constraint is detected.
+{
+  const idxList = db.prepare("PRAGMA index_list(packeta_country_routes)").all();
+  const hasUniqueCountry = idxList.some((idx) => {
+    if (!idx.unique) return false;
+    const cols = db.prepare(`PRAGMA index_info(${idx.name})`).all().map((c) => c.name);
+    return cols.length === 2 && cols.includes("user_id") && cols.includes("country");
+  });
+  if (hasUniqueCountry) {
+    db.exec(`
+      BEGIN;
+      CREATE TABLE packeta_country_routes_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        country TEXT NOT NULL,
+        carrier_id INTEGER NOT NULL,
+        default_weight_kg REAL NOT NULL DEFAULT 0.5,
+        default_value REAL NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO packeta_country_routes_new
+        (id, user_id, country, carrier_id, default_weight_kg, default_value, sort_order, updated_at)
+        SELECT id, user_id, country, carrier_id, default_weight_kg, default_value, sort_order, updated_at
+        FROM packeta_country_routes;
+      DROP TABLE packeta_country_routes;
+      ALTER TABLE packeta_country_routes_new RENAME TO packeta_country_routes;
+      CREATE INDEX IF NOT EXISTS idx_packeta_routes_user ON packeta_country_routes(user_id);
+      CREATE INDEX IF NOT EXISTS idx_packeta_routes_user_country
+        ON packeta_country_routes(user_id, country);
+      COMMIT;
+    `);
+  }
+  // Also prevent the same (user, country, carrier) pair from being inserted
+  // twice — that's the only true duplicate now.
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_packeta_routes_user_country_carrier
+      ON packeta_country_routes(user_id, country, carrier_id);
+  `);
 }

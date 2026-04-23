@@ -631,7 +631,7 @@ function WooInventory() {
                           value={d.regular_price}
                           onChange={(e) => updateDraft(p.id, { regular_price: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
@@ -640,7 +640,7 @@ function WooInventory() {
                           value={d.sale_price}
                           onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
@@ -657,7 +657,6 @@ function WooInventory() {
                         <Select
                           value={d.stock_status}
                           onValueChange={(v) => updateDraft(p.id, { stock_status: v })}
-                          disabled={isVariableParent}
                         >
                           <SelectTrigger className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1">
                             <SelectValue />
@@ -681,7 +680,7 @@ function WooInventory() {
                           value={d.weight}
                           onChange={(e) => updateDraft(p.id, { weight: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>

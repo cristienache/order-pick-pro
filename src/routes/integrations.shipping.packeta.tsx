@@ -527,7 +527,7 @@ function CountryRoutesCard({ hasApiPassword }: { hasApiPassword: boolean }) {
       <RouteDialog
         open={creating || !!editing}
         editing={editing}
-        existingCountries={routes.map((r) => r.country)}
+        existingRoutes={routes}
         carriersByCountry={carriersByCountry}
         onLoadCountryCarriers={loadCarriers}
         onClose={() => { setCreating(false); setEditing(null); }}
@@ -538,11 +538,11 @@ function CountryRoutesCard({ hasApiPassword }: { hasApiPassword: boolean }) {
 }
 
 function RouteDialog({
-  open, editing, existingCountries, carriersByCountry, onLoadCountryCarriers, onClose, onSaved,
+  open, editing, existingRoutes, carriersByCountry, onLoadCountryCarriers, onClose, onSaved,
 }: {
   open: boolean;
   editing: PacketaCountryRoute | null;
-  existingCountries: string[];
+  existingRoutes: PacketaCountryRoute[];
   carriersByCountry: Record<string, PacketaCarrier[]>;
   onLoadCountryCarriers: (country: string) => Promise<void>;
   onClose: () => void;
@@ -575,11 +575,26 @@ function RouteDialog({
     }
   }, [country, carriersByCountry, onLoadCountryCarriers]);
 
+  // Carriers already routed for this country (other than the row being edited).
+  // Used to disable them in the dropdown so the user can't add the exact same
+  // carrier twice — but they CAN add a second, different carrier per country
+  // (e.g. NL Home delivery + NL Pickup point).
+  const usedCarrierIds = useMemo(() => {
+    const set = new Set<number>();
+    for (const r of existingRoutes) {
+      if (r.country !== country) continue;
+      if (editing && r.id === editing.id) continue;
+      set.add(r.carrier_id);
+    }
+    return set;
+  }, [existingRoutes, country, editing]);
+
   const carriers = (country ? carriersByCountry[country] : []) || [];
+  const duplicateCarrier = carrierId !== "" && usedCarrierIds.has(Number(carrierId));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!country || !carrierId) return;
+    if (!country || !carrierId || duplicateCarrier) return;
     setSaving(true);
     try {
       const body = {
@@ -607,6 +622,9 @@ function RouteDialog({
           <DialogTitle>{editing ? "Edit country routing" : "Add country routing"}</DialogTitle>
           <DialogDescription>
             Choose which Packeta carrier to use for orders shipping to this country.
+            You can add multiple carriers per country (e.g. Home delivery and Pickup point) —
+            the right one is picked automatically based on whether the order has a pickup
+            point selected.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
@@ -619,9 +637,6 @@ function RouteDialog({
               disabled={!!editing}
               required
             />
-            {!editing && country && existingCountries.includes(country) && (
-              <p className="text-xs text-destructive">A rule for {country} already exists.</p>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -635,13 +650,22 @@ function RouteDialog({
                 } />
               </SelectTrigger>
               <SelectContent>
-                {carriers.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name} {c.is_pickup_points ? "· Pickup point" : "· Home delivery"}
-                  </SelectItem>
-                ))}
+                {carriers.map((c) => {
+                  const used = usedCarrierIds.has(c.id);
+                  return (
+                    <SelectItem key={c.id} value={String(c.id)} disabled={used}>
+                      {c.name} {c.is_pickup_points ? "· Pickup point" : "· Home delivery"}
+                      {used ? " (already added)" : ""}
+                    </SelectItem>
+                  );
+                })}
               </SelectContent>
             </Select>
+            {duplicateCarrier && (
+              <p className="text-xs text-destructive">
+                This carrier is already routed for {country}. Pick a different one or edit the existing rule.
+              </p>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -661,8 +685,7 @@ function RouteDialog({
             <Button type="button" variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               type="submit"
-              disabled={saving || !country || !carrierId
-                || (!editing && existingCountries.includes(country))}
+              disabled={saving || !country || !carrierId || duplicateCarrier}
             >
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               {editing ? "Save" : "Add"}

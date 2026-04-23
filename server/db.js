@@ -222,11 +222,11 @@ db.exec(`
   INSERT OR IGNORE INTO branding (id) VALUES (1);
 
   -- Phase 2 of the page builder. Custom content pages, addressed by slug at
-  -- /p/<slug>. `blocks` is a JSON array; each block has { id, type, props }.
-  -- The renderer in src/components/page-renderer.tsx whitelists which `type`
-  -- values it knows how to render, so unknown blocks are dropped silently.
-  -- Pages are admin-managed only. `published` gates whether non-admins (and
-  -- signed-out visitors) can view the page; admins can always preview drafts.
+  -- /p/<slug>. The blocks column is a JSON array; each block has
+  -- { id, type, props }. The renderer in src/components/page-renderer.tsx
+  -- whitelists which type values it knows how to render, so unknown blocks
+  -- are dropped silently. Pages are admin-managed only; published gates
+  -- whether non-admins can view the page (admins can always preview drafts).
   CREATE TABLE IF NOT EXISTS pages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     slug TEXT NOT NULL UNIQUE COLLATE NOCASE,

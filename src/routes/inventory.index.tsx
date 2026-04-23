@@ -16,6 +16,13 @@ import {
   type InventoryFilters, type SortOption,
 } from "@/components/inventory/inventory-filter-bar";
 
+const SORT_OPTIONS: SortOption[] = [
+  { value: "name", label: "Name" },
+  { value: "sku", label: "SKU" },
+  { value: "regular_price", label: "Base price" },
+  { value: "stock_quantity", label: "Total stock" },
+];
+
 export const Route = createFileRoute("/inventory/")({
   head: () => ({ meta: [{ title: "Inventory grid — HeyShop" }] }),
   component: InventoryGrid,

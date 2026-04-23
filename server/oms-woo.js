@@ -142,9 +142,12 @@ function snapshotShape(p) {
   };
 }
 
-/** PUT one WC product. Returns the updated WC payload. */
-async function pushOneToWc(site, wcId, body) {
-  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${wcId}`;
+/** PUT one WC product (or variation). Returns the updated WC payload.
+ *  When `parentId` is provided, targets /products/{parent}/variations/{wcId}
+ *  instead of /products/{wcId}. */
+async function pushOneToWc(site, wcId, body, parentId = null) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
+  const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
   const res = await fetch(url, {
     method: "PUT",
     headers: {
@@ -169,9 +172,10 @@ async function pushOneToWc(site, wcId, body) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-/** GET one WC product (used for snapshots). */
-async function fetchOneFromWc(site, wcId) {
-  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${wcId}`;
+/** GET one WC product (or variation) — used for snapshots. */
+async function fetchOneFromWc(site, wcId, parentId = null) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
+  const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
   const res = await fetch(url, {
     headers: {
       Authorization: authHeader(site.consumer_key, site.consumer_secret),
@@ -180,6 +184,43 @@ async function fetchOneFromWc(site, wcId) {
   });
   if (!res.ok) throw new Error(`WC ${res.status}`);
   return res.json();
+}
+
+/** Fetch all variations for a variable parent (paginated). */
+async function fetchAllVariations(site, parentId) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${parentId}/variations`;
+  const perPage = 100;
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const url = `${base}?per_page=${perPage}&page=${page}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: authHeader(site.consumer_key, site.consumer_secret),
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < perPage) break;
+  }
+  return all;
+}
+
+/** Pull a small thumbnail URL out of a WC product/variation. */
+function pickThumb(wc) {
+  if (Array.isArray(wc.images) && wc.images.length > 0) {
+    return wc.images[0].src || null;
+  }
+  if (wc.image && wc.image.src) return wc.image.src;
+  return null;
+}
+
+/** Build "Red / Large"-style label from variation attribute objects. */
+function variationLabel(attrs) {
+  if (!Array.isArray(attrs)) return null;
+  return attrs.map((a) => a.option || a.value).filter(Boolean).join(" / ") || null;
 }
 
 /** Coerce a WC numeric string ("19.99") → number, blank → null. */

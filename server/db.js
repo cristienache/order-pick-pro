@@ -148,6 +148,8 @@ if (!userCols.has("status")) {
 if (!userCols.has("approval_token")) {
   db.exec(`ALTER TABLE users ADD COLUMN approval_token TEXT`);
 }
+
+// Add api_key_enc to royal_mail_credentials for older databases that were
 // created before the Click & Drop migration.
 const rmCols = new Set(
   db.prepare("PRAGMA table_info(royal_mail_credentials)").all().map((c) => c.name),

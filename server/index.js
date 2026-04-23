@@ -1691,17 +1691,14 @@ app.delete("/api/packeta/country-routes/:id", requireAuth, (req, res) => {
 });
 
 // ---------- Packeta per-order labels (Phase 2) ----------
-// Build the createPacket payload for a single Woo order using the user's
-// saved sender, the route configured for the destination country, and the
-// pickup point ID stored on the order (if the route is a pickup carrier).
-function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
+// Build the createPacket payload for a single Woo order. The caller resolves
+// `addressId`, `isPickup`, `weight`, and `value` upfront so this function
+// stays a pure XML-payload builder.
+function buildPacketaPacketAttrs({ order, sender, addressId, weight, value }) {
   const ship = (order.shipping && (order.shipping.address_1 || order.shipping.first_name))
     ? order.shipping
     : (order.billing || {});
   const billing = order.billing || {};
-
-  const value = Number(order.total) || route.default_value || 0;
-  const weight = route.default_weight_kg > 0 ? route.default_weight_kg : 0.5;
 
   // Packeta requires `eshop` to be the sender ID (a.k.a. "senderLabel") that
   // the user has registered in their Packeta client section. It is NOT a
@@ -1716,7 +1713,7 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
     surname: String(ship.last_name || billing.last_name || "").slice(0, 32),
     email: String(billing.email || ship.email || sender.sender_email || "").slice(0, 255),
     phone: String(billing.phone || ship.phone || "").slice(0, 30),
-    addressId: route.is_pickup_points ? (pickupPointId || "") : route.carrier_id,
+    addressId,
     company: String(ship.company || "").slice(0, 60),
     street: String(ship.address_1 || "").slice(0, 60),
     houseNumber: "",
@@ -1730,6 +1727,111 @@ function buildPacketaPacketAttrs({ order, route, sender, pickupPointId }) {
   };
 
   return attrs;
+}
+
+// Resolve which Packeta carrier (addressId) and whether it's a pickup-point
+// carrier, for a given WC order. Strategy:
+//
+//   1. Trust the WC Packeta plugin first. If the order carries
+//      `packetery_carrier_id` meta, use it — that's exactly what the customer
+//      picked at checkout. We look it up in our local catalog only to learn
+//      whether it's a pickup-point carrier; if missing from the catalog we
+//      fall back to "is pickup if the order has a pickup point ID".
+//      The literal value "zpoint" / "packeta" means the generic Packeta
+//      pickup-point service — those always require a pickup point ID, and
+//      the addressId we send to createPacket is the pickup point ID itself.
+//   2. Otherwise, fall back to the country-routing table the user configured
+//      in HeyShop. (Useful for sites that don't have the WC plugin installed
+//      or for orders pre-dating the plugin.)
+//
+// Returns { ok: true, addressId, isPickup, source } on success, or
+// { ok: false, status, error } on failure.
+function resolvePacketaCarrierForOrder({ userId, order, country, pickupPointId }) {
+  const fromPlugin = pickPacketaCarrierId(order);
+  if (fromPlugin) {
+    const lower = fromPlugin.toLowerCase();
+    // Generic Packeta pickup-point pseudo-carrier — addressId IS the pickup
+    // point ID, not the carrier ID.
+    if (lower === "zpoint" || lower === "packeta") {
+      if (!pickupPointId) {
+        return {
+          ok: false,
+          status: 400,
+          error:
+            `Order ${order.number} uses a Packeta pickup point but no pickup point ID is on the order. ` +
+            `Customers normally pick this at checkout via the Packeta WooCommerce plugin.`,
+        };
+      }
+      return { ok: true, addressId: pickupPointId, isPickup: true, source: "wc-plugin" };
+    }
+
+    // Specific carrier — look up in catalog to learn pickup-vs-home, fall
+    // back to "pickup if the order has a point ID" if the catalog is empty.
+    const carrier = db.prepare(
+      `SELECT id, is_pickup_points FROM packeta_carriers
+       WHERE id = ? AND country = ?`,
+    ).get(fromPlugin, country);
+    const isPickup = carrier
+      ? Boolean(carrier.is_pickup_points)
+      : Boolean(pickupPointId);
+    if (isPickup && !pickupPointId) {
+      return {
+        ok: false,
+        status: 400,
+        error:
+          `Order ${order.number} ships to a pickup-point carrier but no pickup point ID was found on the order.`,
+      };
+    }
+    return {
+      ok: true,
+      addressId: isPickup ? pickupPointId : fromPlugin,
+      isPickup,
+      source: "wc-plugin",
+    };
+  }
+
+  // Fallback: user-configured country routing in HeyShop. A country can have
+  // multiple routes (Home delivery + Pickup point) — pick based on whether
+  // the order has a pickup point ID.
+  const candidates = db.prepare(
+    `SELECT r.*, c.is_pickup_points
+     FROM packeta_country_routes r
+     LEFT JOIN packeta_carriers c
+       ON c.id = r.carrier_id AND c.country = r.country
+     WHERE r.user_id = ? AND r.country = ?
+     ORDER BY r.sort_order, r.id`,
+  ).all(userId, country);
+  if (candidates.length === 0) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        `Order ${order.number} has no Packeta carrier on the WooCommerce order ` +
+        `(packetery_carrier_id meta) and no fallback route is configured for ${country}. ` +
+        `Either install the Packeta WC plugin so the carrier is saved on each order, or ` +
+        `add a fallback route on the Packeta page.`,
+    };
+  }
+  const route =
+    (pickupPointId
+      ? candidates.find((r) => Boolean(r.is_pickup_points))
+      : candidates.find((r) => !r.is_pickup_points)) || candidates[0];
+  const isPickup = Boolean(route.is_pickup_points);
+  if (isPickup && !pickupPointId) {
+    return {
+      ok: false,
+      status: 400,
+      error:
+        `Order ${order.number} ships to a pickup-point carrier but no pickup point ID was found on the order.`,
+    };
+  }
+  return {
+    ok: true,
+    addressId: isPickup ? pickupPointId : route.carrier_id,
+    isPickup,
+    source: "country-route",
+    route, // exposed so the caller can pick up default_weight/default_value
+  };
 }
 
 // Core single-label creator. Returns { status, body } so it can be used by
@@ -1766,40 +1868,16 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
   if (!country) {
     return { status: 400, body: { error: "Order has no destination country." } };
   }
-  // A country can have multiple routes (e.g. Home delivery + Pickup point).
-  // Pick the right one based on whether the order carries a Packeta pickup
-  // point ID: if it does, use a pickup-point route; otherwise use a home
-  // delivery route. Falls back to the first available route either way.
-  const candidates = db.prepare(
-    `SELECT r.*, c.is_pickup_points
-     FROM packeta_country_routes r
-     LEFT JOIN packeta_carriers c
-       ON c.id = r.carrier_id AND c.country = r.country
-     WHERE r.user_id = ? AND r.country = ?
-     ORDER BY r.sort_order, r.id`,
-  ).all(userId, country);
-  if (candidates.length === 0) {
-    return {
-      status: 400,
-      body: { error: `No Packeta route configured for ${country}. Add one on the Packeta page.` },
-    };
-  }
+
   const orderPickupPointId = pickPacketaPickupPointId(order);
-  const route =
-    (orderPickupPointId
-      ? candidates.find((r) => Boolean(r.is_pickup_points))
-      : candidates.find((r) => !r.is_pickup_points)) || candidates[0];
-  const isPickup = Boolean(route.is_pickup_points);
-  const pickupPointId = isPickup ? orderPickupPointId : null;
-  if (isPickup && !pickupPointId) {
-    return {
-      status: 400,
-      body: {
-        error:
-          `Order ${order.number} ships to a pickup-point carrier but no pickup point ID was found ` +
-          `on the order. Customers normally pick this at checkout via the Packeta WooCommerce plugin.`,
-      },
-    };
+  const resolved = resolvePacketaCarrierForOrder({
+    userId,
+    order,
+    country,
+    pickupPointId: orderPickupPointId,
+  });
+  if (!resolved.ok) {
+    return { status: resolved.status, body: { error: resolved.error } };
   }
 
   if (!sender || !String(sender.sender_label || "").trim()) {
@@ -1814,11 +1892,23 @@ async function createPacketaLabelForOrder({ userId, siteId, orderId, creds, send
     };
   }
 
+  // Weight: prefer the WC Packeta plugin's `packetery_weight` meta, then
+  // any country-route default, then a 0.5 kg safety floor.
+  const pluginWeight = pickPacketaWeightKg(order);
+  const routeWeight = resolved.route?.default_weight_kg;
+  const weight =
+    pluginWeight && pluginWeight > 0 ? pluginWeight :
+    routeWeight && routeWeight > 0 ? routeWeight : 0.5;
+
+  // Value: order total wins, fall back to country-route default, then 0.
+  const value = Number(order.total) || resolved.route?.default_value || 0;
+
   const packet = buildPacketaPacketAttrs({
     order,
-    route: { ...route, is_pickup_points: isPickup },
     sender,
-    pickupPointId,
+    addressId: resolved.addressId,
+    weight,
+    value,
   });
 
   const created = await createPacketaPacket({

@@ -15,17 +15,16 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   RefreshCw, Search, Save, Send, History, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Undo2,
+  Loader2, AlertCircle, Undo2, Download, Copy,
 } from "lucide-react";
-import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
+import { wcApi, type WcEditPayload, type WcProductRow } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
+import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),

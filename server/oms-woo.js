@@ -649,7 +649,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let ok = 0; const failed = [];
     for (const snap of payload) {
       try {
-        await pushOneToWc(site, snap.id, {
+        const body = {
           name: snap.name,
           sku: snap.sku,
           regular_price: snap.regular_price ?? "",
@@ -660,7 +660,15 @@ export function mountOmsWoo(app, { requireAuth }) {
           stock_status: snap.stock_status,
           manage_stock: snap.manage_stock,
           weight: snap.weight ?? "",
-        });
+        };
+        if (snap.wc_type === "variation") {
+          delete body.name;
+          delete body.short_description;
+        }
+        await pushOneToWc(
+          site, snap.id, body,
+          snap.wc_type === "variation" ? snap.wc_parent_id : null,
+        );
         ok++;
       } catch (e) {
         failed.push({ wc_id: snap.id, error: e.message });

@@ -4,11 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 /**
  * Renders an array of page-builder blocks. Unknown block types are skipped
- * silently so the renderer stays forward-compatible with new block kinds.
- *
- * Block prop access uses a small `prop()` helper that coerces unknowns to
- * strings/numbers/booleans with sane fallbacks. Keeps the JSX readable while
- * making sure a malformed row in SQLite never throws at runtime.
+ * silently so the renderer stays forward-compatible with new block kinds and
+ * malformed rows in SQLite never throw at runtime.
  */
 export function PageRenderer({ blocks }: { blocks: Block[] }) {
   return (
@@ -20,32 +17,33 @@ export function PageRenderer({ blocks }: { blocks: Block[] }) {
   );
 }
 
-function prop<T extends string | number | boolean>(
-  props: Record<string, unknown>,
-  key: string,
-  fallback: T,
-): T {
-  const v = props[key];
-  if (typeof v === typeof fallback) return v as T;
-  return fallback;
+const pStr = (props: Record<string, unknown>, key: string, fb = ""): string =>
+  typeof props[key] === "string" ? (props[key] as string) : fb;
+const pNum = (props: Record<string, unknown>, key: string, fb = 0): number =>
+  typeof props[key] === "number" ? (props[key] as number) : fb;
+const pBool = (props: Record<string, unknown>, key: string, fb = false): boolean =>
+  typeof props[key] === "boolean" ? (props[key] as boolean) : fb;
+
+function alignClass(align: string): string {
+  if (align === "center") return "text-center";
+  if (align === "right") return "text-right";
+  return "";
 }
 
 function BlockView({ block }: { block: Block }) {
   const p = block.props || {};
   switch (block.type) {
     case "heading": {
-      const text = prop(p, "text", "");
-      const level = Math.max(1, Math.min(3, prop(p, "level", 2)));
-      const align = prop(p, "align", "left");
-      const cls = align === "center" ? "text-center" : align === "right" ? "text-right" : "";
+      const text = pStr(p, "text");
+      const level = Math.max(1, Math.min(3, pNum(p, "level", 2)));
+      const cls = alignClass(pStr(p, "align", "left"));
       if (level === 1) return <h1 className={`text-4xl md:text-5xl font-bold tracking-tight ${cls}`}>{text}</h1>;
       if (level === 2) return <h2 className={`text-2xl md:text-3xl font-bold tracking-tight ${cls}`}>{text}</h2>;
       return <h3 className={`text-xl font-semibold tracking-tight ${cls}`}>{text}</h3>;
     }
     case "paragraph": {
-      const text = prop(p, "text", "");
-      const align = prop(p, "align", "left");
-      const cls = align === "center" ? "text-center" : align === "right" ? "text-right" : "";
+      const text = pStr(p, "text");
+      const cls = alignClass(pStr(p, "align", "left"));
       return (
         <p className={`text-[15px] leading-relaxed text-foreground/80 whitespace-pre-wrap ${cls}`}>
           {text}
@@ -53,10 +51,10 @@ function BlockView({ block }: { block: Block }) {
       );
     }
     case "image": {
-      const src = prop(p, "src", "");
-      const alt = prop(p, "alt", "");
-      const caption = prop(p, "caption", "");
-      const rounded = prop(p, "rounded", true);
+      const src = pStr(p, "src");
+      const alt = pStr(p, "alt");
+      const caption = pStr(p, "caption");
+      const rounded = pBool(p, "rounded", true);
       if (!src) return null;
       return (
         <figure className="space-y-2">
@@ -75,10 +73,12 @@ function BlockView({ block }: { block: Block }) {
       );
     }
     case "button": {
-      const label = prop(p, "label", "Click");
-      const href = prop(p, "href", "#");
-      const variant = prop(p, "variant", "default") as
-        | "default" | "outline" | "ghost" | "secondary";
+      const label = pStr(p, "label", "Click");
+      const href = pStr(p, "href", "#");
+      const raw = pStr(p, "variant", "default");
+      const variant = (["default", "outline", "ghost", "secondary"].includes(raw)
+        ? raw
+        : "default") as "default" | "outline" | "ghost" | "secondary";
       return (
         <div>
           <Button asChild variant={variant}>
@@ -88,8 +88,8 @@ function BlockView({ block }: { block: Block }) {
       );
     }
     case "card": {
-      const title = prop(p, "title", "");
-      const body = prop(p, "body", "");
+      const title = pStr(p, "title");
+      const body = pStr(p, "body");
       return (
         <Card>
           {title && (
@@ -106,12 +106,15 @@ function BlockView({ block }: { block: Block }) {
     case "divider":
       return <hr className="border-border/60" />;
     case "spacer": {
-      const size = prop(p, "size", "md");
-      const h = size === "sm" ? "h-4" : size === "lg" ? "h-16" : size === "xl" ? "h-24" : "h-8";
+      const size = pStr(p, "size", "md");
+      let h = "h-8";
+      if (size === "sm") h = "h-4";
+      else if (size === "lg") h = "h-16";
+      else if (size === "xl") h = "h-24";
       return <div className={h} aria-hidden />;
     }
     case "html": {
-      const html = prop(p, "html", "");
+      const html = pStr(p, "html");
       return (
         <div
           className="prose prose-sm md:prose-base max-w-none dark:prose-invert"
@@ -129,20 +132,14 @@ function BlockView({ block }: { block: Block }) {
  * Tiny allow-list HTML sanitiser. We only ever render content authored by
  * admins, but defence-in-depth: strip <script>, on* attributes and
  * javascript: URLs so a copy-pasted snippet can't smuggle JS into the page.
- *
- * For richer HTML editing we'd swap to DOMPurify, but pulling in the lib
- * just for a handful of admin-authored blocks isn't worth the bytes yet.
  */
 function sanitizeHtml(input: string): string {
   if (typeof input !== "string") return "";
   let out = input;
-  // Remove <script>...</script> entirely.
   out = out.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "");
-  // Remove on* event-handler attributes: onclick=, onerror=, etc.
   out = out.replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "");
   out = out.replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "");
   out = out.replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "");
-  // Neutralise javascript: URLs in href / src.
   out = out.replace(/(href|src)\s*=\s*"javascript:[^"]*"/gi, '$1="#"');
   out = out.replace(/(href|src)\s*=\s*'javascript:[^']*'/gi, "$1='#'");
   return out;

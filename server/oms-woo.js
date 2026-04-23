@@ -643,6 +643,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     });
     tx();
     res.json({ ok, failed });
+  });
 
   // ----- Wipe all imported products for a site (destructive) -----
   // Deletes every oms_products row scoped to the given site, plus their

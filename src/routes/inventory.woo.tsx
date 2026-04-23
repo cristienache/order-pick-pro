@@ -15,17 +15,16 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Collapsible, CollapsibleContent, CollapsibleTrigger,
-} from "@/components/ui/collapsible";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
   RefreshCw, Search, Save, Send, History, ChevronDown, ChevronRight,
-  Loader2, AlertCircle, Undo2,
+  Loader2, AlertCircle, Undo2, Download, Copy,
 } from "lucide-react";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
+import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),
@@ -86,6 +85,10 @@ function WooInventory() {
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
+  // Filter chip — narrows the visible row set without losing draft state.
+  const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
+  // Collapsed variable-parent ids: when collapsed, hide their variation rows.
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -115,14 +118,6 @@ function WooInventory() {
     setSelected(new Set());
   }, [products.data]);
 
-  const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return siteProducts;
-    return siteProducts.filter(
-      (p) => p.sku.toLowerCase().includes(term) || p.name.toLowerCase().includes(term),
-    );
-  }, [siteProducts, search]);
-
   const updateDraft = (pid: string, patch: Partial<DraftRow>) =>
     setDrafts((d) => ({ ...d, [pid]: { ...d[pid], ...patch } }));
 
@@ -146,6 +141,118 @@ function WooInventory() {
     }).map((p) => p.id);
   }, [siteProducts, drafts, originals]);
 
+  // Filtered visible rows. Filter chip + search work together. Collapsed
+  // variable-parents hide their variation rows.
+  const filteredProducts = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    const dirtySet = new Set(dirtyIds);
+    return siteProducts.filter((p) => {
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) {
+        return false;
+      }
+      if (p.parent_product_id && collapsed.has(p.parent_product_id)) return false;
+      switch (filter) {
+        case "dirty": return dirtySet.has(p.id);
+        case "variations": return p.wc_type === "variation";
+        case "parents": return p.wc_type !== "variation";
+        case "low": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5;
+        case "outofstock": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) <= 0;
+        default: return true;
+      }
+    });
+  }, [siteProducts, search, filter, collapsed, dirtyIds]);
+
+  /* ---------- Bulk operations ---------- */
+  const applyBulk = (op: BulkOp) => {
+    if (selectedIds.length === 0) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const pid of selectedIds) {
+        const d = next[pid]; if (!d) continue;
+        const patch: Partial<DraftRow> = {};
+        if (op.kind === "price") {
+          const cur = Number(op.field === "regular_price" ? d.regular_price : d.sale_price) || 0;
+          let n = cur;
+          switch (op.mode) {
+            case "set": n = op.value; break;
+            case "incPct": n = cur * (1 + op.value / 100); break;
+            case "decPct": n = cur * (1 - op.value / 100); break;
+            case "incAmt": n = cur + op.value; break;
+            case "decAmt": n = cur - op.value; break;
+            case "round": n = Math.max(0, Math.floor(cur) + 0.99); break;
+          }
+          n = Math.max(0, Math.round(n * 100) / 100);
+          patch[op.field] = n.toFixed(2);
+        } else if (op.kind === "stock") {
+          const cur = Number(d.stock_quantity) || 0;
+          const n = op.mode === "set" ? op.value : op.mode === "inc" ? cur + op.value : Math.max(0, cur - op.value);
+          patch.stock_quantity = String(Math.max(0, Math.floor(n)));
+          patch.manage_stock = true;
+        } else if (op.kind === "status") {
+          patch.stock_status = op.value;
+        } else if (op.kind === "manage") {
+          patch.manage_stock = op.value;
+        } else if (op.kind === "weight") {
+          patch.weight = op.value.toFixed(3);
+        } else if (op.kind === "find") {
+          const src = op.field === "name" ? d.name : d.description;
+          patch[op.field] = src.split(op.find).join(op.replace);
+        }
+        next[pid] = { ...d, ...patch };
+      }
+      return next;
+    });
+    toast.success(`Applied to ${selectedIds.length} row${selectedIds.length === 1 ? "" : "s"}`);
+  };
+
+  /** Copy a variable parent's edits down to ALL of its variation rows. */
+  const copyParentToVariations = (parentId: string) => {
+    const parentDraft = drafts[parentId];
+    const variations = siteProducts.filter((p) => p.parent_product_id === parentId);
+    if (!parentDraft || variations.length === 0) {
+      toast.info("No variations under this product"); return;
+    }
+    setDrafts((prev) => {
+      const next = { ...prev };
+      for (const v of variations) {
+        const cur = next[v.id]; if (!cur) continue;
+        next[v.id] = {
+          ...cur,
+          regular_price: parentDraft.regular_price || cur.regular_price,
+          sale_price: parentDraft.sale_price,
+          weight: parentDraft.weight || cur.weight,
+          stock_status: parentDraft.stock_status,
+        };
+      }
+      return next;
+    });
+    toast.success(`Copied to ${variations.length} variation${variations.length === 1 ? "" : "s"}`);
+  };
+
+  /** Export the currently filtered + draft-edited rows as CSV. */
+  const exportCsv = () => {
+    const cols = ["sku", "name", "type", "regular_price", "sale_price", "stock_quantity", "stock_status", "manage_stock", "weight"];
+    const rows = filteredProducts.map((p) => {
+      const d = drafts[p.id] || ({} as DraftRow);
+      return [
+        d.sku ?? p.sku, d.name ?? p.name, p.wc_type,
+        d.regular_price ?? "", d.sale_price ?? "",
+        d.stock_quantity ?? "", d.stock_status ?? "",
+        d.manage_stock ? "yes" : "no", d.weight ?? "",
+      ];
+    });
+    const esc = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `wc-inventory-${site?.name ?? "export"}-${Date.now()}.csv`;
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  const toggleCollapse = (parentId: string) =>
+    setCollapsed((s) => { const n = new Set(s); n.has(parentId) ? n.delete(parentId) : n.add(parentId); return n; });
+
   /* ---------- Mutations ---------- */
   const sync = async () => {
     if (!siteId) return;
@@ -163,9 +270,9 @@ function WooInventory() {
     }
   };
 
-  /** Build a diff payload for the bulk-save endpoint. Only includes fields
-   *  the user actually changed since the last sync — prevents wiping WC
-   *  values we never had locally (real sale_price, weight, etc.). */
+  /** Build a diff payload for the bulk-save endpoint. Sends ONLY fields that
+   *  the user actually changed since the last sync, so we never overwrite WC
+   *  values we don't have locally. */
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];
@@ -176,18 +283,18 @@ function WooInventory() {
       if (d.regular_price !== o.regular_price) {
         fields.regular_price = d.regular_price === "" ? null : Number(d.regular_price);
       }
-      if (d.sale_price !== "") fields.sale_price = Number(d.sale_price);
+      if (d.sale_price !== o.sale_price) {
+        fields.sale_price = d.sale_price === "" ? null : Number(d.sale_price);
+      }
+      if (d.weight !== o.weight) {
+        fields.weight = d.weight === "" ? null : Number(d.weight);
+      }
+      if (d.description !== o.description) fields.description = d.description;
       if (d.stock_quantity !== o.stock_quantity) {
         fields.stock_quantity = Number(d.stock_quantity) || 0;
       }
-      if (d.weight !== "") fields.weight = Number(d.weight);
-      if (d.description !== "") fields.description = d.description;
-      // Only send stock_status / manage_stock when the user touched stock,
-      // so we don't overwrite the existing WC values on price-only edits.
-      if (d.stock_quantity !== o.stock_quantity) {
-        fields.stock_status = d.stock_status;
-        fields.manage_stock = d.manage_stock;
-      }
+      if (d.stock_status !== o.stock_status) fields.stock_status = d.stock_status;
+      if (d.manage_stock !== o.manage_stock) fields.manage_stock = d.manage_stock;
       if (Object.keys(fields).length === 0) return null;
       return { product_id: pid, fields };
     }).filter((x): x is WcEditPayload => x !== null);
@@ -322,6 +429,10 @@ function WooInventory() {
           <Badge variant="outline" className="font-mono text-[10px]">
             {selectedIds.length || dirtyIds.length} pending
           </Badge>
+          <WcBulkPanel selectedCount={selectedIds.length} onApply={applyBulk} />
+          <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredProducts.length === 0}>
+            <Download className="mr-1.5 h-3.5 w-3.5" /> CSV
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setShowBackups(true)}>
             <History className="mr-1.5 h-3.5 w-3.5" /> Backups
           </Button>
@@ -339,6 +450,25 @@ function WooInventory() {
             <Send className="mr-1.5 h-3.5 w-3.5" /> Push to WooCommerce
           </Button>
         </div>
+      </div>
+
+      {/* Filter chips */}
+      <div className="flex items-center gap-2 border-b bg-muted/20 px-4 py-1.5">
+        <span className="text-[11px] font-medium text-muted-foreground">Show:</span>
+        <ToggleGroup
+          type="single"
+          value={filter}
+          onValueChange={(v) => v && setFilter(v as typeof filter)}
+          className="gap-1"
+          size="sm"
+        >
+          <ToggleGroupItem value="all" className="h-6 px-2 text-[11px]">All ({siteProducts.length})</ToggleGroupItem>
+          <ToggleGroupItem value="dirty" className="h-6 px-2 text-[11px]">Edited ({dirtyIds.length})</ToggleGroupItem>
+          <ToggleGroupItem value="parents" className="h-6 px-2 text-[11px]">Parents only</ToggleGroupItem>
+          <ToggleGroupItem value="variations" className="h-6 px-2 text-[11px]">Variations only</ToggleGroupItem>
+          <ToggleGroupItem value="low" className="h-6 px-2 text-[11px]">Low stock (≤5)</ToggleGroupItem>
+          <ToggleGroupItem value="outofstock" className="h-6 px-2 text-[11px]">Out of stock</ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
       {/* Status row */}
@@ -410,24 +540,46 @@ function WooInventory() {
                       <td className="h-9 border-b px-2 align-middle">
                         <Checkbox
                           checked={selected.has(p.id)}
-                          onCheckedChange={() => toggleSel(p.id)}
-                          disabled={isVariableParent}
+                          onCheckedChange={() => {
+                            // For variable parents, toggle ALL of its variations.
+                            if (isVariableParent) {
+                              const vIds = siteProducts.filter((x) => x.parent_product_id === p.id).map((x) => x.id);
+                              setSelected((s) => {
+                                const n = new Set(s);
+                                const allSelected = vIds.every((id) => n.has(id));
+                                vIds.forEach((id) => allSelected ? n.delete(id) : n.add(id));
+                                return n;
+                              });
+                            } else {
+                              toggleSel(p.id);
+                            }
+                          }}
                         />
                       </td>
                       <td className="h-9 border-b px-1 align-middle">
-                        <button
-                          onClick={() =>
-                            setOpenDesc((s) => {
-                              const n = new Set(s);
-                              n.has(p.id) ? n.delete(p.id) : n.add(p.id);
-                              return n;
-                            })
-                          }
-                          className="rounded p-0.5 hover:bg-muted"
-                          aria-label="Toggle description"
-                        >
-                          {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        </button>
+                        {isVariableParent ? (
+                          <button
+                            onClick={() => toggleCollapse(p.id)}
+                            className="rounded p-0.5 hover:bg-muted"
+                            aria-label="Collapse variations"
+                          >
+                            {collapsed.has(p.id) ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              setOpenDesc((s) => {
+                                const n = new Set(s);
+                                n.has(p.id) ? n.delete(p.id) : n.add(p.id);
+                                return n;
+                              })
+                            }
+                            className="rounded p-0.5 hover:bg-muted"
+                            aria-label="Toggle description"
+                          >
+                            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          </button>
+                        )}
                       </td>
                       <td className="h-9 border-b px-1 align-middle">
                         {p.image_url ? (
@@ -460,7 +612,17 @@ function WooInventory() {
                             className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
                           />
                           {isVariableParent && (
-                            <Badge variant="outline" className="mr-2 text-[9px]">VARIABLE</Badge>
+                            <>
+                              <Badge variant="outline" className="text-[9px]">VARIABLE</Badge>
+                              <button
+                                onClick={() => copyParentToVariations(p.id)}
+                                className="mr-1 rounded p-1 hover:bg-muted"
+                                title="Copy price/weight/status to all variations"
+                                aria-label="Copy to variations"
+                              >
+                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -469,7 +631,7 @@ function WooInventory() {
                           value={d.regular_price}
                           onChange={(e) => updateDraft(p.id, { regular_price: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
@@ -478,7 +640,7 @@ function WooInventory() {
                           value={d.sale_price}
                           onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
@@ -495,7 +657,6 @@ function WooInventory() {
                         <Select
                           value={d.stock_status}
                           onValueChange={(v) => updateDraft(p.id, { stock_status: v })}
-                          disabled={isVariableParent}
                         >
                           <SelectTrigger className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1">
                             <SelectValue />
@@ -519,7 +680,7 @@ function WooInventory() {
                           value={d.weight}
                           onChange={(e) => updateDraft(p.id, { weight: e.target.value })}
                           inputMode="decimal"
-                          disabled={isVariableParent}
+                          placeholder={isVariableParent ? "→ all" : ""}
                           className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>

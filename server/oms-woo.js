@@ -722,10 +722,10 @@ export function mountOmsWoo(app, { requireAuth }) {
       try { touched = new Set(JSON.parse(row.dirty_fields || "[]")); }
       catch { touched = new Set(); }
       if (touched.size === 0) {
-        // Nothing to push for this row — clear dirty flag and skip the
-        // network call entirely. Prevents wiping WC data on a no-op push.
+        // No tracked field changes — report as skipped so the UI can tell
+        // the user nothing was pushed (instead of a misleading "ok").
         db.prepare(`UPDATE oms_products SET dirty = 0 WHERE id = ?`).run(row.id);
-        ok++;
+        failed.push({ product_id: row.id, error: "No changes to push (already in sync)" });
         continue;
       }
 
@@ -756,11 +756,10 @@ export function mountOmsWoo(app, { requireAuth }) {
         body.manage_stock = true;
       }
       if (Object.keys(body).length === 0) {
-        // All touched fields were dropped (e.g. variation-only "name"). Just
-        // clear dirty so we don't loop forever.
+        // All touched fields were dropped (e.g. variation-only "name").
         db.prepare(`UPDATE oms_products SET dirty = 0, dirty_fields = NULL WHERE id = ?`)
           .run(row.id);
-        ok++;
+        failed.push({ product_id: row.id, error: "All edited fields are not pushable for this product type" });
         continue;
       }
 

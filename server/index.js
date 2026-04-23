@@ -1224,6 +1224,10 @@ app.post("/api/royal-mail/test-connection", requireAuth, async (req, res) => {
 // AES-GCM encrypted at rest in packeta_credentials.api_password_enc.
 const packetaCredsSchema = z.object({
   api_password: z.string().trim().min(1).max(500).optional(),
+  // Separate Widget API key (~16 chars). Required for the public carrier
+  // and PUDO JSON feeds at pickup-point.api.packeta.com. Send "__clear__"
+  // to remove. Empty/missing => leave existing alone.
+  widget_api_key: z.string().trim().min(1).max(500).optional(),
   use_sandbox: z.boolean().optional().default(false),
 });
 const packetaSenderSchema = z.object({
@@ -1243,6 +1247,7 @@ function packetaRowToPublic(row) {
   if (!row) {
     return {
       has_api_password: false,
+      has_widget_api_key: false,
       use_sandbox: false,
       sender_name: null, sender_company: null,
       sender_address_line1: null, sender_address_line2: null,
@@ -1253,6 +1258,7 @@ function packetaRowToPublic(row) {
   }
   return {
     has_api_password: Boolean(row.api_password_enc),
+    has_widget_api_key: Boolean(row.widget_api_key_enc),
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,
@@ -1281,9 +1287,10 @@ app.put("/api/packeta/credentials", requireAuth, (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
   }
-  const { api_password, use_sandbox } = parsed.data;
+  const { api_password, widget_api_key, use_sandbox } = parsed.data;
   const existing = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
 
+  // SOAP API password — same merge rules as before.
   const cleanPassword = api_password && api_password !== "__clear__"
     ? normalizePacketaPassword(api_password)
     : api_password;
@@ -1291,17 +1298,26 @@ app.put("/api/packeta/credentials", requireAuth, (req, res) => {
     ? null
     : (cleanPassword ? encrypt(cleanPassword) : (existing?.api_password_enc ?? null));
 
+  // Widget API key — same merge rules. Reuses normalizePacketaPassword which
+  // just strips whitespace/zero-width/quote chars, so it's safe for either.
+  const cleanWidget = widget_api_key && widget_api_key !== "__clear__"
+    ? normalizePacketaPassword(widget_api_key)
+    : widget_api_key;
+  const nextWidgetEnc = cleanWidget === "__clear__"
+    ? null
+    : (cleanWidget ? encrypt(cleanWidget) : (existing?.widget_api_key_enc ?? null));
+
   if (existing) {
     db.prepare(`
       UPDATE packeta_credentials
-      SET api_password_enc = ?, use_sandbox = ?, updated_at = datetime('now')
+      SET api_password_enc = ?, widget_api_key_enc = ?, use_sandbox = ?, updated_at = datetime('now')
       WHERE user_id = ?
-    `).run(nextPasswordEnc, use_sandbox ? 1 : 0, req.user.id);
+    `).run(nextPasswordEnc, nextWidgetEnc, use_sandbox ? 1 : 0, req.user.id);
   } else {
     db.prepare(`
-      INSERT INTO packeta_credentials (user_id, api_password_enc, use_sandbox)
-      VALUES (?, ?, ?)
-    `).run(req.user.id, nextPasswordEnc, use_sandbox ? 1 : 0);
+      INSERT INTO packeta_credentials (user_id, api_password_enc, widget_api_key_enc, use_sandbox)
+      VALUES (?, ?, ?, ?)
+    `).run(req.user.id, nextPasswordEnc, nextWidgetEnc, use_sandbox ? 1 : 0);
   }
 
   const row = db.prepare("SELECT * FROM packeta_credentials WHERE user_id = ?").get(req.user.id);
@@ -1380,9 +1396,14 @@ function loadPacketaPassword(userId) {
   ).get(userId);
   if (!row || !row.api_password_enc) return null;
   try {
+    let widgetApiKey = null;
+    if (row.widget_api_key_enc) {
+      try { widgetApiKey = decrypt(row.widget_api_key_enc); } catch { /* ignore */ }
+    }
     return {
       row,
       apiPassword: decrypt(row.api_password_enc),
+      widgetApiKey,
       useSandbox: Boolean(row.use_sandbox),
     };
   } catch {
@@ -1391,13 +1412,14 @@ function loadPacketaPassword(userId) {
 }
 
 // Fire-and-forget background sync. Triggered when the catalog is stale and
-// the UI requests carriers. Never rejects.
+// the UI requests carriers. Never rejects. Skips silently if the user
+// hasn't saved a Widget API key yet (the carriers feed requires it).
 async function maybeBackgroundSyncCarriers(userId) {
   if (!isCatalogStale()) return;
   const creds = loadPacketaPassword(userId);
-  if (!creds) return;
+  if (!creds || !creds.widgetApiKey) return;
   try {
-    await syncPacketaCarriers(creds.apiPassword);
+    await syncPacketaCarriers(creds.widgetApiKey);
   } catch (e) {
     console.warn("[packeta] background carrier sync failed:", e.message);
   }
@@ -1440,7 +1462,15 @@ app.get("/api/packeta/carriers", requireAuth, async (req, res) => {
 app.post("/api/packeta/carriers/sync", requireAuth, async (req, res) => {
   const creds = loadPacketaPassword(req.user.id);
   if (!creds) return res.status(400).json({ error: "Add your Packeta API password first." });
-  const result = await syncPacketaCarriers(creds.apiPassword);
+  if (!creds.widgetApiKey) {
+    return res.status(400).json({
+      error:
+        "Add your Packeta Widget API key first. " +
+        "It's a separate credential from the SOAP API password — " +
+        "find it in the Packeta client section under Settings → API.",
+    });
+  }
+  const result = await syncPacketaCarriers(creds.widgetApiKey);
   if (!result.ok) return res.status(502).json(result);
   res.json(result);
 });

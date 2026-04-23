@@ -322,3 +322,16 @@ if (!shipmentColsForCarrier.has("packeta_barcode")) {
 db.exec(
   `CREATE INDEX IF NOT EXISTS idx_shipments_carrier ON shipments(user_id, carrier)`,
 );
+
+// Phase 2: Packeta exposes two distinct credentials. The "API password" is
+// for the SOAP/REST endpoints (createPacket, label PDFs, etc.) and is stored
+// in api_password_enc above. The "Widget API key" is a *separate*, shorter
+// credential used for the public Widget + carrier/PUDO JSON feeds. We need
+// both; the carrier-sync feed at pickup-point.api.packeta.com rejects the
+// SOAP password with HTTP 401.
+const packetaCols = new Set(
+  db.prepare("PRAGMA table_info(packeta_credentials)").all().map((c) => c.name),
+);
+if (!packetaCols.has("widget_api_key_enc")) {
+  db.exec(`ALTER TABLE packeta_credentials ADD COLUMN widget_api_key_enc TEXT`);
+}

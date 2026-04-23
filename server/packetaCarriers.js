@@ -16,9 +16,12 @@
 import { db } from "./db.js";
 import { normalizePacketaPassword } from "./packeta.js";
 
-const CARRIER_FEED_URL = (apiPassword) =>
+// IMPORTANT: this endpoint expects the Packeta **Widget API key**, NOT the
+// SOAP API password. They're two different credentials. The SOAP password
+// returns HTTP 401 here.
+const CARRIER_FEED_URL = (widgetApiKey) =>
   `https://pickup-point.api.packeta.com/v5/${encodeURIComponent(
-    normalizePacketaPassword(apiPassword),
+    normalizePacketaPassword(widgetApiKey),
   )}/carrier/json?lang=en`;
 
 // How old the catalog can be before we auto-refresh. 24h matches the WC
@@ -40,9 +43,10 @@ function toNum(v) {
 
 // Fetch + parse the carrier feed. Returns { ok, carriers, error }.
 // Each entry in `carriers` is the row shape we'll upsert.
-export async function fetchPacketaCarriers(apiPassword) {
-  const password = normalizePacketaPassword(apiPassword);
-  if (!password) return { ok: false, error: "API password missing" };
+// `widgetApiKey` is the Packeta Widget API key, NOT the SOAP password.
+export async function fetchPacketaCarriers(widgetApiKey) {
+  const password = normalizePacketaPassword(widgetApiKey);
+  if (!password) return { ok: false, error: "Widget API key missing" };
 
   let res;
   try {
@@ -168,8 +172,9 @@ export function persistPacketaCarriers(carriers) {
 }
 
 // Combined fetch+persist. Never throws; returns a stable result object.
-export async function syncPacketaCarriers(apiPassword) {
-  const fetched = await fetchPacketaCarriers(apiPassword);
+// `widgetApiKey` is the Packeta Widget API key.
+export async function syncPacketaCarriers(widgetApiKey) {
+  const fetched = await fetchPacketaCarriers(widgetApiKey);
   if (!fetched.ok) return { ok: false, error: fetched.error };
   const persisted = persistPacketaCarriers(fetched.carriers);
   return { ok: true, ...persisted };

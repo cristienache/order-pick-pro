@@ -36,6 +36,7 @@ export const Route = createFileRoute("/integrations/shipping/packeta")({
 
 type PacketaSettings = {
   has_api_password: boolean;
+  has_widget_api_key: boolean;
   use_sandbox: boolean;
   sender_name: string | null;
   sender_company: string | null;
@@ -82,7 +83,7 @@ function PacketaPage() {
 
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />
-      <CountryRoutesCard hasApiPassword={settings.has_api_password} />
+      <CountryRoutesCard hasApiPassword={settings.has_api_password && settings.has_widget_api_key} />
     </div>
   );
 }
@@ -91,6 +92,7 @@ function PacketaPage() {
 
 function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; onChanged: () => Promise<void> }) {
   const [apiPassword, setApiPassword] = useState("");
+  const [widgetApiKey, setWidgetApiKey] = useState("");
   const [useSandbox, setUseSandbox] = useState(settings.use_sandbox);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -103,8 +105,10 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
     try {
       const payload: Record<string, unknown> = { use_sandbox: useSandbox };
       if (apiPassword.trim()) payload.api_password = apiPassword.trim();
+      if (widgetApiKey.trim()) payload.widget_api_key = widgetApiKey.trim();
       await api("/api/packeta/credentials", { method: "PUT", body: payload });
       setApiPassword("");
+      setWidgetApiKey("");
       await onChanged();
       toast.success("Credentials saved");
     } catch (err) {
@@ -118,6 +122,20 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
       await api("/api/packeta/credentials", {
         method: "PUT",
         body: { api_password: "__clear__", use_sandbox: useSandbox },
+      });
+      await onChanged();
+      toast.success("Removed");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Remove failed");
+    }
+  };
+
+  const clearWidget = async () => {
+    if (!confirm("Remove the saved Widget API key?")) return;
+    try {
+      await api("/api/packeta/credentials", {
+        method: "PUT",
+        body: { widget_api_key: "__clear__", use_sandbox: useSandbox },
       });
       await onChanged();
       toast.success("Removed");
@@ -176,6 +194,30 @@ function CredentialsCard({ settings, onChanged }: { settings: PacketaSettings; o
               onChange={(e) => setApiPassword(e.target.value)}
               placeholder={settings.has_api_password ? "•••••••• (saved — leave blank to keep)" : "Paste your Packeta API password"}
               autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" />
+            <p className="text-xs text-muted-foreground">
+              Used for the SOAP/REST API (creating packets, downloading labels).
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="packeta-widget-key" className="flex items-center justify-between">
+              <span>Packeta Widget API key</span>
+              {settings.has_widget_api_key && (
+                <button type="button" onClick={clearWidget}
+                  className="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1">
+                  <Trash2 className="h-3 w-3" /> Remove
+                </button>
+              )}
+            </Label>
+            <Input id="packeta-widget-key" type="password" value={widgetApiKey}
+              onChange={(e) => setWidgetApiKey(e.target.value)}
+              placeholder={settings.has_widget_api_key ? "•••••••• (saved — leave blank to keep)" : "Paste your Packeta Widget API key"}
+              autoComplete="new-password" data-lpignore="true" data-1p-ignore="true" />
+            <p className="text-xs text-muted-foreground">
+              A separate, shorter credential used for the public carrier and pickup-point feeds.
+              Required to refresh the carrier list. Find it in the Packeta client section under{" "}
+              <span className="font-medium">Settings → API</span> (labelled <em>API key</em>, not <em>API password</em>).
+            </p>
           </div>
           <div className="flex items-center justify-between rounded-md border p-3">
             <div>
@@ -421,7 +463,7 @@ function CountryRoutesCard({ hasApiPassword }: { hasApiPassword: boolean }) {
             <Button
               type="button" size="sm" variant="outline" onClick={sync}
               disabled={!hasApiPassword || syncing}
-              title={!hasApiPassword ? "Save an API password first" : "Refresh carrier list from Packeta"}
+              title={!hasApiPassword ? "Save your Packeta API password and Widget API key first" : "Refresh carrier list from Packeta"}
             >
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Refresh

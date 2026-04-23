@@ -38,6 +38,10 @@ const PRODUCT_EXTRA_COLS = [
   ["weight", "REAL"],
   ["dirty", "INTEGER NOT NULL DEFAULT 0"],
   ["last_synced_at", "TEXT"],
+  // JSON array of field names the user has changed since the last sync.
+  // Drives the WC push to send ONLY user-touched fields, so we never
+  // overwrite WC values we don't have locally (e.g. real sale_price).
+  ["dirty_fields", "TEXT"],
 ];
 for (const [col, type] of PRODUCT_EXTRA_COLS) {
   if (!productCols.has(col)) db.exec(`ALTER TABLE oms_products ADD COLUMN ${col} ${type}`);

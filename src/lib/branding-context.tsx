@@ -69,7 +69,10 @@ export const COLOR_KEYS = [
 export type ColorKey = (typeof COLOR_KEYS)[number];
 
 type BrandingState = {
+  /** Effective branding — saved values merged with any active preview draft. */
   branding: Branding;
+  /** The persisted branding as last loaded from the server (no draft merged). */
+  saved: Branding;
   loading: boolean;
   refresh: () => Promise<void>;
   /** Optimistically apply a draft (used by the live preview on /admin/branding). */

@@ -426,7 +426,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, siteId); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id,
               p.site_id, p.description, p.short_description, p.regular_price,
@@ -460,7 +460,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     try { site = getSiteForUser(req.user.id, req.params.siteId); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
 
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
     const base = normalizeUrl(site.store_url);
     const page = Math.max(1, Number(req.query.page) || Number(req.body?.page) || 1);
     const perPage = Math.min(100, Math.max(10, Number(req.query.per_page) || 50));
@@ -588,7 +588,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
 
     let ok = 0; const failed = [];
     const tx = db.transaction(() => {
@@ -806,7 +806,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
-    const warehouseId = ensureMirrorWarehouse(site);
+    const warehouseId = ensureMirrorWarehouse(site, req.user.id);
 
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.regular_price, p.sale_price, p.description,

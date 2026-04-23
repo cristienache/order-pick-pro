@@ -47,6 +47,9 @@ export type WcProductRow = {
   wc_parent_id: number | null;
   /** "Red / Large" — pre-built from the variation's attribute options. */
   variation_label: string | null;
+  /** WC product creation timestamp (ISO). Drives "newest/oldest" sort. */
+  wc_date_created: string | null;
+  wc_date_modified: string | null;
 };
 
 export type WcEditPayload = {

@@ -98,6 +98,19 @@ export const wcApi = {
       `${BASE}/sync/${siteId}`, { method: "POST", body: {} },
     ),
 
+  /** One chunk of the sync. Call repeatedly until `done` is true. */
+  syncPage: (siteId: number, page: number, perPage = 50) =>
+    api<{
+      page: number; per_page: number; batch_size: number;
+      created: number; updated: number;
+      errors: Array<{ wc_id?: number; product_id?: string; error: string }>;
+      done: boolean; next_page: number | null;
+      total_products: number | null; total_pages: number | null;
+      warehouse_id: string;
+    }>(`${BASE}/sync/${siteId}?page=${page}&per_page=${perPage}`, {
+      method: "POST", body: {},
+    }),
+
   saveLocal: (site_id: number, edits: WcEditPayload[]) =>
     api<BulkResult>(`${BASE}/products/bulk`, {
       method: "PATCH", body: { site_id, edits },

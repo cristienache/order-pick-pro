@@ -1,10 +1,13 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useBranding, navLabel } from "@/lib/branding-context";
 import { BrandedLogo } from "@/components/branded-logo";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import type { PageNavItem } from "@/lib/pages";
 import {
-  LogOut, Package, Settings, Users, Store, Truck, Home, Palette,
+  LogOut, Package, Settings, Users, Store, Truck, Home, Palette, FileText,
 } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -12,6 +15,17 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { branding } = useBranding();
   const navigate = useNavigate();
+  const [navPages, setNavPages] = useState<PageNavItem[]>([]);
+
+  // Pull published pages flagged "show in nav" so admin-managed content
+  // shows up next to the operational tools. Public endpoint — no auth needed.
+  useEffect(() => {
+    let cancelled = false;
+    api<{ pages: PageNavItem[] }>("/api/pages/nav")
+      .then((r) => { if (!cancelled) setNavPages(r.pages); })
+      .catch(() => { if (!cancelled) setNavPages([]); });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -46,6 +60,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>
                 {navLabel(branding, "royal_mail")}
               </NavLink>
+              {/* Admin-published custom pages flagged "show_in_nav". */}
+              {navPages.map((p) => (
+                <NavPageLink key={p.id} slug={p.slug} title={p.title} />
+              ))}
               {user?.role === "admin" && (
                 <>
                   <NavLink to="/admin/users" icon={<Users className="h-4 w-4" />}>
@@ -53,6 +71,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </NavLink>
                   <NavLink to="/admin/invites" icon={<Settings className="h-4 w-4" />}>
                     {navLabel(branding, "invites")}
+                  </NavLink>
+                  <NavLink to="/admin/pages" icon={<FileText className="h-4 w-4" />}>
+                    Pages
                   </NavLink>
                   <NavLink to="/admin/branding" icon={<Palette className="h-4 w-4" />}>
                     Branding
@@ -95,6 +116,22 @@ function NavLink({
       }}
     >
       {icon} {children}
+    </Link>
+  );
+}
+
+function NavPageLink({ slug, title }: { slug: string; title: string }) {
+  return (
+    <Link
+      to="/p/$slug"
+      params={{ slug }}
+      className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus-ring"
+      activeProps={{
+        className:
+          "px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-semibold bg-accent text-foreground transition-colors focus-ring",
+      }}
+    >
+      <FileText className="h-4 w-4" /> {title}
     </Link>
   );
 }

@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
+import jwt from "jsonwebtoken";
 
 import { db } from "./db.js";
 import { encrypt, decrypt } from "./crypto.js";
@@ -502,6 +503,139 @@ app.put("/api/branding", requireAuth, requireAdmin, (req, res) => {
   );
 
   res.json({ branding: readBrandingRow() });
+});
+
+// ---------- Pages (Phase 2 page builder) ----------
+// Custom content pages addressed by slug at /p/<slug>. Admin-only CRUD.
+// Reads of published pages are public so the same URL works for signed-out
+// visitors. Admins can read drafts via the standard Bearer token.
+//
+// Block schema is intentionally permissive on the server — we store the
+// JSON verbatim and let the renderer whitelist the block types it knows.
+// This means new block types can ship as a pure frontend change.
+const PAGE_SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{0,58}[a-z0-9])?$/;
+const blockSchema = z.object({
+  id: z.string().min(1).max(40),
+  type: z.string().min(1).max(40),
+  props: z.record(z.string(), z.unknown()).default({}),
+});
+const pageWriteSchema = z.object({
+  slug: z.string().trim().min(1).max(60).regex(PAGE_SLUG_RE, "Slug must be lowercase letters, digits or hyphens"),
+  title: z.string().trim().min(1).max(120),
+  description: z.string().trim().max(300).optional().or(z.literal("")).transform((v) => v || null),
+  blocks: z.array(blockSchema).max(100).default([]),
+  published: z.boolean().optional().default(false),
+  show_in_nav: z.boolean().optional().default(false),
+});
+
+function rowToPage(row) {
+  if (!row) return null;
+  let blocks = [];
+  try { blocks = JSON.parse(row.blocks || "[]"); } catch { blocks = []; }
+  return {
+    id: row.id,
+    slug: row.slug,
+    title: row.title,
+    description: row.description,
+    blocks,
+    published: !!row.published,
+    show_in_nav: !!row.show_in_nav,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+function bearerIsAdmin(req) {
+  const auth = req.header("authorization") || "";
+  if (!auth.startsWith("Bearer ")) return false;
+  try {
+    const payload = jwt.verify(auth.slice(7), process.env.JWT_SECRET);
+    const u = db.prepare("SELECT role FROM users WHERE id = ?").get(payload.id);
+    return u?.role === "admin";
+  } catch { return false; }
+}
+
+// Public list — only published pages flagged show_in_nav. Used by the top nav.
+app.get("/api/pages/nav", (_req, res) => {
+  const rows = db.prepare(
+    `SELECT id, slug, title FROM pages
+      WHERE published = 1 AND show_in_nav = 1
+      ORDER BY title ASC`,
+  ).all();
+  res.json({ pages: rows });
+});
+
+// Public read by slug. Drafts are 404 unless the caller is an admin.
+app.get("/api/pages/by-slug/:slug", (req, res) => {
+  const row = db.prepare("SELECT * FROM pages WHERE slug = ?").get(req.params.slug);
+  if (!row) return res.status(404).json({ error: "Not found" });
+  const page = rowToPage(row);
+  if (!page.published && !bearerIsAdmin(req)) {
+    return res.status(404).json({ error: "Not found" });
+  }
+  res.json({ page });
+});
+
+// Admin list — all pages, published or draft.
+app.get("/api/pages", requireAuth, requireAdmin, (_req, res) => {
+  const rows = db.prepare("SELECT * FROM pages ORDER BY updated_at DESC").all();
+  res.json({ pages: rows.map(rowToPage) });
+});
+
+app.get("/api/pages/:id", requireAuth, requireAdmin, (req, res) => {
+  const row = db.prepare("SELECT * FROM pages WHERE id = ?").get(Number(req.params.id));
+  if (!row) return res.status(404).json({ error: "Not found" });
+  res.json({ page: rowToPage(row) });
+});
+
+app.post("/api/pages", requireAuth, requireAdmin, (req, res) => {
+  const parsed = pageWriteSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });
+  }
+  const d = parsed.data;
+  const existing = db.prepare("SELECT id FROM pages WHERE slug = ?").get(d.slug);
+  if (existing) return res.status(409).json({ error: "Slug already in use" });
+  const result = db.prepare(
+    `INSERT INTO pages (slug, title, description, blocks, published, show_in_nav, created_by, updated_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    d.slug, d.title, d.description, JSON.stringify(d.blocks),
+    d.published ? 1 : 0, d.show_in_nav ? 1 : 0,
+    req.user.id, req.user.id,
+  );
+  const row = db.prepare("SELECT * FROM pages WHERE id = ?").get(result.lastInsertRowid);
+  res.json({ page: rowToPage(row) });
+});
+
+app.put("/api/pages/:id", requireAuth, requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  const existing = db.prepare("SELECT id FROM pages WHERE id = ?").get(id);
+  if (!existing) return res.status(404).json({ error: "Not found" });
+  const parsed = pageWriteSchema.safeParse(req.body || {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });
+  }
+  const d = parsed.data;
+  const slugClash = db.prepare("SELECT id FROM pages WHERE slug = ? AND id != ?").get(d.slug, id);
+  if (slugClash) return res.status(409).json({ error: "Slug already in use" });
+  db.prepare(
+    `UPDATE pages SET slug = ?, title = ?, description = ?, blocks = ?,
+            published = ?, show_in_nav = ?,
+            updated_at = datetime('now'), updated_by = ?
+      WHERE id = ?`,
+  ).run(
+    d.slug, d.title, d.description, JSON.stringify(d.blocks),
+    d.published ? 1 : 0, d.show_in_nav ? 1 : 0,
+    req.user.id, id,
+  );
+  const row = db.prepare("SELECT * FROM pages WHERE id = ?").get(id);
+  res.json({ page: rowToPage(row) });
+});
+
+app.delete("/api/pages/:id", requireAuth, requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM pages WHERE id = ?").run(Number(req.params.id));
+  res.json({ ok: true });
 });
 
 // ---------- Sites (per-user) ----------

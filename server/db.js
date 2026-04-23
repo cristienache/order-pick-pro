@@ -297,10 +297,11 @@ db.exec(`
     default_weight_kg REAL NOT NULL DEFAULT 0.5,
     default_value REAL NOT NULL DEFAULT 0,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE (user_id, country)
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_packeta_routes_user ON packeta_country_routes(user_id);
+  CREATE INDEX IF NOT EXISTS idx_packeta_routes_user_country
+    ON packeta_country_routes(user_id, country);
 `);
 
 // Packeta label cache columns on shipments-equivalent storage. We piggy-back on

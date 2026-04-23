@@ -159,12 +159,12 @@ function BrandingPage() {
     try {
       // Only send keys that actually changed to keep the payload tight.
       const payload: Record<string, unknown> = {};
-      if (draft.app_name !== branding.app_name) payload.app_name = draft.app_name;
-      if (draft.tagline !== branding.tagline) payload.tagline = draft.tagline;
-      if (draft.logo_data_url !== branding.logo_data_url) payload.logo_data_url = draft.logo_data_url;
-      if (draft.favicon_data_url !== branding.favicon_data_url) payload.favicon_data_url = draft.favicon_data_url;
-      if (JSON.stringify(draft.nav_labels) !== JSON.stringify(branding.nav_labels)) payload.nav_labels = draft.nav_labels;
-      if (JSON.stringify(draft.colors) !== JSON.stringify(branding.colors)) payload.colors = draft.colors;
+      if (draft.app_name !== saved.app_name) payload.app_name = draft.app_name;
+      if (draft.tagline !== saved.tagline) payload.tagline = draft.tagline;
+      if (draft.logo_data_url !== saved.logo_data_url) payload.logo_data_url = draft.logo_data_url;
+      if (draft.favicon_data_url !== saved.favicon_data_url) payload.favicon_data_url = draft.favicon_data_url;
+      if (JSON.stringify(draft.nav_labels) !== JSON.stringify(saved.nav_labels)) payload.nav_labels = draft.nav_labels;
+      if (JSON.stringify(draft.colors) !== JSON.stringify(saved.colors)) payload.colors = draft.colors;
 
       await api("/api/branding", { method: "PUT", body: payload });
       toast.success("Branding saved");
@@ -177,7 +177,7 @@ function BrandingPage() {
     }
   };
 
-  const discard = () => { setDraft(branding); preview(null); };
+  const discard = () => { setDraft(saved); preview(null); };
 
   return (
     <div className="space-y-6">

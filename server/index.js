@@ -2026,6 +2026,9 @@ function rmShipmentToPublic(s) {
     voided: Boolean(s.voided),
     printed_at: s.printed_at || null,
     created_at: s.created_at,
+    carrier: s.carrier || "royal_mail",
+    packeta_packet_id: s.packeta_packet_id || null,
+    packeta_barcode: s.packeta_barcode || null,
   };
 }
 

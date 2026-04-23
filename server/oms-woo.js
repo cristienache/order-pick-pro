@@ -643,9 +643,40 @@ export function mountOmsWoo(app, { requireAuth }) {
     });
     tx();
     res.json({ ok, failed });
+
+  // ----- Wipe all imported products for a site (destructive) -----
+  // Deletes every oms_products row scoped to the given site, plus their
+  // oms_inventory rows. Requires { confirm: "DELETE" } in the body so it
+  // can't fire accidentally. Other sites are untouched. The mirror
+  // warehouse stays so re-syncing keeps the same warehouse_id.
+  app.post(`${r}/wipe/:siteId`, requireAuth, (req, res) => {
+    let site;
+    try { site = getSiteForUser(req.user.id, req.params.siteId); }
+    catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+    if ((req.body?.confirm || "") !== "DELETE") {
+      return res.status(422).json({ error: "confirm must be 'DELETE'" });
+    }
+    const tx = db.transaction(() => {
+      const ids = db.prepare(
+        `SELECT id FROM oms_products WHERE site_id = ?`,
+      ).all(site.id).map((r) => r.id);
+      if (ids.length === 0) return { deleted: 0 };
+      const placeholders = ids.map(() => "?").join(",");
+      // Inventory + audit rows that reference these products.
+      db.prepare(`DELETE FROM oms_inventory WHERE product_id IN (${placeholders})`).run(...ids);
+      try { db.prepare(`DELETE FROM oms_audit WHERE product_id IN (${placeholders})`).run(...ids); }
+      catch { /* table may not exist in older installs */ }
+      // Detach variations from their parents first to dodge FK checks, then
+      // wipe the lot in one go.
+      db.prepare(`UPDATE oms_products SET parent_product_id = NULL WHERE site_id = ?`).run(site.id);
+      const r = db.prepare(`DELETE FROM oms_products WHERE site_id = ?`).run(site.id);
+      return { deleted: r.changes };
+    });
+    const result = tx();
+    res.json({ ok: true, ...result, site_id: site.id });
   });
 
-  // ----- Backup: snapshot current WC state of given products -----
+
   // Body: { site_id, product_ids: string[] (oms ids), label?: string }
   app.post(`${r}/backups`, requireAuth, async (req, res) => {
     const { site_id, product_ids, label } = req.body || {};

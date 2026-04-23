@@ -1295,6 +1295,10 @@ const packetaCredsSchema = z.object({
 const packetaSenderSchema = z.object({
   sender_name: optAddrField(100),
   sender_company: optAddrField(100),
+  // The Packeta-assigned eshop / sender ID. REQUIRED by Packeta's createPacket
+  // call as the `senderLabel` field. The user copies this from their Packeta
+  // client section under Settings → Senders (e.g. "myshop", "eshop123").
+  sender_label: optAddrField(60),
   sender_address_line1: optAddrField(150),
   sender_address_line2: optAddrField(150),
   sender_city: optAddrField(80),
@@ -1311,7 +1315,7 @@ function packetaRowToPublic(row) {
       has_api_password: false,
       has_widget_api_key: false,
       use_sandbox: false,
-      sender_name: null, sender_company: null,
+      sender_name: null, sender_company: null, sender_label: null,
       sender_address_line1: null, sender_address_line2: null,
       sender_city: null, sender_postcode: null,
       sender_country: "CZ", sender_phone: null, sender_email: null,
@@ -1324,6 +1328,7 @@ function packetaRowToPublic(row) {
     use_sandbox: Boolean(row.use_sandbox),
     sender_name: row.sender_name,
     sender_company: row.sender_company,
+    sender_label: row.sender_label,
     sender_address_line1: row.sender_address_line1,
     sender_address_line2: row.sender_address_line2,
     sender_city: row.sender_city,
@@ -1396,24 +1401,28 @@ app.put("/api/packeta/sender", requireAuth, (req, res) => {
   if (existing) {
     db.prepare(`
       UPDATE packeta_credentials
-      SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
+      SET sender_name = ?, sender_company = ?, sender_label = ?,
+          sender_address_line1 = ?, sender_address_line2 = ?,
           sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
           updated_at = datetime('now')
       WHERE user_id = ?
     `).run(
-      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_name, d.sender_company, d.sender_label,
+      d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
       req.user.id,
     );
   } else {
     db.prepare(`
       INSERT INTO packeta_credentials (
-        user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
+        user_id, sender_name, sender_company, sender_label,
+        sender_address_line1, sender_address_line2,
         sender_city, sender_postcode, sender_country, sender_phone, sender_email
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user.id,
-      d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
+      d.sender_name, d.sender_company, d.sender_label,
+      d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "CZ", d.sender_phone, d.sender_email,
     );
   }

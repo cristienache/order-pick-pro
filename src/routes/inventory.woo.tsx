@@ -540,24 +540,46 @@ function WooInventory() {
                       <td className="h-9 border-b px-2 align-middle">
                         <Checkbox
                           checked={selected.has(p.id)}
-                          onCheckedChange={() => toggleSel(p.id)}
-                          disabled={isVariableParent}
+                          onCheckedChange={() => {
+                            // For variable parents, toggle ALL of its variations.
+                            if (isVariableParent) {
+                              const vIds = siteProducts.filter((x) => x.parent_product_id === p.id).map((x) => x.id);
+                              setSelected((s) => {
+                                const n = new Set(s);
+                                const allSelected = vIds.every((id) => n.has(id));
+                                vIds.forEach((id) => allSelected ? n.delete(id) : n.add(id));
+                                return n;
+                              });
+                            } else {
+                              toggleSel(p.id);
+                            }
+                          }}
                         />
                       </td>
                       <td className="h-9 border-b px-1 align-middle">
-                        <button
-                          onClick={() =>
-                            setOpenDesc((s) => {
-                              const n = new Set(s);
-                              n.has(p.id) ? n.delete(p.id) : n.add(p.id);
-                              return n;
-                            })
-                          }
-                          className="rounded p-0.5 hover:bg-muted"
-                          aria-label="Toggle description"
-                        >
-                          {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                        </button>
+                        {isVariableParent ? (
+                          <button
+                            onClick={() => toggleCollapse(p.id)}
+                            className="rounded p-0.5 hover:bg-muted"
+                            aria-label="Collapse variations"
+                          >
+                            {collapsed.has(p.id) ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() =>
+                              setOpenDesc((s) => {
+                                const n = new Set(s);
+                                n.has(p.id) ? n.delete(p.id) : n.add(p.id);
+                                return n;
+                              })
+                            }
+                            className="rounded p-0.5 hover:bg-muted"
+                            aria-label="Toggle description"
+                          >
+                            {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                          </button>
+                        )}
                       </td>
                       <td className="h-9 border-b px-1 align-middle">
                         {p.image_url ? (
@@ -590,7 +612,17 @@ function WooInventory() {
                             className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
                           />
                           {isVariableParent && (
-                            <Badge variant="outline" className="mr-2 text-[9px]">VARIABLE</Badge>
+                            <>
+                              <Badge variant="outline" className="text-[9px]">VARIABLE</Badge>
+                              <button
+                                onClick={() => copyParentToVariations(p.id)}
+                                className="mr-1 rounded p-1 hover:bg-muted"
+                                title="Copy price/weight/status to all variations"
+                                aria-label="Copy to variations"
+                              >
+                                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

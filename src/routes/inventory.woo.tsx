@@ -332,19 +332,55 @@ function WooInventory() {
     setCollapsed((s) => { const n = new Set(s); n.has(parentId) ? n.delete(parentId) : n.add(parentId); return n; });
 
   /* ---------- Mutations ---------- */
+  // Chunked sync — pulls one page of products at a time so any single
+  // request stays under the proxy/edge timeout (was hitting 504 on big
+  // catalogs). Updates a sticky toast with live progress.
+  const [syncing, setSyncing] = useState(false);
   const sync = async () => {
-    if (!siteId) return;
-    const t = toast.loading(`Syncing ${site?.name ?? "site"}…`);
+    if (!siteId || syncing) return;
+    setSyncing(true);
+    const t = toast.loading(`Syncing ${site?.name ?? "site"}…`, { duration: Infinity });
+    let page = 1;
+    let totalCreated = 0, totalUpdated = 0;
+    const allErrors: string[] = [];
     try {
-      const r = await wcApi.sync(siteId);
-      toast.success(`Synced: ${r.created} new, ${r.updated} updated`, { id: t });
+      // Hard safety cap — 200 pages × 50 = 10k products. Stops accidental
+      // infinite loops if WC ever lies about pagination.
+      for (let i = 0; i < 200; i++) {
+        const r = await wcApi.syncPage(siteId, page, 50);
+        totalCreated += r.created;
+        totalUpdated += r.updated;
+        for (const e of r.errors) allErrors.push(e.error);
+        const progress = r.total_pages
+          ? `page ${r.page}/${r.total_pages}`
+          : `page ${r.page}`;
+        toast.loading(
+          `Syncing ${site?.name ?? "site"} — ${progress} • ${totalCreated + totalUpdated} products`,
+          { id: t, duration: Infinity },
+        );
+        if (r.done || r.next_page == null) break;
+        page = r.next_page;
+      }
+      const errMsg = allErrors.length
+        ? ` • ${allErrors.length} warning${allErrors.length === 1 ? "" : "s"}`
+        : "";
+      toast.success(
+        `Synced: ${totalCreated} new, ${totalUpdated} updated${errMsg}`,
+        { id: t, duration: 6000 },
+      );
+      if (allErrors.length) {
+        // eslint-disable-next-line no-console
+        console.warn("[wc sync] warnings:", allErrors.slice(0, 20));
+      }
       qc.invalidateQueries({ queryKey: ["wc-sites"] });
       qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
       qc.invalidateQueries({ queryKey: ["wc-inventory", siteId] });
       qc.invalidateQueries({ queryKey: ["oms-products"] });
       qc.invalidateQueries({ queryKey: ["oms-inventory"] });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Sync failed", { id: t });
+      toast.error(e instanceof Error ? e.message : "Sync failed", { id: t, duration: 8000 });
+    } finally {
+      setSyncing(false);
     }
   };
 

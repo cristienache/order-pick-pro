@@ -220,4 +220,25 @@ db.exec(`
     updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL
   );
   INSERT OR IGNORE INTO branding (id) VALUES (1);
+
+  -- Phase 2 of the page builder. Custom content pages, addressed by slug at
+  -- /p/<slug>. `blocks` is a JSON array; each block has { id, type, props }.
+  -- The renderer in src/components/page-renderer.tsx whitelists which `type`
+  -- values it knows how to render, so unknown blocks are dropped silently.
+  -- Pages are admin-managed only. `published` gates whether non-admins (and
+  -- signed-out visitors) can view the page; admins can always preview drafts.
+  CREATE TABLE IF NOT EXISTS pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    title TEXT NOT NULL,
+    description TEXT,
+    blocks TEXT NOT NULL DEFAULT '[]',
+    published INTEGER NOT NULL DEFAULT 0,
+    show_in_nav INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_pages_published ON pages(published);
 `);

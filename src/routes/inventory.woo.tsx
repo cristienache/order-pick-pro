@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -26,6 +25,21 @@ import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
 import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
+import {
+  InventoryFilterBar, DEFAULT_FILTERS,
+  type InventoryFilters, type SortOption,
+} from "@/components/inventory/inventory-filter-bar";
+
+const SORT_OPTIONS: SortOption[] = [
+  { value: "name", label: "Name" },
+  { value: "sku", label: "SKU" },
+  { value: "regular_price", label: "Regular price" },
+  { value: "sale_price", label: "Sale price" },
+  { value: "stock_quantity", label: "Stock" },
+  { value: "weight", label: "Weight" },
+  { value: "last_synced_at", label: "Last sync" },
+  { value: "dirty", label: "Edited first" },
+];
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),

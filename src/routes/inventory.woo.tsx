@@ -360,7 +360,7 @@ function WooInventory() {
 
       {/* Grid */}
       <div className="overflow-auto border border-t-0 rounded-b-lg">
-        {(products.isLoading || inventory.isLoading) ? (
+        {products.isLoading ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
@@ -369,10 +369,10 @@ function WooInventory() {
             No products yet. Click <strong className="mx-1">Sync from WC</strong> to import.
           </div>
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-xs">
+          <table className="w-full border-separate border-spacing-0 text-xs table-fixed">
             <thead className="sticky top-0 z-10 bg-card">
-              <tr>
-                <th className="w-8 border-b px-2 py-2 text-left">
+              <tr className="h-9">
+                <th className="w-8 border-b px-2 text-left align-middle">
                   <Checkbox
                     checked={selected.size > 0 && selected.size === filteredProducts.length}
                     onCheckedChange={(v) => {
@@ -381,16 +381,17 @@ function WooInventory() {
                     }}
                   />
                 </th>
-                <th className="w-8 border-b px-1 py-2"></th>
-                <th className="border-b px-2 py-2 text-left">SKU</th>
-                <th className="border-b px-2 py-2 text-left">Name</th>
-                <th className="border-b px-2 py-2 text-right">Regular</th>
-                <th className="border-b px-2 py-2 text-right">Sale</th>
-                <th className="border-b px-2 py-2 text-right">Stock</th>
-                <th className="border-b px-2 py-2 text-left">Status</th>
-                <th className="border-b px-2 py-2 text-center">Manage</th>
-                <th className="border-b px-2 py-2 text-right">Weight</th>
-                <th className="border-b px-2 py-2"></th>
+                <th className="w-7 border-b px-1 text-left align-middle"></th>
+                <th className="w-12 border-b px-1 text-left align-middle"></th>
+                <th className="w-[120px] border-b px-2 text-left align-middle">SKU</th>
+                <th className="border-b px-2 text-left align-middle">Name</th>
+                <th className="w-[88px] border-b px-2 text-right align-middle">Regular</th>
+                <th className="w-[88px] border-b px-2 text-right align-middle">Sale</th>
+                <th className="w-[72px] border-b px-2 text-right align-middle">Stock</th>
+                <th className="w-[120px] border-b px-2 text-left align-middle">Status</th>
+                <th className="w-[64px] border-b px-2 text-center align-middle">Manage</th>
+                <th className="w-[72px] border-b px-2 text-right align-middle">Weight</th>
+                <th className="w-16 border-b px-2 align-middle"></th>
               </tr>
             </thead>
             <tbody>
@@ -399,19 +400,21 @@ function WooInventory() {
                 if (!d) return null;
                 const isDirty = dirtyIds.includes(p.id);
                 const isOpen = openDesc.has(p.id);
+                const isVariation = p.wc_type === "variation";
+                const isVariableParent = p.wc_type === "variable";
                 return (
-                  <>
+                  <React.Fragment key={p.id}>
                     <tr
-                      key={p.id}
-                      className={cn("group", isDirty && "bg-brand-amber-soft/40")}
+                      className={cn("group h-9", isDirty && "bg-brand-amber-soft/40")}
                     >
-                      <td className="border-b px-2 py-1">
+                      <td className="h-9 border-b px-2 align-middle">
                         <Checkbox
                           checked={selected.has(p.id)}
                           onCheckedChange={() => toggleSel(p.id)}
+                          disabled={isVariableParent}
                         />
                       </td>
-                      <td className="border-b px-1 py-1">
+                      <td className="h-9 border-b px-1 align-middle">
                         <button
                           onClick={() =>
                             setOpenDesc((s) => {
@@ -426,50 +429,75 @@ function WooInventory() {
                           {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </button>
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b px-1 align-middle">
+                        {p.image_url ? (
+                          <img
+                            src={p.image_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-7 w-7 rounded object-cover border bg-muted"
+                          />
+                        ) : (
+                          <div className="h-7 w-7 rounded border bg-muted/40" />
+                        )}
+                      </td>
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.sku}
                           onChange={(e) => updateDraft(p.id, { sku: e.target.value })}
-                          className="h-7 rounded-none border-0 font-mono text-xs focus-visible:ring-1"
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
-                        <Input
-                          value={d.name}
-                          onChange={(e) => updateDraft(p.id, { name: e.target.value })}
-                          className="h-7 min-w-[180px] rounded-none border-0 text-xs focus-visible:ring-1"
-                        />
+                      <td className="h-9 border-b p-0 align-middle">
+                        <div className={cn("flex items-center gap-1", isVariation && "pl-4")}>
+                          {isVariation && (
+                            <span className="text-muted-foreground text-[10px]">↳</span>
+                          )}
+                          <Input
+                            value={d.name}
+                            onChange={(e) => updateDraft(p.id, { name: e.target.value })}
+                            disabled={isVariation}
+                            className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
+                          />
+                          {isVariableParent && (
+                            <Badge variant="outline" className="mr-2 text-[9px]">VARIABLE</Badge>
+                          )}
+                        </div>
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.regular_price}
                           onChange={(e) => updateDraft(p.id, { regular_price: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.sale_price}
                           onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.stock_quantity}
                           onChange={(e) => updateDraft(p.id, { stock_quantity: e.target.value })}
                           inputMode="numeric"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Select
                           value={d.stock_status}
                           onValueChange={(v) => updateDraft(p.id, { stock_status: v })}
+                          disabled={isVariableParent}
                         >
-                          <SelectTrigger className="h-7 rounded-none border-0 text-xs focus-visible:ring-1">
+                          <SelectTrigger className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -479,21 +507,23 @@ function WooInventory() {
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="border-b px-2 py-1 text-center">
+                      <td className="h-9 border-b px-2 text-center align-middle">
                         <Checkbox
                           checked={d.manage_stock}
                           onCheckedChange={(v) => updateDraft(p.id, { manage_stock: !!v })}
+                          disabled={isVariableParent}
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.weight}
                           onChange={(e) => updateDraft(p.id, { weight: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-16 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b px-2 py-1 text-right">
+                      <td className="h-9 border-b px-2 text-right align-middle">
                         {isDirty && (
                           <Badge variant="outline" className="text-[10px] border-brand-amber text-brand-amber">
                             edited
@@ -502,8 +532,8 @@ function WooInventory() {
                       </td>
                     </tr>
                     {isOpen && (
-                      <tr key={`${p.id}-desc`} className={cn(isDirty && "bg-brand-amber-soft/40")}>
-                        <td colSpan={11} className="border-b bg-muted/20 px-3 py-2">
+                      <tr className={cn(isDirty && "bg-brand-amber-soft/40")}>
+                        <td colSpan={12} className="border-b bg-muted/20 px-3 py-2">
                           <label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                             Description (HTML)
                           </label>
@@ -517,7 +547,7 @@ function WooInventory() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

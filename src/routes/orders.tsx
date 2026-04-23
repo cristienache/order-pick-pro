@@ -716,6 +716,15 @@ function PicklistPage() {
                     >
                       <Printer className="h-4 w-4" /> Print Royal Mail labels
                     </DropdownMenuItem>
+
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>Packeta (EU)</DropdownMenuLabel>
+                    <DropdownMenuItem
+                      onClick={bulkPacketaLabels}
+                      disabled={bulkBusy || totalSelected === 0}
+                    >
+                      <Package className="h-4 w-4" /> Create &amp; print Packeta labels
+                    </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
 

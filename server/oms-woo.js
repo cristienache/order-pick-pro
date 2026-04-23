@@ -588,11 +588,23 @@ export function mountOmsWoo(app, { requireAuth }) {
     const snapshots = [];
     const errors = [];
     // Sequential to keep WC happy. Most pushes are <50 products.
-    for (const row of rows) {
+    const fullRows = db.prepare(
+      `SELECT id, woo_product_id, wc_type, wc_parent_id FROM oms_products
+        WHERE site_id = ? AND id IN (${product_ids.map(() => "?").join(",")})`,
+    ).all(site.id, ...product_ids);
+    for (const row of fullRows) {
       if (!row.woo_product_id) continue;
       try {
-        const p = await fetchOneFromWc(site, row.woo_product_id);
-        snapshots.push({ oms_product_id: row.id, ...snapshotShape(p) });
+        const p = await fetchOneFromWc(
+          site, row.woo_product_id,
+          row.wc_type === "variation" ? row.wc_parent_id : null,
+        );
+        snapshots.push({
+          oms_product_id: row.id,
+          wc_type: row.wc_type || "simple",
+          wc_parent_id: row.wc_parent_id || null,
+          ...snapshotShape(p),
+        });
       } catch (e) {
         errors.push({ oms_product_id: row.id, error: e.message });
       }

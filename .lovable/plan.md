@@ -1,59 +1,46 @@
 
 
-## Packeta Phase 1 — Connect & Settings
+## Packeta Phase 2 — Carrier sync + country routing + label creation
 
-Mirror the Royal Mail integration pattern, but for Packeta. Phase 1 stops at "credentials saved + test connection works". Label generation, per-order use, and bulk actions come in later phases.
+### 1. Carrier catalog synced from Packeta
 
-### What you'll see in the app
+Packeta exposes a public JSON feed of all available carriers (home delivery + pickup-point chains) per country. The WC plugin pulls this once a day. We'll do the same.
 
-1. A new **Packeta** link in the top nav (next to Royal Mail), with a parcel icon.
-2. A new page at `/packeta` with two cards:
-   - **API password** card — paste the Packeta API password, optional sandbox toggle, "Save", "Test connection", and a status chip ("Connected" / "Not configured" / "Last test failed"). Help text links to the Packeta client section where the password is generated.
-   - **Sender address** card — name, company, address, city, postcode, country (default `CZ`), phone, email. This is the "from" block printed on labels in later phases.
-3. A connection status indicator on the page header so the user knows at a glance whether Packeta is wired up.
+- **New table** `packeta_carriers` (global, not per-user — it's a shared catalog):
+  - `id` (Packeta carrier ID, integer PK), `name`, `country` (ISO-2), `currency`, `is_pickup_points` (bool), `supports_cod`, `supports_age_verification`, `max_weight_kg`, `disallows_cod`, `last_synced_at`
+- **New module** `server/packetaCarriers.js`:
+  - `fetchPacketaCarriers(apiPassword)` → calls Packeta's carrier feed (`https://www.zasilkovna.cz/api/v4/{apiPassword}/branch.json` for pickup chains, plus the carriers-list endpoint for home delivery), normalises into the table shape
+  - `syncPacketaCarriers(userId)` → upserts into `packeta_carriers`, records `last_synced_at`
+- **New routes**:
+  - `POST /api/packeta/carriers/sync` → manual "Refresh now" button trigger; returns `{ count, last_synced_at }`
+  - `GET /api/packeta/carriers?country=XX` → list carriers (optionally filtered by country) for the routing UI dropdowns
+- **Daily auto-sync**: lightweight cron-on-request — when any user loads `/packeta` and the catalog is >24h old, kick off a background sync. (No real cron infrastructure needed for SQLite/Express; we just check `last_synced_at` on each request.)
 
-### Backend (Express + SQLite)
+### 2. Country routing (now driven by the synced catalog)
 
-1. **New table** `packeta_credentials` (one row per user), same shape and encryption approach as `royal_mail_credentials`:
-   - `api_password_enc` (AES-GCM), `use_sandbox` flag
-   - Sender fields: `sender_name`, `sender_company`, `sender_address_line1/2`, `sender_city`, `sender_postcode`, `sender_country` (default `CZ`), `sender_phone`, `sender_email`
-   - `last_tested_at`, `last_test_ok`, `last_test_message`, `updated_at`
-   - Idempotent migration block (same `PRAGMA table_info` pattern already used elsewhere in `db.js`)
-2. **New module** `server/packeta.js` with helpers analogous to `server/royalmail.js`:
-   - `packetaBaseUrl(useSandbox)` → REST v6 base URL (production vs sandbox)
-   - `normalizePacketaPassword()` — strip whitespace/quotes/zero-width chars
-   - `testPacketaConnection({ apiPassword, useSandbox })` — calls a lightweight authenticated endpoint to confirm the password is valid; returns `{ ok, status, message, detail }`. Never throws.
-3. **New routes** in `server/index.js`, all behind `requireAuth`:
-   - `GET  /api/packeta/settings` → public-safe view (no decrypted password, just `has_api_password` flag)
-   - `PUT  /api/packeta/credentials` → save/replace password + sandbox flag (`__clear__` sentinel removes it, matching Royal Mail)
-   - `PUT  /api/packeta/sender` → save sender address
-   - `POST /api/packeta/test-connection` → decrypt password, call Packeta, persist outcome to `last_tested_*`
-4. Zod schemas mirror `rmCredsSchema` / `rmSenderSchema`.
+- **New table** `packeta_country_routes` (per-user):
+  - `id`, `user_id`, `country` (ISO-2), `carrier_id` (FK into `packeta_carriers.id`), `default_weight_kg` (default 0.5), `default_value`, `sort_order`, `updated_at`
+  - Unique on `(user_id, country)`
+- **UI** on `/packeta`: a "Country routing" card with table + add/edit dialog. The carrier dropdown is populated from the synced catalog and filtered by the selected country. A "Refresh carrier list" button + "Last synced X minutes ago" status sits at the top of the card.
+- CRUD routes: `GET/POST/PUT/DELETE /api/packeta/country-routes`
 
-### Frontend (TanStack Start + React)
+### 3. Per-order label creation (4×6" thermal)
 
-1. **New route** `src/routes/packeta.tsx` — built from the same template as `src/routes/royal-mail.tsx`:
-   - `RequireAuth` + `AppShell` wrappers
-   - `PageHeader` with a parcel icon, "Shipping carrier" eyebrow, "Packeta" title
-   - `CredentialsCard` (password input + sandbox switch + Save / Test buttons + status badge)
-   - `SenderCard` (address form)
-   - `ConnectionBadge` for Connected / Saved-not-tested / Last-test-failed / Not-configured states
-2. **Nav entry** in `src/components/app-shell.tsx`: a new `<NavLink to="/packeta">` rendered under the authenticated section, using `navLabel(branding, "packeta")` so it can be relabeled in Branding admin.
-3. **Branding labels** (`src/lib/branding-context.tsx`): add `packeta` default label so it shows up in the Branding admin nav-labels editor.
-4. **Asset**: add `src/assets/integrations/packeta.svg` (Packeta logo) so the integrations grid can render it later.
-5. **Integrations page** (`src/routes/integrations.tsx`): add a Packeta tile that links to `/packeta`, matching the existing Royal Mail tile.
+- **New columns on `orders`** (idempotent migration): `packeta_tracking_number`, `packeta_packet_id`, `packeta_label_pdf_b64`, `packeta_label_created_at`
+- **Server**: extend `packeta.js` with `createPacketaPacket(...)` → calls `createPacket` XML method; `getPacketaLabelPdf(...)` → calls `packetLabelPdf` with `format=A6 on A6` (≈ 4×6" thermal); `pickPacketaPickupPointId(order)` → reads WC Packeta plugin meta (`packetery_point_id`)
+- **Routes**: `POST /api/packeta/orders/:orderId/label`, `GET /api/packeta/orders/:orderId/label.pdf`
+- **UI**: "Create Packeta label (4×6")" button in the order drawer next to Royal Mail. Disabled with a tooltip when destination country isn't routed, or pickup-mode but no pickup point on the order. After creation: shows tracking + "Reprint" link.
 
-### Security notes
-- API password stored encrypted at rest with the same `crypto.js` AES-256-GCM helper used for WooCommerce keys and the Royal Mail key.
-- Password input uses `type="password"` + autofill honeypot trick (already used in Royal Mail page).
-- Test endpoint persists only the boolean outcome and a short message — never the password.
+### 4. Bulk label creation
 
-### Out of scope for this phase (queued for later)
-- Creating shipments / generating label PDFs
-- Reading the carrier ID and pickup point ID stored on the order by the Packeta WooCommerce plugin
-- "Create label" button in the order drawer with Packeta as an option for EU orders
-- Bulk Packeta label creation / merged-PDF print flow
-- Tracking number sync back into WooCommerce
+- **Route**: `POST /api/packeta/orders/bulk-labels` → takes `{ orderIds: number[] }`, creates a packet for each, fetches the PDF for each, merges them into one PDF (using the existing `pdf-lib` dep already in `server/package.json`), returns the merged PDF.
+- **UI**: extend the existing bulk-action bar on `/orders` (the one that already has bulk Royal Mail) with a **"Create Packeta labels"** option. Same merged-PDF flow, opens in a new tab.
+- Skips orders that aren't routable and reports them in a toast summary ("Created 7, skipped 2: missing pickup point").
 
-Once you approve, I'll switch out of plan mode and implement the above as a single batch (DB migration → server module → routes → frontend page → nav link → branding label → integrations tile).
+### Out of scope (future)
+- Tracking number sync back to WooCommerce
+- COD / insurance / weight overrides per order
+- Pickup-point picker UI for orders that don't have one yet
+
+Approve and I'll implement it as one batch (carrier sync table + module → country routes table → label columns → server module additions → routes → settings page UI → drawer button → bulk action).
 

@@ -159,3 +159,228 @@ export async function testPacketaConnection({ apiPassword, useSandbox }) {
     detail: text.slice(0, 500),
   };
 }
+
+// ---------- Phase 2: createPacket + label PDF ----------
+
+// Read the WC Packeta plugin's pickup-point ID off a WooCommerce order.
+// The plugin stores it in order meta as one of these keys:
+//   packetery_point_id, _packetery_point_id, packetery point id
+// We also accept it on a shipping line meta entry, which is where some
+// installations write it.
+export function pickPacketaPickupPointId(order) {
+  if (!order || typeof order !== "object") return null;
+  const KEYS = new Set([
+    "packetery_point_id",
+    "_packetery_point_id",
+    "packeta_point_id",
+    "_packeta_point_id",
+    "packetery point id",
+  ]);
+  const tryRead = (arr) => {
+    if (!Array.isArray(arr)) return null;
+    for (const m of arr) {
+      const k = String(m?.key || "").toLowerCase().trim();
+      if (KEYS.has(k)) {
+        const v = m.value;
+        if (v == null) continue;
+        const str = String(v).trim();
+        if (str) return str;
+      }
+    }
+    return null;
+  };
+  const fromOrder = tryRead(order.meta_data);
+  if (fromOrder) return fromOrder;
+  if (Array.isArray(order.shipping_lines)) {
+    for (const line of order.shipping_lines) {
+      const v = tryRead(line.meta_data);
+      if (v) return v;
+    }
+  }
+  return null;
+}
+
+// POST createPacket. `packet` should already be normalised — see
+// buildCreatePacketBody below.
+export async function createPacketaPacket({ apiPassword, useSandbox, packet }) {
+  const password = normalizePacketaPassword(apiPassword);
+  if (!password) {
+    return { ok: false, status: 0, error: "API password missing" };
+  }
+
+  const fields = Object.entries(packet)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `<${k}>${xmlEscape(v)}</${k}>`)
+    .join("");
+
+  const body =
+    `<createPacket>` +
+      `<apiPassword>${xmlEscape(password)}</apiPassword>` +
+      `<packetAttributes>${fields}</packetAttributes>` +
+    `</createPacket>`;
+
+  let res;
+  try {
+    res = await fetch(packetaBaseUrl(Boolean(useSandbox)), {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+      body,
+    });
+  } catch (err) {
+    return { ok: false, status: 0, error: `Network error: ${err.message}` };
+  }
+
+  const text = await res.text().catch(() => "");
+  const status = (pickTag(text, "status") || "").toLowerCase();
+
+  if (status === "ok") {
+    const result = pickTag(text, "result") || text;
+    const packetId = pickTag(result, "id") || pickTag(text, "id");
+    const barcode = pickTag(result, "barcode") || pickTag(text, "barcode");
+    const barcodeText = pickTag(result, "barcodeText") || pickTag(text, "barcodeText");
+    return {
+      ok: true,
+      status: res.status,
+      packetId: packetId ? String(packetId).trim() : null,
+      barcode: barcode ? String(barcode).trim() : null,
+      barcodeText: barcodeText ? String(barcodeText).trim() : null,
+    };
+  }
+
+  // Fault — extract a useful message for the UI.
+  const fault = pickTag(text, "fault") || "fault";
+  const message = pickTag(text, "string") || pickTag(text, "message") || fault;
+  // Per-attribute errors are nested in <detail><attributes><fault><name/><fault/></fault>...
+  const detailRaw = pickTag(text, "detail") || "";
+  const fieldErrors = [];
+  if (detailRaw) {
+    const re = /<fault[^>]*>\s*<name>([^<]+)<\/name>\s*<fault>([^<]+)<\/fault>/gi;
+    let m;
+    while ((m = re.exec(detailRaw)) !== null) {
+      fieldErrors.push(`${m[1]}: ${m[2]}`);
+    }
+  }
+  return {
+    ok: false,
+    status: res.status,
+    error: fieldErrors.length > 0 ? fieldErrors.join("; ") : message,
+    detail: text.slice(0, 800),
+  };
+}
+
+// GET packetLabelPdf. Format defaults to A6 on A6 (4×6" thermal). Returns
+// { ok, status, buffer | error }.
+//
+// Packeta supports several label formats; we expose only the thermal-friendly
+// 4×6"-equivalent. Other documented formats include:
+//   - A6 on A6        — single label per A6 page (~4×6 inches). DEFAULT.
+//   - A6 on A4        — four labels per A4 page (saves paper for laser).
+//   - 105x148 on A7   — narrow thermal.
+export async function getPacketaLabelPdf({
+  apiPassword,
+  useSandbox,
+  packetId,
+  format = "A6 on A6",
+  offset = 0,
+}) {
+  const password = normalizePacketaPassword(apiPassword);
+  if (!password) return { ok: false, status: 0, error: "API password missing" };
+  if (!packetId) return { ok: false, status: 0, error: "Packet ID required" };
+
+  const body =
+    `<packetLabelPdf>` +
+      `<apiPassword>${xmlEscape(password)}</apiPassword>` +
+      `<packetId>${xmlEscape(packetId)}</packetId>` +
+      `<format>${xmlEscape(format)}</format>` +
+      `<offset>${xmlEscape(String(offset))}</offset>` +
+    `</packetLabelPdf>`;
+
+  let res;
+  try {
+    res = await fetch(packetaBaseUrl(Boolean(useSandbox)), {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+      body,
+    });
+  } catch (err) {
+    return { ok: false, status: 0, error: `Network error: ${err.message}` };
+  }
+  if (!res.ok) {
+    return { ok: false, status: res.status, error: `HTTP ${res.status}` };
+  }
+
+  const text = await res.text().catch(() => "");
+  const status = (pickTag(text, "status") || "").toLowerCase();
+  if (status !== "ok") {
+    const message = pickTag(text, "string") || pickTag(text, "message") || "Packeta refused the label request.";
+    return { ok: false, status: res.status, error: message, detail: text.slice(0, 500) };
+  }
+  // <result> contains base64-encoded PDF bytes.
+  const b64 = (pickTag(text, "result") || "").replace(/\s+/g, "");
+  if (!b64) {
+    return { ok: false, status: res.status, error: "Packeta returned an empty label." };
+  }
+  let buffer;
+  try {
+    buffer = Buffer.from(b64, "base64");
+  } catch (err) {
+    return { ok: false, status: res.status, error: `Bad base64 from Packeta: ${err.message}` };
+  }
+  const looksLikePdf = buffer.length > 4 && buffer.subarray(0, 4).toString("latin1") === "%PDF";
+  if (!looksLikePdf) {
+    return { ok: false, status: res.status, error: "Packeta returned a non-PDF document." };
+  }
+  return { ok: true, status: res.status, buffer };
+}
+
+// Fetch a single merged PDF for many packets in one call. Avoids one round
+// trip per label and lets Packeta tile labels on shared pages.
+export async function getPacketaLabelsPdf({
+  apiPassword,
+  useSandbox,
+  packetIds,
+  format = "A6 on A6",
+}) {
+  const password = normalizePacketaPassword(apiPassword);
+  if (!password) return { ok: false, status: 0, error: "API password missing" };
+  if (!Array.isArray(packetIds) || packetIds.length === 0) {
+    return { ok: false, status: 0, error: "No packet IDs supplied" };
+  }
+
+  const idsXml = packetIds
+    .map((id) => `<packetId>${xmlEscape(id)}</packetId>`)
+    .join("");
+  const body =
+    `<packetsLabelsPdf>` +
+      `<apiPassword>${xmlEscape(password)}</apiPassword>` +
+      `<packetIds>${idsXml}</packetIds>` +
+      `<format>${xmlEscape(format)}</format>` +
+      `<offset>0</offset>` +
+    `</packetsLabelsPdf>`;
+
+  let res;
+  try {
+    res = await fetch(packetaBaseUrl(Boolean(useSandbox)), {
+      method: "POST",
+      headers: { "Content-Type": "text/xml; charset=utf-8" },
+      body,
+    });
+  } catch (err) {
+    return { ok: false, status: 0, error: `Network error: ${err.message}` };
+  }
+  const text = await res.text().catch(() => "");
+  const status = (pickTag(text, "status") || "").toLowerCase();
+  if (status !== "ok") {
+    const message = pickTag(text, "string") || pickTag(text, "message") || "Packeta refused the labels request.";
+    return { ok: false, status: res.status, error: message };
+  }
+  const b64 = (pickTag(text, "result") || "").replace(/\s+/g, "");
+  if (!b64) return { ok: false, status: res.status, error: "Empty labels response." };
+  const buffer = Buffer.from(b64, "base64");
+  const looksLikePdf = buffer.length > 4 && buffer.subarray(0, 4).toString("latin1") === "%PDF";
+  if (!looksLikePdf) {
+    return { ok: false, status: res.status, error: "Packeta returned a non-PDF document." };
+  }
+  return { ok: true, status: res.status, buffer };
+}
+

@@ -266,4 +266,59 @@ db.exec(`
     last_test_message TEXT,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Phase 2: shared catalog of carriers fetched from Packeta's public feed.
+  -- One row per (carrier_id, country) combination — a single carrier can be
+  -- offered in multiple countries with different rules. Refreshed on demand
+  -- and lazily once per 24h.
+  CREATE TABLE IF NOT EXISTS packeta_carriers (
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    country TEXT NOT NULL,
+    currency TEXT,
+    is_pickup_points INTEGER NOT NULL DEFAULT 0,
+    supports_cod INTEGER NOT NULL DEFAULT 0,
+    supports_age_verification INTEGER NOT NULL DEFAULT 0,
+    max_weight_kg REAL,
+    disallows_cod INTEGER NOT NULL DEFAULT 0,
+    last_synced_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (id, country)
+  );
+  CREATE INDEX IF NOT EXISTS idx_packeta_carriers_country ON packeta_carriers(country);
+
+  -- Phase 2: per-user country -> carrier routing. Mirrors the WC Packeta
+  -- plugin's "Carrier" config — when creating a label for an order, look up
+  -- the order's destination country here to pick the right carrier.
+  CREATE TABLE IF NOT EXISTS packeta_country_routes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    country TEXT NOT NULL,
+    carrier_id INTEGER NOT NULL,
+    default_weight_kg REAL NOT NULL DEFAULT 0.5,
+    default_value REAL NOT NULL DEFAULT 0,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (user_id, country)
+  );
+  CREATE INDEX IF NOT EXISTS idx_packeta_routes_user ON packeta_country_routes(user_id);
 `);
+
+// Packeta label cache columns on shipments-equivalent storage. We piggy-back on
+// the existing `shipments` table by adding carrier='packeta' rows; those rows
+// reuse label_pdf_base64 + tracking_number. Add a `carrier` column so we can
+// distinguish Royal Mail vs Packeta shipments cleanly.
+const shipmentColsForCarrier = new Set(
+  db.prepare("PRAGMA table_info(shipments)").all().map((c) => c.name),
+);
+if (!shipmentColsForCarrier.has("carrier")) {
+  db.exec(`ALTER TABLE shipments ADD COLUMN carrier TEXT NOT NULL DEFAULT 'royal_mail'`);
+}
+if (!shipmentColsForCarrier.has("packeta_packet_id")) {
+  db.exec(`ALTER TABLE shipments ADD COLUMN packeta_packet_id TEXT`);
+}
+if (!shipmentColsForCarrier.has("packeta_barcode")) {
+  db.exec(`ALTER TABLE shipments ADD COLUMN packeta_barcode TEXT`);
+}
+db.exec(
+  `CREATE INDEX IF NOT EXISTS idx_shipments_carrier ON shipments(user_id, carrier)`,
+);

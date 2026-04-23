@@ -129,6 +129,36 @@ export type RmShipment = {
   /** ISO timestamp set the first time this label was sent to a printer. */
   printed_at: string | null;
   created_at: string;
+  /** Phase 2: 'royal_mail' | 'packeta' */
+  carrier?: string;
+  packeta_packet_id?: string | null;
+  packeta_barcode?: string | null;
+};
+
+// Packeta carrier from the synced catalog.
+export type PacketaCarrier = {
+  id: number;
+  name: string;
+  country: string;
+  currency: string | null;
+  is_pickup_points: boolean;
+  supports_cod: boolean;
+  supports_age_verification: boolean;
+  max_weight_kg: number | null;
+  disallows_cod: boolean;
+};
+
+// Per-user country -> Packeta carrier route.
+export type PacketaCountryRoute = {
+  id: number;
+  country: string;
+  carrier_id: number;
+  carrier_name: string | null;
+  is_pickup_points: boolean | null;
+  default_weight_kg: number;
+  default_value: number;
+  sort_order: number;
+  updated_at: string;
 };
 
 // Royal Mail Click & Drop services. `formats` restricts the dropdown so the

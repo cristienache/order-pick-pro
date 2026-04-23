@@ -115,17 +115,24 @@ function getSiteForUser(userId, siteId) {
 }
 
 /** Mirror warehouse for a WC site. Auto-create on first sync. The id is
- *  deterministic per site so re-syncs reuse it. */
-function ensureMirrorWarehouse(site) {
+ *  deterministic per site so re-syncs reuse it. The warehouse is owned by
+ *  the same user who owns the site, so per-user inventory scoping works. */
+function ensureMirrorWarehouse(site, userId) {
   const code = `WC-${site.id}`;
-  let row = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
-  if (row) return row.id;
+  const row = db.prepare("SELECT id, user_id FROM oms_warehouses WHERE code = ?").get(code);
+  if (row) {
+    // Backfill user_id on legacy mirror warehouses created before per-user scoping.
+    if (!row.user_id && userId) {
+      db.prepare("UPDATE oms_warehouses SET user_id = ? WHERE id = ?").run(userId, row.id);
+    }
+    return row.id;
+  }
   const id = crypto.randomUUID();
   db.prepare(
     `INSERT INTO oms_warehouses
-       (id, name, code, address, lat, lng, capacity_units, is_active)
-     VALUES (?, ?, ?, NULL, 0, 0, 0, 1)`,
-  ).run(id, `${site.name} (WC mirror)`, code);
+       (id, user_id, name, code, address, lat, lng, capacity_units, is_active)
+     VALUES (?, ?, ?, ?, NULL, 0, 0, 0, 1)`,
+  ).run(id, userId ?? null, `${site.name} (WC mirror)`, code);
   return id;
 }
 

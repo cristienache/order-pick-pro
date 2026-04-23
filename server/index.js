@@ -245,9 +245,19 @@ app.post("/api/auth/login", async (req, res) => {
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: "Invalid credentials" });
 
+  // Block pending / rejected accounts. Master admin email is always allowed.
+  if (email.toLowerCase() !== ADMIN_EMAIL) {
+    if (user.status === "pending") {
+      return res.status(403).json({ error: "Your account is awaiting admin approval. You'll receive an email once approved." });
+    }
+    if (user.status === "rejected") {
+      return res.status(403).json({ error: "This account has been rejected. Please contact support." });
+    }
+  }
+
   // Auto-promote master admin if email matches
   if (email.toLowerCase() === ADMIN_EMAIL && user.role !== "admin") {
-    db.prepare("UPDATE users SET role = 'admin' WHERE id = ?").run(user.id);
+    db.prepare("UPDATE users SET role = 'admin', status = 'active' WHERE id = ?").run(user.id);
     user.role = "admin";
   }
 

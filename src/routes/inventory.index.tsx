@@ -4,15 +4,24 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StockCell } from "@/components/inventory/stock-cell";
 import { BulkEditDialog, type BulkTarget } from "@/components/inventory/bulk-edit-dialog";
 import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, Filter, Wand2, RefreshCw, AlertCircle } from "lucide-react";
+import { Wand2, RefreshCw, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { omsApi } from "@/lib/inventory-api";
+import {
+  InventoryFilterBar, DEFAULT_FILTERS,
+  type InventoryFilters, type SortOption,
+} from "@/components/inventory/inventory-filter-bar";
+
+const SORT_OPTIONS: SortOption[] = [
+  { value: "name", label: "Name" },
+  { value: "sku", label: "SKU" },
+  { value: "regular_price", label: "Base price" },
+  { value: "stock_quantity", label: "Total stock" },
+];
 
 export const Route = createFileRoute("/inventory/")({
   head: () => ({ meta: [{ title: "Inventory grid — HeyShop" }] }),
@@ -32,23 +41,24 @@ function InventoryGrid() {
   const isAdmin = session.data?.roles.includes("admin") ?? false;
   const assignedWh = session.data?.warehouse_ids ?? [];
 
-  const [search, setSearch] = useState("");
-  const [whFilter, setWhFilter] = useState<string>("all");
-  const [sourceFilter, setSourceFilter] = useState<string>("all");
-  const [lowOnly, setLowOnly] = useState(false);
+  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "sku" });
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = useState(false);
   // Pagination state. `pageSize === 0` means "All".
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [page, setPage] = useState(1);
 
-  const visibleWarehouses = useMemo(() => {
+  // Warehouses available to this user (admin = all, else only assigned).
+  const userWarehouses = useMemo(() => {
     if (!warehouses.data) return [];
-    let list = warehouses.data;
-    if (!isAdmin && assignedWh.length) list = list.filter((w) => assignedWh.includes(w.id));
-    if (whFilter !== "all") list = list.filter((w) => w.id === whFilter);
-    return list;
-  }, [warehouses.data, isAdmin, assignedWh, whFilter]);
+    return isAdmin ? warehouses.data : warehouses.data.filter((w) => assignedWh.includes(w.id));
+  }, [warehouses.data, isAdmin, assignedWh]);
+
+  // Columns shown in the grid — narrowed by the multi-warehouse filter.
+  const visibleWarehouses = useMemo(() => {
+    if (filters.warehouseIds.length === 0) return userWarehouses;
+    return userWarehouses.filter((w) => filters.warehouseIds.includes(w.id));
+  }, [userWarehouses, filters.warehouseIds]);
 
   const invByKey = useMemo(() => {
     const m = new Map<string, NonNullable<typeof inventory.data>[number]>();
@@ -56,26 +66,60 @@ function InventoryGrid() {
     return m;
   }, [inventory.data]);
 
+  // Per-product helpers used by stockState filter and sorting.
+  const productStock = (pid: string) => {
+    let qty = 0; let low = false;
+    for (const w of visibleWarehouses) {
+      const r = invByKey.get(`${pid}:${w.id}`);
+      if (!r) continue;
+      qty += r.quantity;
+      if (r.quantity <= r.reorder_level) low = true;
+    }
+    return { qty, low };
+  };
+
   const filteredProducts = useMemo(() => {
     if (!products.data) return [];
-    return products.data.filter((p) => {
-      if (sourceFilter !== "all" && p.source !== sourceFilter) return false;
-      const term = search.trim().toLowerCase();
-      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term))
-        return false;
-      if (lowOnly) {
-        const anyLow = visibleWarehouses.some((w) => {
-          const r = invByKey.get(`${p.id}:${w.id}`);
-          return r && r.quantity <= r.reorder_level;
-        });
-        if (!anyLow) return false;
+    const term = filters.search.trim().toLowerCase();
+    const pMin = filters.priceMin ? Number(filters.priceMin) : null;
+    const pMax = filters.priceMax ? Number(filters.priceMax) : null;
+
+    const list = products.data.filter((p) => {
+      if (filters.source !== "all" && p.source !== filters.source) return false;
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) return false;
+      if (pMin != null && p.base_price < pMin) return false;
+      if (pMax != null && p.base_price > pMax) return false;
+      if (filters.stockState !== "any") {
+        const { qty, low } = productStock(p.id);
+        if (filters.stockState === "out" && qty > 0) return false;
+        if (filters.stockState === "inStock" && qty <= 0) return false;
+        if (filters.stockState === "low" && !low) return false;
+        if (filters.stockState === "over" && qty <= 100) return false;
       }
       return true;
     });
-  }, [products.data, sourceFilter, search, lowOnly, visibleWarehouses, invByKey]);
+
+    // Sort
+    const dir = filters.sortDir === "asc" ? 1 : -1;
+    const totalsLocal = (pid: string) => {
+      let t = 0;
+      for (const w of visibleWarehouses) t += invByKey.get(`${pid}:${w.id}`)?.quantity ?? 0;
+      return t;
+    };
+    list.sort((a, b) => {
+      switch (filters.sortKey) {
+        case "sku": return a.sku.localeCompare(b.sku) * dir;
+        case "regular_price": return (a.base_price - b.base_price) * dir;
+        case "stock_quantity": return (totalsLocal(a.id) - totalsLocal(b.id)) * dir;
+        case "name":
+        default: return a.name.localeCompare(b.name) * dir;
+      }
+    });
+    return list;
+  }, [products.data, filters, invByKey, visibleWarehouses]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset to page 1 whenever the filtered set shrinks/changes meaningfully.
-  useEffect(() => { setPage(1); }, [search, whFilter, sourceFilter, lowOnly, pageSize]);
+  useEffect(() => { setPage(1); }, [filters, pageSize]);
 
   // Paginated slice fed to the table. `pageSize === 0` shows everything.
   const pagedProducts = useMemo(() => {
@@ -188,56 +232,33 @@ function InventoryGrid() {
 
   return (
     <div className="flex flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b bg-card px-4 py-2.5 rounded-t-lg">
-        <h1 className="mr-2 text-sm font-semibold">Global inventory</h1>
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="SKU or name…"
-            className="h-8 w-56 pl-7 text-xs"
+      <div className="flex flex-col gap-2 border-b bg-card px-4 py-2.5 rounded-t-lg">
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="mr-2 text-sm font-semibold">Global inventory</h1>
+          <InventoryFilterBar
+            presetKey="oms-global"
+            value={filters}
+            onChange={setFilters}
+            availableFields={["search", "source", "warehouse", "stockState", "priceRange"]}
+            warehouseOptions={userWarehouses.map((w) => ({ id: w.id, label: `${w.code} — ${w.name}` }))}
+            sortOptions={SORT_OPTIONS}
+            counts={{ total: products.data?.length ?? 0, visible: filteredProducts.length }}
           />
-        </div>
-        <Select value={whFilter} onValueChange={setWhFilter}>
-          <SelectTrigger className="h-8 w-[160px] text-xs">
-            <SelectValue placeholder="Warehouse" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All warehouses</SelectItem>
-            {warehouses.data?.map((w) => (
-              <SelectItem key={w.id} value={w.id}>{w.code} — {w.name}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select value={sourceFilter} onValueChange={setSourceFilter}>
-          <SelectTrigger className="h-8 w-[120px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All sources</SelectItem>
-            <SelectItem value="oms">OMS</SelectItem>
-            <SelectItem value="woo">WooCommerce</SelectItem>
-          </SelectContent>
-        </Select>
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Checkbox checked={lowOnly} onCheckedChange={(v) => setLowOnly(!!v)} />
-          <Filter className="h-3 w-3" /> Low stock only
-        </label>
-        <div className="ml-auto flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">{selected.size} selected</Badge>
-          {selected.size > 0 && (
-            <>
-              <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
-              <Button size="sm" onClick={() => setBulkOpen(true)}>
-                <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Bulk edit
-              </Button>
-            </>
-          )}
-          <Button variant="outline" size="sm" onClick={selectAllFiltered}>Select all</Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => qc.invalidateQueries({ queryKey: ["oms-inventory"] })}>
-            <RefreshCw className="h-3.5 w-3.5" />
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            <Badge variant="outline" className="font-mono text-[10px]">{selected.size} selected</Badge>
+            {selected.size > 0 && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setSelected(new Set())}>Clear</Button>
+                <Button size="sm" onClick={() => setBulkOpen(true)}>
+                  <Wand2 className="mr-1.5 h-3.5 w-3.5" /> Bulk edit
+                </Button>
+              </>
+            )}
+            <Button variant="outline" size="sm" onClick={selectAllFiltered}>Select all</Button>
+            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => qc.invalidateQueries({ queryKey: ["oms-inventory"] })}>
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       </div>
 

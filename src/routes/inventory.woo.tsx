@@ -15,17 +15,31 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
-  RefreshCw, Search, Save, Send, History, ChevronDown, ChevronRight,
+  RefreshCw, Save, Send, History, ChevronDown, ChevronRight,
   Loader2, AlertCircle, Undo2, Download, Copy,
 } from "lucide-react";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 import { WcBulkPanel, type BulkOp } from "@/components/inventory/wc-bulk-panel";
 import { PaginationBar, type PageSize } from "@/components/inventory/pagination-bar";
+import {
+  InventoryFilterBar, DEFAULT_FILTERS,
+  type InventoryFilters, type SortOption,
+} from "@/components/inventory/inventory-filter-bar";
+
+const SORT_OPTIONS: SortOption[] = [
+  { value: "name", label: "Name" },
+  { value: "sku", label: "SKU" },
+  { value: "regular_price", label: "Regular price" },
+  { value: "sale_price", label: "Sale price" },
+  { value: "stock_quantity", label: "Stock" },
+  { value: "weight", label: "Weight" },
+  { value: "last_synced_at", label: "Last sync" },
+  { value: "dirty", label: "Edited first" },
+];
 
 export const Route = createFileRoute("/inventory/woo")({
   head: () => ({ meta: [{ title: "WooCommerce inventory — HeyShop" }] }),
@@ -82,12 +96,10 @@ function WooInventory() {
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [originals, setOriginals] = useState<Record<string, OriginalRow>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "name" });
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
-  // Filter chip — narrows the visible row set without losing draft state.
-  const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
   // Collapsed variable-parent ids: when collapsed, hide their variation rows.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Pagination state. `pageSize === 0` means "All".
@@ -145,29 +157,75 @@ function WooInventory() {
     }).map((p) => p.id);
   }, [siteProducts, drafts, originals]);
 
-  // Filtered visible rows. Filter chip + search work together. Collapsed
-  // variable-parents hide their variation rows.
+  // Filtered + sorted visible rows. Collapsed variable-parents hide their
+  // variation rows. Filters come from the shared InventoryFilterBar.
   const filteredProducts = useMemo(() => {
-    const term = search.trim().toLowerCase();
+    const term = filters.search.trim().toLowerCase();
     const dirtySet = new Set(dirtyIds);
-    return siteProducts.filter((p) => {
-      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) {
-        return false;
-      }
+    const pMin = filters.priceMin ? Number(filters.priceMin) : null;
+    const pMax = filters.priceMax ? Number(filters.priceMax) : null;
+    const sMin = filters.salePriceMin ? Number(filters.salePriceMin) : null;
+    const sMax = filters.salePriceMax ? Number(filters.salePriceMax) : null;
+    const wMin = filters.weightMin ? Number(filters.weightMin) : null;
+    const wMax = filters.weightMax ? Number(filters.weightMax) : null;
+
+    const list = siteProducts.filter((p) => {
+      if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) return false;
       if (p.parent_product_id && collapsed.has(p.parent_product_id)) return false;
-      switch (filter) {
-        case "dirty": return dirtySet.has(p.id);
-        case "variations": return p.wc_type === "variation";
-        case "parents": return p.wc_type !== "variation";
-        case "low": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5;
-        case "outofstock": return p.wc_type !== "variable" && (p.stock_quantity ?? 0) <= 0;
-        default: return true;
+      if (filters.wcType !== "all" && p.wc_type !== filters.wcType) return false;
+      if (filters.editedOnly && !dirtySet.has(p.id)) return false;
+      if (filters.stockStatus !== "any" && p.stock_status !== filters.stockStatus) return false;
+      if (filters.manageStock !== "any" && p.manage_stock !== (filters.manageStock === "yes")) return false;
+      if (filters.hasImage !== "any" && Boolean(p.image_url) !== (filters.hasImage === "yes")) return false;
+      if (filters.hasSale !== "any") {
+        const onSale = p.sale_price != null && p.sale_price > 0 && (p.regular_price == null || p.sale_price < p.regular_price);
+        if (onSale !== (filters.hasSale === "yes")) return false;
+      }
+      if (filters.stockState !== "any" && p.wc_type !== "variable") {
+        const q = p.stock_quantity ?? 0;
+        if (filters.stockState === "out" && q > 0) return false;
+        if (filters.stockState === "inStock" && q <= 0) return false;
+        if (filters.stockState === "low" && (q <= 0 || q > 5)) return false;
+        if (filters.stockState === "over" && q <= 100) return false;
+      }
+      if (pMin != null && (p.regular_price ?? 0) < pMin) return false;
+      if (pMax != null && (p.regular_price ?? 0) > pMax) return false;
+      if (sMin != null && (p.sale_price ?? 0) < sMin) return false;
+      if (sMax != null && (p.sale_price ?? 0) > sMax) return false;
+      if (wMin != null && (p.weight ?? 0) < wMin) return false;
+      if (wMax != null && (p.weight ?? 0) > wMax) return false;
+      return true;
+    });
+
+    // Sort
+    const dir = filters.sortDir === "asc" ? 1 : -1;
+    const num = (v: number | null | undefined) => (v == null ? -Infinity : v);
+    list.sort((a, b) => {
+      switch (filters.sortKey) {
+        case "sku": return a.sku.localeCompare(b.sku) * dir;
+        case "regular_price": return (num(a.regular_price) - num(b.regular_price)) * dir;
+        case "sale_price": return (num(a.sale_price) - num(b.sale_price)) * dir;
+        case "stock_quantity": return ((a.stock_quantity ?? 0) - (b.stock_quantity ?? 0)) * dir;
+        case "weight": return (num(a.weight) - num(b.weight)) * dir;
+        case "last_synced_at": {
+          const ta = a.last_synced_at ? Date.parse(a.last_synced_at) : 0;
+          const tb = b.last_synced_at ? Date.parse(b.last_synced_at) : 0;
+          return (ta - tb) * dir;
+        }
+        case "dirty": {
+          const da = dirtySet.has(a.id) ? 1 : 0;
+          const db = dirtySet.has(b.id) ? 1 : 0;
+          return (db - da); // dirty rows always first regardless of dir
+        }
+        case "name":
+        default: return a.name.localeCompare(b.name) * dir;
       }
     });
-  }, [siteProducts, search, filter, collapsed, dirtyIds]);
+    return list;
+  }, [siteProducts, filters, collapsed, dirtyIds]);
 
   // Reset to page 1 whenever the filter/search changes the visible set.
-  useEffect(() => { setPage(1); }, [search, filter, pageSize, siteId]);
+  useEffect(() => { setPage(1); }, [filters, pageSize, siteId]);
 
   // Paginated slice rendered into the table. `pageSize === 0` shows everything.
   const pagedProducts = useMemo(() => {
@@ -429,15 +487,21 @@ function WooInventory() {
           </SelectContent>
         </Select>
 
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="SKU or name…"
-            className="h-8 w-56 pl-7 text-xs"
-          />
-        </div>
+        <InventoryFilterBar
+          presetKey={`wc-${siteId ?? "none"}`}
+          value={filters}
+          onChange={setFilters}
+          availableFields={[
+            "search", "wcType", "stockState", "stockStatus", "manageStock",
+            "priceRange", "salePriceRange", "weightRange", "edited", "hasImage", "hasSale",
+          ]}
+          sortOptions={SORT_OPTIONS}
+          counts={{
+            total: siteProducts.length,
+            visible: filteredProducts.length,
+            edited: dirtyIds.length,
+          }}
+        />
 
         <div className="ml-auto flex items-center gap-2">
           <Badge variant="outline" className="font-mono text-[10px]">
@@ -464,25 +528,6 @@ function WooInventory() {
             <Send className="mr-1.5 h-3.5 w-3.5" /> Push to WooCommerce
           </Button>
         </div>
-      </div>
-
-      {/* Filter chips */}
-      <div className="flex items-center gap-2 border-b bg-muted/20 px-4 py-1.5">
-        <span className="text-[11px] font-medium text-muted-foreground">Show:</span>
-        <ToggleGroup
-          type="single"
-          value={filter}
-          onValueChange={(v) => v && setFilter(v as typeof filter)}
-          className="gap-1"
-          size="sm"
-        >
-          <ToggleGroupItem value="all" className="h-6 px-2 text-[11px]">All ({siteProducts.length})</ToggleGroupItem>
-          <ToggleGroupItem value="dirty" className="h-6 px-2 text-[11px]">Edited ({dirtyIds.length})</ToggleGroupItem>
-          <ToggleGroupItem value="parents" className="h-6 px-2 text-[11px]">Parents only</ToggleGroupItem>
-          <ToggleGroupItem value="variations" className="h-6 px-2 text-[11px]">Variations only</ToggleGroupItem>
-          <ToggleGroupItem value="low" className="h-6 px-2 text-[11px]">Low stock (≤5)</ToggleGroupItem>
-          <ToggleGroupItem value="outofstock" className="h-6 px-2 text-[11px]">Out of stock</ToggleGroupItem>
-        </ToggleGroup>
       </div>
 
       {/* Status row */}

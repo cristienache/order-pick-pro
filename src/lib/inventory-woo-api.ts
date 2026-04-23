@@ -107,14 +107,6 @@ export const wcApi = {
       method: "POST", body: {},
     }),
 
-  /** Destructive: deletes every imported product (and its variations + stock)
-   *  for one site. Backend requires { confirm: "DELETE" } as a safety net. */
-  wipeSite: (siteId: number) =>
-    api<{ ok: true; deleted: number; site_id: number }>(
-      `${BASE}/wipe/${siteId}`,
-      { method: "POST", body: { confirm: "DELETE" } },
-    ),
-
   saveLocal: (site_id: number, edits: WcEditPayload[]) =>
     api<BulkResult>(`${BASE}/products/bulk`, {
       method: "PATCH", body: { site_id, edits },

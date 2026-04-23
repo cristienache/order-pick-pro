@@ -31,7 +31,7 @@ export function BrandedLogo({ className = "" }: { className?: string }) {
   return (
     <div
       className={
-        "relative h-9 w-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center group-hover:scale-105 transition-transform " +
+        "relative h-9 w-9 rounded-xl bg-gradient-to-br from-brand-violet to-brand-sky text-white flex items-center justify-center shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--brand-violet)_55%,transparent)] group-hover:scale-105 transition-transform " +
         className
       }
     >

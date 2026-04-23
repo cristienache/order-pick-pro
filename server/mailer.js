@@ -12,8 +12,9 @@
 // We use Gmail's submission relay on port 465 (implicit TLS) — most reliable
 // across hosting providers that block port 25.
 
+import nodemailer from "nodemailer";
+
 let cachedTransporter = null;
-let cachedNodemailer = null;
 
 export function smtpConfig() {
   const user = process.env.SMTP_USER || "";
@@ -31,24 +32,10 @@ export function smtpConfig() {
   };
 }
 
-async function loadNodemailer() {
-  if (cachedNodemailer) return cachedNodemailer;
-  try {
-    const mod = await import("nodemailer");
-    cachedNodemailer = mod.default ?? mod;
-    return cachedNodemailer;
-  } catch (error) {
-    const err = new Error("Email transport is unavailable");
-    err.cause = error;
-    throw err;
-  }
-}
-
-async function getTransporter() {
+function getTransporter() {
   if (cachedTransporter) return cachedTransporter;
   const cfg = smtpConfig();
   if (!cfg.configured) throw new Error("SMTP not configured");
-  const nodemailer = await loadNodemailer();
   cachedTransporter = nodemailer.createTransport({
     host: "smtp.gmail.com",
     port: 465,
@@ -67,7 +54,7 @@ async function getTransporter() {
  */
 export async function sendContactEmail({ name, email, phone, subject, message }) {
   const cfg = smtpConfig();
-  const transporter = await getTransporter();
+  const transporter = getTransporter();
   const subj = subject?.trim() || `New contact form message from ${name}`;
   const safe = (s) => String(s || "").replace(/[<>]/g, "");
 

@@ -5,7 +5,6 @@ import { useState } from "react";
 import appCss from "../styles.css?url";
 import { AuthProvider } from "@/lib/auth-context";
 import { BrandingProvider } from "@/lib/branding-context";
-import { SyncProvider } from "@/lib/sync-context";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -82,10 +81,8 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <BrandingProvider>
-          <SyncProvider>
-            <Toaster richColors position="top-right" />
-            <Outlet />
-          </SyncProvider>
+          <Toaster richColors position="top-right" />
+          <Outlet />
         </BrandingProvider>
       </AuthProvider>
     </QueryClientProvider>

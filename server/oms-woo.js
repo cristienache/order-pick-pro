@@ -688,7 +688,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.regular_price, p.sale_price, p.description,
               p.short_description, p.stock_status, p.manage_stock, p.weight,
-              p.woo_product_id, p.dirty_fields,
+              p.woo_product_id, p.dirty_fields, p.wc_type, p.wc_parent_id,
               (SELECT quantity FROM oms_inventory
                 WHERE product_id = p.id AND warehouse_id = ?) AS stock_quantity
          FROM oms_products p
@@ -700,6 +700,14 @@ export function mountOmsWoo(app, { requireAuth }) {
     for (const row of rows) {
       if (!row.woo_product_id) {
         failed.push({ product_id: row.id, error: "Not linked to WC" });
+        continue;
+      }
+      if (row.wc_type === "variable") {
+        // The variable parent has no editable price/stock of its own — those
+        // live on its variations. Just clear the dirty flag and move on.
+        db.prepare(`UPDATE oms_products SET dirty = 0, dirty_fields = NULL WHERE id = ?`)
+          .run(row.id);
+        ok++;
         continue;
       }
       let touched;
@@ -715,7 +723,9 @@ export function mountOmsWoo(app, { requireAuth }) {
 
       // Build the WC payload from ONLY the fields the user touched.
       const body = {};
-      if (touched.has("name")) body.name = row.name;
+      // Variations don't accept `name` — their display name is derived from
+      // the parent + attributes. Drop it to avoid 400s.
+      if (touched.has("name") && row.wc_type !== "variation") body.name = row.name;
       if (touched.has("sku")) body.sku = row.sku;
       if (touched.has("regular_price")) {
         body.regular_price = row.regular_price != null ? String(row.regular_price) : "";
@@ -723,8 +733,12 @@ export function mountOmsWoo(app, { requireAuth }) {
       if (touched.has("sale_price")) {
         body.sale_price = row.sale_price != null ? String(row.sale_price) : "";
       }
+      // Variations only have a single `description` field; short_description
+      // is parent-only.
       if (touched.has("description")) body.description = row.description ?? "";
-      if (touched.has("short_description")) body.short_description = row.short_description ?? "";
+      if (touched.has("short_description") && row.wc_type !== "variation") {
+        body.short_description = row.short_description ?? "";
+      }
       if (touched.has("weight")) body.weight = row.weight != null ? String(row.weight) : "";
       if (touched.has("manage_stock")) body.manage_stock = !!row.manage_stock;
       if (touched.has("stock_status")) body.stock_status = row.stock_status ?? "instock";
@@ -733,9 +747,20 @@ export function mountOmsWoo(app, { requireAuth }) {
         // WC ignores stock_quantity unless manage_stock is true; force it on.
         body.manage_stock = true;
       }
+      if (Object.keys(body).length === 0) {
+        // All touched fields were dropped (e.g. variation-only "name"). Just
+        // clear dirty so we don't loop forever.
+        db.prepare(`UPDATE oms_products SET dirty = 0, dirty_fields = NULL WHERE id = ?`)
+          .run(row.id);
+        ok++;
+        continue;
+      }
 
       try {
-        await pushOneToWc(site, row.woo_product_id, body);
+        await pushOneToWc(
+          site, row.woo_product_id, body,
+          row.wc_type === "variation" ? row.wc_parent_id : null,
+        );
         db.prepare(
           `UPDATE oms_products
               SET dirty = 0, dirty_fields = NULL, last_synced_at = ?

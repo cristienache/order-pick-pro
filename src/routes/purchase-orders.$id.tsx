@@ -24,10 +24,10 @@ export const Route = createFileRoute("/purchase-orders/$id")({
 
 const STATUS_TONE: Record<PoStatus, string> = {
   draft: "bg-muted text-muted-foreground",
-  sent: "bg-accent text-accent-foreground",
+  sent: "bg-brand-sky-soft text-brand-sky",
   partial: "bg-brand-amber-soft text-brand-amber",
-  received: "bg-brand-green-soft text-brand-green",
-  cancelled: "bg-destructive/10 text-destructive",
+  received: "bg-brand-emerald-soft text-brand-emerald",
+  cancelled: "bg-brand-rose-soft text-brand-rose",
 };
 
 function PoDetailPage() {

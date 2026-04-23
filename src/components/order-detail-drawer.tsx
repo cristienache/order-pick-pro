@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type RmShipment } from "@/lib/api";
+import { api, apiBlob, type RmShipment } from "@/lib/api";
 import {
   Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle,
 } from "@/components/ui/sheet";
@@ -174,6 +174,21 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
     return () => { cancelled = true; };
   }, [open, siteId, orderId]);
 
+  // Fetch the label PDF as a blob (so the bearer token goes in the header)
+  // and open the resulting object URL in a new tab.
+  const openPacketaLabelPdf = async (shipmentId: number) => {
+    try {
+      const blob = await apiBlob(`/api/packeta/shipments/${shipmentId}/label.pdf`);
+      const url = URL.createObjectURL(blob);
+      const win = window.open(url, "_blank", "noopener");
+      // Revoke after the new tab has had time to load the PDF.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      if (!win) toast.error("Pop-up blocked. Allow pop-ups to view the label.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not open label PDF");
+    }
+  };
+
   // Create (or reuse) a Packeta label for this order, then open the PDF.
   const createPacketaLabel = async () => {
     if (siteId == null || orderId == null) return;
@@ -186,8 +201,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
       setPk((prev) => prev ? { ...prev, shipment: r.shipment } : prev);
       if (r.label_warning) toast.warning(r.label_warning);
       else toast.success("Packeta label created");
-      // Open the merged PDF in a new tab for printing.
-      window.open(`/api/packeta/shipments/${r.shipment.id}/label.pdf`, "_blank", "noopener");
+      await openPacketaLabelPdf(r.shipment.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to create Packeta label");
     } finally {
@@ -197,7 +211,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
 
   const reprintPacketaLabel = () => {
     if (!pk?.shipment) return;
-    window.open(`/api/packeta/shipments/${pk.shipment.id}/label.pdf`, "_blank", "noopener");
+    void openPacketaLabelPdf(pk.shipment.id);
   };
 
   const order = data?.order;

@@ -59,15 +59,20 @@ async function proxyRequest(request: Request, splat = "") {
   }
 }
 
-export const Route = createFileRoute("/api/$")({
+type ProxyCtx = { request: Request; params: { _splat?: string } };
+const handler = ({ request, params }: ProxyCtx) =>
+  proxyRequest(request, params._splat ?? "");
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const Route = (createFileRoute as any)("/api/$")({
   server: {
     handlers: {
-      GET: ({ request, params }) => proxyRequest(request, params._splat),
-      POST: ({ request, params }) => proxyRequest(request, params._splat),
-      PUT: ({ request, params }) => proxyRequest(request, params._splat),
-      PATCH: ({ request, params }) => proxyRequest(request, params._splat),
-      DELETE: ({ request, params }) => proxyRequest(request, params._splat),
-      OPTIONS: ({ request, params }) => proxyRequest(request, params._splat),
+      GET: handler,
+      POST: handler,
+      PUT: handler,
+      PATCH: handler,
+      DELETE: handler,
+      OPTIONS: handler,
     },
   },
 });

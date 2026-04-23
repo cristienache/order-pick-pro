@@ -596,7 +596,7 @@ function PicklistPage() {
       } else {
         const firstErr = r.results.find((x) => !x.ok)?.error;
         toast.warning(
-          `Created ${r.succeeda ?? r.succeeded}, skipped ${r.failed}`,
+          `Created ${r.succeeded}, skipped ${r.failed}`,
           { description: firstErr ? firstErr.slice(0, 120) : undefined },
         );
       }
@@ -605,6 +605,8 @@ function PicklistPage() {
       toast.error(e instanceof Error ? e.message : "Bulk Packeta failed");
     } finally { setBulkBusy(false); }
   };
+
+  if (loadingSites) {
     return <div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 

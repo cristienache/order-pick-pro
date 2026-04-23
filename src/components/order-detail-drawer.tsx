@@ -125,6 +125,7 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
   const [pk, setPk] = useState<PacketaStatus | null>(null);
   const [pkBusy, setPkBusy] = useState(false);
   const [labelOpen, setLabelOpen] = useState(false);
+  const [editingAddress, setEditingAddress] = useState<"shipping" | "billing" | null>(null);
 
   useEffect(() => {
     if (!open) { setData(null); setRm(null); setPk(null); setLabelOpen(false); return; }

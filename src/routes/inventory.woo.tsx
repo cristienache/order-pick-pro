@@ -112,6 +112,10 @@ function WooInventory() {
   // Pagination state. `pageSize === 0` means "All".
   const [pageSize, setPageSize] = useState<PageSize>(25);
   const [page, setPage] = useState(1);
+  // Wipe & re-sync confirmation dialog.
+  const [wipeOpen, setWipeOpen] = useState(false);
+  const [wipeText, setWipeText] = useState("");
+  const [wiping, setWiping] = useState(false);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -348,9 +352,33 @@ function WooInventory() {
     await startWcSync(siteId, site.name);
   };
 
-  /** Build a diff payload for the bulk-save endpoint. Sends ONLY fields that
-   *  the user actually changed since the last sync, so we never overwrite WC
-   *  values we don't have locally. */
+  /** Wipe every imported product for the active site, then immediately
+   *  kick off a fresh background sync. Other sites are untouched. */
+  const wipeAndResync = async () => {
+    if (!siteId || !site) return;
+    setWiping(true);
+    try {
+      const r = await wcApi.wipeSite(siteId);
+      toast.success(`Deleted ${r.deleted} products from ${site.name}. Re-syncing…`);
+      // Clear local edit buffer + drop the cached product list immediately so
+      // the grid empties before the sync repopulates it.
+      setDrafts({}); setOriginals({}); setSelected(new Set());
+      qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
+      qc.invalidateQueries({ queryKey: ["wc-sites"] });
+      qc.invalidateQueries({ queryKey: ["oms-products"] });
+      qc.invalidateQueries({ queryKey: ["oms-inventory"] });
+      setWipeOpen(false);
+      setWipeText("");
+      // Fire & forget — the SyncProvider drives the chunked loop and the
+      // topbar pill shows progress, so the user can navigate away.
+      void startWcSync(siteId, site.name);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Wipe failed");
+    } finally {
+      setWiping(false);
+    }
+  };
+
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];

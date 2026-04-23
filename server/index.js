@@ -1396,9 +1396,14 @@ function loadPacketaPassword(userId) {
   ).get(userId);
   if (!row || !row.api_password_enc) return null;
   try {
+    let widgetApiKey = null;
+    if (row.widget_api_key_enc) {
+      try { widgetApiKey = decrypt(row.widget_api_key_enc); } catch { /* ignore */ }
+    }
     return {
       row,
       apiPassword: decrypt(row.api_password_enc),
+      widgetApiKey,
       useSandbox: Boolean(row.use_sandbox),
     };
   } catch {
@@ -1407,13 +1412,14 @@ function loadPacketaPassword(userId) {
 }
 
 // Fire-and-forget background sync. Triggered when the catalog is stale and
-// the UI requests carriers. Never rejects.
+// the UI requests carriers. Never rejects. Skips silently if the user
+// hasn't saved a Widget API key yet (the carriers feed requires it).
 async function maybeBackgroundSyncCarriers(userId) {
   if (!isCatalogStale()) return;
   const creds = loadPacketaPassword(userId);
-  if (!creds) return;
+  if (!creds || !creds.widgetApiKey) return;
   try {
-    await syncPacketaCarriers(creds.apiPassword);
+    await syncPacketaCarriers(creds.widgetApiKey);
   } catch (e) {
     console.warn("[packeta] background carrier sync failed:", e.message);
   }
@@ -1456,7 +1462,15 @@ app.get("/api/packeta/carriers", requireAuth, async (req, res) => {
 app.post("/api/packeta/carriers/sync", requireAuth, async (req, res) => {
   const creds = loadPacketaPassword(req.user.id);
   if (!creds) return res.status(400).json({ error: "Add your Packeta API password first." });
-  const result = await syncPacketaCarriers(creds.apiPassword);
+  if (!creds.widgetApiKey) {
+    return res.status(400).json({
+      error:
+        "Add your Packeta Widget API key first. " +
+        "It's a separate credential from the SOAP API password — " +
+        "find it in the Packeta client section under Settings → API.",
+    });
+  }
+  const result = await syncPacketaCarriers(creds.widgetApiKey);
   if (!result.ok) return res.status(502).json(result);
   res.json(result);
 });

@@ -96,12 +96,10 @@ function WooInventory() {
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [originals, setOriginals] = useState<Record<string, OriginalRow>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "name" });
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
-  // Filter chip — narrows the visible row set without losing draft state.
-  const [filter, setFilter] = useState<"all" | "dirty" | "variations" | "parents" | "low" | "outofstock">("all");
   // Collapsed variable-parent ids: when collapsed, hide their variation rows.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   // Pagination state. `pageSize === 0` means "All".

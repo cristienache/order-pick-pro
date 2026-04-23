@@ -1,13 +1,14 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
-import { Loader2, Mail, Phone, Send, CheckCircle2, ArrowLeft, Package } from "lucide-react";
+import { Loader2, Mail, Phone, Send, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { AppShell } from "@/components/app-shell";
 
 // Public details — edit these to change what visitors see.
 const SUPPORT_EMAIL = "contact@ultrax.work";
@@ -61,32 +62,8 @@ function ContactPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Slim header — keeps the contact page brand-coherent without forcing
-          a full app shell on unauthenticated visitors. */}
-      <header className="border-b border-border/60 bg-background/80 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="relative h-9 w-9 rounded-xl bg-gradient-to-br from-brand-violet to-brand-sky text-white flex items-center justify-center shadow-[0_8px_24px_-6px_color-mix(in_oklab,var(--brand-violet)_55%,transparent)] group-hover:scale-105 transition-transform">
-              <Package className="h-4.5 w-4.5" strokeWidth={2.5} />
-            </div>
-            <div className="leading-tight">
-              <div className="font-bold text-base tracking-tight">Ultrax</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-muted-foreground -mt-0.5">
-                Order ops
-              </div>
-            </div>
-          </Link>
-          <Link
-            to="/login"
-            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-          >
-            <ArrowLeft className="h-4 w-4" /> Back to sign in
-          </Link>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-12 md:py-20">
+    <AppShell>
+      <div>
         <div className="max-w-2xl">
           <h1 className="text-4xl md:text-5xl font-bold tracking-tight">Get in touch</h1>
           <p className="mt-4 text-lg text-muted-foreground">
@@ -227,7 +204,7 @@ function ContactPage() {
             </CardContent>
           </Card>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

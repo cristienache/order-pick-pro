@@ -51,19 +51,24 @@ export function AppShell({ children }: { children: ReactNode }) {
               <NavLink to="/" icon={<Home className="h-4 w-4" />} exact>
                 {navLabel(branding, "home")}
               </NavLink>
-              <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>
-                {navLabel(branding, "orders")}
-              </NavLink>
-              <NavLink to="/integrations" icon={<Store className="h-4 w-4" />}>
-                {navLabel(branding, "integrations")}
-              </NavLink>
-              <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>
-                {navLabel(branding, "royal_mail")}
-              </NavLink>
-              {/* Admin-published custom pages flagged "show_in_nav". */}
+              {user && (
+                <>
+                  <NavLink to="/orders" icon={<Package className="h-4 w-4" />}>
+                    {navLabel(branding, "orders")}
+                  </NavLink>
+                  <NavLink to="/integrations" icon={<Store className="h-4 w-4" />}>
+                    {navLabel(branding, "integrations")}
+                  </NavLink>
+                  <NavLink to="/royal-mail" icon={<Truck className="h-4 w-4" />}>
+                    {navLabel(branding, "royal_mail")}
+                  </NavLink>
+                </>
+              )}
+              {/* Admin-published custom pages flagged "show_in_nav". Visible to everyone. */}
               {navPages.map((p) => (
                 <NavPageLink key={p.id} slug={p.slug} title={p.title} />
               ))}
+              <NavPageLink slug="contact" title="Contact" routeTo="/contact" />
               {user?.role === "admin" && (
                 <>
                   <NavLink to="/admin/users" icon={<Users className="h-4 w-4" />}>
@@ -83,17 +88,25 @@ export function AppShell({ children }: { children: ReactNode }) {
             </nav>
           </div>
           <div className="flex items-center gap-3 text-sm">
-            <span className="text-muted-foreground hidden md:inline tabular-nums">
-              {user?.email}
-            </span>
-            {user?.role === "admin" && (
-              <span className="text-[10px] uppercase tracking-[0.14em] bg-brand-violet-soft text-brand-violet px-2 py-1 rounded-full font-semibold">
-                Admin
-              </span>
+            {user ? (
+              <>
+                <span className="text-muted-foreground hidden md:inline tabular-nums">
+                  {user.email}
+                </span>
+                {user.role === "admin" && (
+                  <span className="text-[10px] uppercase tracking-[0.14em] bg-brand-violet-soft text-brand-violet px-2 py-1 rounded-full font-semibold">
+                    Admin
+                  </span>
+                )}
+                <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5">
+                  <LogOut className="h-4 w-4" /> Sign out
+                </Button>
+              </>
+            ) : (
+              <Button asChild variant="ghost" size="sm">
+                <Link to="/login">Sign in</Link>
+              </Button>
             )}
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="gap-1.5">
-              <LogOut className="h-4 w-4" /> Sign out
-            </Button>
           </div>
         </div>
       </header>
@@ -120,7 +133,25 @@ function NavLink({
   );
 }
 
-function NavPageLink({ slug, title }: { slug: string; title: string }) {
+function NavPageLink({
+  slug, title, routeTo,
+}: { slug: string; title: string; routeTo?: string }) {
+  // Most custom pages live under /p/$slug, but the built-in Contact page has
+  // its own dedicated route. Allow callers to override the destination.
+  if (routeTo) {
+    return (
+      <Link
+        to={routeTo}
+        className="px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors focus-ring"
+        activeProps={{
+          className:
+            "px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-sm font-semibold bg-accent text-foreground transition-colors focus-ring",
+        }}
+      >
+        <FileText className="h-4 w-4" /> {title}
+      </Link>
+    );
+  }
   return (
     <Link
       to="/p/$slug"

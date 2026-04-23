@@ -7,7 +7,7 @@
 // current WC state, then PUTs the changes to /wc/v3/products.
 
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,8 +25,6 @@ import {
   Loader2, AlertCircle, Undo2,
 } from "lucide-react";
 import { wcApi, type WcEditPayload } from "@/lib/inventory-woo-api";
-import { api } from "@/lib/api";
-import type { Product } from "@/lib/api-types";
 import { PushToWcDialog } from "@/components/inventory/push-to-wc-dialog";
 
 export const Route = createFileRoute("/inventory/woo")({
@@ -51,33 +49,10 @@ type DraftRow = {
 };
 
 /** Snapshot of the row as it was right after the last sync. Used to compute
- *  a per-field diff so we only push fields the user actually changed —
- *  prevents wiping WC data we never had locally (real regular_price,
- *  sale_price, weight, description, etc.). */
-type OriginalRow = {
-  name: string;
-  sku: string;
-  regular_price: string;
-  stock_quantity: string;
-};
-
-/** Pull WC mirror products + stock from the OMS endpoints (already implemented). */
-function useWcCatalog(siteId: number | null, warehouseId: string | null) {
-  const products = useQuery({
-    queryKey: ["wc-products", siteId],
-    queryFn: () => api<Product[]>(`/api/oms/products`),
-    enabled: !!siteId,
-  });
-  const inventory = useQuery({
-    queryKey: ["wc-inventory", siteId, warehouseId],
-    queryFn: () => api<Array<{
-      product_id: string; warehouse_id: string;
-      quantity: number; reserved: number; reorder_level: number; version: number;
-    }>>(`/api/oms/inventory`),
-    enabled: !!siteId && !!warehouseId,
-  });
-  return { products, inventory };
-}
+ *  a per-field diff so we only push fields the user actually changed. We
+ *  store EVERY editable field (not just the four base ones) so the diff is
+ *  accurate even after the user types and reverts. */
+type OriginalRow = DraftRow;
 
 function WooInventory() {
   const qc = useQueryClient();
@@ -93,46 +68,15 @@ function WooInventory() {
     () => sites.data?.find((s) => s.id === siteId) ?? null,
     [sites.data, siteId],
   );
-  const warehouseId = site?.warehouse_id ?? null;
-  const { products, inventory } = useWcCatalog(siteId, warehouseId);
-
-  // Filter to this site's WC products.
-  const siteProducts = useMemo(() => {
-    if (!products.data || !site) return [];
-    // The /api/oms/products endpoint returns all products. Filter client-side
-    // by source='woo' and woo_product_id presence; site_id isn't exposed on
-    // that endpoint but the per-site mirror warehouse uniquely identifies the
-    // rows that belong to this site.
-    return products.data.filter((p) => p.source === "woo" && p.woo_product_id != null);
-  }, [products.data, site]);
-
-  const stockByProduct = useMemo(() => {
-    const m = new Map<string, number>();
-    inventory.data?.forEach((r) => {
-      if (r.warehouse_id === warehouseId) m.set(r.product_id, r.quantity);
-    });
-    return m;
-  }, [inventory.data, warehouseId]);
-
-  // Augmented rows pulled directly from WC sync (need the extra fields).
-  // The /products endpoint only returns base fields, so we hit a thin
-  // additional fetch via the woo bridge whenever the site changes.
-  const fullRows = useQuery({
-    queryKey: ["wc-full", siteId, warehouseId],
-    enabled: !!siteId && !!warehouseId,
-    queryFn: async () => {
-      // Reuse inventory + products via parallel fetch already done above.
-      // Then enrich with the extra columns by calling a /products route that
-      // returns the extra columns. For simplicity we use a single JOIN view —
-      // here, we just refetch products from the SQLite via a small endpoint.
-      // (The /api/oms/products endpoint returns only the base shape; we ship
-      // the extra fields by reading from the catalog endpoint we already have
-      // — so we map from siteProducts and stockByProduct.)
-      return null;
-    },
+  // Single source of truth — the new /api/oms/woo/products endpoint returns
+  // every editable field (incl. real sale_price, weight, description and
+  // image_url) plus variations as their own rows.
+  const products = useQuery({
+    queryKey: ["wc-products", siteId],
+    queryFn: () => wcApi.listProducts(siteId!),
+    enabled: !!siteId,
   });
-  // fullRows is a no-op placeholder; keep silent linter happy.
-  void fullRows;
+  const siteProducts = products.data ?? [];
 
   /* ---------- Local edit buffer ---------- */
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
@@ -143,37 +87,33 @@ function WooInventory() {
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
 
-  // Initialise drafts whenever the site or product list changes. Defaults
-  // intentionally use blank strings for fields we don't have locally
-  // (sale_price, weight, description) — sending them would clobber WC data.
+  // Re-seed drafts whenever the products list arrives or a fresh sync lands.
+  // Drafts are seeded with the REAL WC values (regular_price, sale_price,
+  // description, weight, etc.) so the diff in buildEditsForIds correctly
+  // detects what the user typed vs what WC already had.
   useEffect(() => {
+    if (!products.data) return;
     const nextDrafts: Record<string, DraftRow> = {};
     const nextOriginals: Record<string, OriginalRow> = {};
-    for (const p of siteProducts) {
-      const stock = String(stockByProduct.get(p.id) ?? 0);
-      const regular = String(p.base_price ?? "");
-      nextDrafts[p.id] = {
+    for (const p of products.data) {
+      const row: DraftRow = {
         name: p.name ?? "",
         sku: p.sku ?? "",
-        regular_price: regular,
-        sale_price: "",
-        stock_quantity: stock,
-        stock_status: "instock",
-        manage_stock: true,
-        weight: "",
-        description: "",
+        regular_price: p.regular_price != null ? String(p.regular_price) : "",
+        sale_price: p.sale_price != null ? String(p.sale_price) : "",
+        stock_quantity: String(p.stock_quantity ?? 0),
+        stock_status: p.stock_status || "instock",
+        manage_stock: !!p.manage_stock,
+        weight: p.weight != null ? String(p.weight) : "",
+        description: p.description ?? "",
       };
-      nextOriginals[p.id] = {
-        name: p.name ?? "",
-        sku: p.sku ?? "",
-        regular_price: regular,
-        stock_quantity: stock,
-      };
+      nextDrafts[p.id] = row;
+      nextOriginals[p.id] = { ...row };
     }
     setDrafts(nextDrafts);
     setOriginals(nextOriginals);
     setSelected(new Set());
-  }, [siteId, siteProducts.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [products.data]);
 
   const filteredProducts = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -197,8 +137,12 @@ function WooInventory() {
       return d.name !== o.name ||
         d.sku !== o.sku ||
         d.regular_price !== o.regular_price ||
+        d.sale_price !== o.sale_price ||
         d.stock_quantity !== o.stock_quantity ||
-        d.sale_price !== "" || d.weight !== "" || d.description !== "";
+        d.stock_status !== o.stock_status ||
+        d.manage_stock !== o.manage_stock ||
+        d.weight !== o.weight ||
+        d.description !== o.description;
     }).map((p) => p.id);
   }, [siteProducts, drafts, originals]);
 
@@ -416,7 +360,7 @@ function WooInventory() {
 
       {/* Grid */}
       <div className="overflow-auto border border-t-0 rounded-b-lg">
-        {(products.isLoading || inventory.isLoading) ? (
+        {products.isLoading ? (
           <div className="grid h-64 place-items-center text-sm text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
@@ -425,10 +369,10 @@ function WooInventory() {
             No products yet. Click <strong className="mx-1">Sync from WC</strong> to import.
           </div>
         ) : (
-          <table className="w-full border-separate border-spacing-0 text-xs">
+          <table className="w-full border-separate border-spacing-0 text-xs table-fixed">
             <thead className="sticky top-0 z-10 bg-card">
-              <tr>
-                <th className="w-8 border-b px-2 py-2 text-left">
+              <tr className="h-9">
+                <th className="w-8 border-b px-2 text-left align-middle">
                   <Checkbox
                     checked={selected.size > 0 && selected.size === filteredProducts.length}
                     onCheckedChange={(v) => {
@@ -437,16 +381,17 @@ function WooInventory() {
                     }}
                   />
                 </th>
-                <th className="w-8 border-b px-1 py-2"></th>
-                <th className="border-b px-2 py-2 text-left">SKU</th>
-                <th className="border-b px-2 py-2 text-left">Name</th>
-                <th className="border-b px-2 py-2 text-right">Regular</th>
-                <th className="border-b px-2 py-2 text-right">Sale</th>
-                <th className="border-b px-2 py-2 text-right">Stock</th>
-                <th className="border-b px-2 py-2 text-left">Status</th>
-                <th className="border-b px-2 py-2 text-center">Manage</th>
-                <th className="border-b px-2 py-2 text-right">Weight</th>
-                <th className="border-b px-2 py-2"></th>
+                <th className="w-7 border-b px-1 text-left align-middle"></th>
+                <th className="w-12 border-b px-1 text-left align-middle"></th>
+                <th className="w-[120px] border-b px-2 text-left align-middle">SKU</th>
+                <th className="border-b px-2 text-left align-middle">Name</th>
+                <th className="w-[88px] border-b px-2 text-right align-middle">Regular</th>
+                <th className="w-[88px] border-b px-2 text-right align-middle">Sale</th>
+                <th className="w-[72px] border-b px-2 text-right align-middle">Stock</th>
+                <th className="w-[120px] border-b px-2 text-left align-middle">Status</th>
+                <th className="w-[64px] border-b px-2 text-center align-middle">Manage</th>
+                <th className="w-[72px] border-b px-2 text-right align-middle">Weight</th>
+                <th className="w-16 border-b px-2 align-middle"></th>
               </tr>
             </thead>
             <tbody>
@@ -455,19 +400,21 @@ function WooInventory() {
                 if (!d) return null;
                 const isDirty = dirtyIds.includes(p.id);
                 const isOpen = openDesc.has(p.id);
+                const isVariation = p.wc_type === "variation";
+                const isVariableParent = p.wc_type === "variable";
                 return (
-                  <>
+                  <React.Fragment key={p.id}>
                     <tr
-                      key={p.id}
-                      className={cn("group", isDirty && "bg-brand-amber-soft/40")}
+                      className={cn("group h-9", isDirty && "bg-brand-amber-soft/40")}
                     >
-                      <td className="border-b px-2 py-1">
+                      <td className="h-9 border-b px-2 align-middle">
                         <Checkbox
                           checked={selected.has(p.id)}
                           onCheckedChange={() => toggleSel(p.id)}
+                          disabled={isVariableParent}
                         />
                       </td>
-                      <td className="border-b px-1 py-1">
+                      <td className="h-9 border-b px-1 align-middle">
                         <button
                           onClick={() =>
                             setOpenDesc((s) => {
@@ -482,50 +429,75 @@ function WooInventory() {
                           {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                         </button>
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b px-1 align-middle">
+                        {p.image_url ? (
+                          <img
+                            src={p.image_url}
+                            alt=""
+                            loading="lazy"
+                            className="h-7 w-7 rounded object-cover border bg-muted"
+                          />
+                        ) : (
+                          <div className="h-7 w-7 rounded border bg-muted/40" />
+                        )}
+                      </td>
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.sku}
                           onChange={(e) => updateDraft(p.id, { sku: e.target.value })}
-                          className="h-7 rounded-none border-0 font-mono text-xs focus-visible:ring-1"
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
-                        <Input
-                          value={d.name}
-                          onChange={(e) => updateDraft(p.id, { name: e.target.value })}
-                          className="h-7 min-w-[180px] rounded-none border-0 text-xs focus-visible:ring-1"
-                        />
+                      <td className="h-9 border-b p-0 align-middle">
+                        <div className={cn("flex items-center gap-1", isVariation && "pl-4")}>
+                          {isVariation && (
+                            <span className="text-muted-foreground text-[10px]">↳</span>
+                          )}
+                          <Input
+                            value={d.name}
+                            onChange={(e) => updateDraft(p.id, { name: e.target.value })}
+                            disabled={isVariation}
+                            className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1 disabled:opacity-100"
+                          />
+                          {isVariableParent && (
+                            <Badge variant="outline" className="mr-2 text-[9px]">VARIABLE</Badge>
+                          )}
+                        </div>
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.regular_price}
                           onChange={(e) => updateDraft(p.id, { regular_price: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.sale_price}
                           onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.stock_quantity}
                           onChange={(e) => updateDraft(p.id, { stock_quantity: e.target.value })}
                           inputMode="numeric"
-                          className="h-7 w-20 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Select
                           value={d.stock_status}
                           onValueChange={(v) => updateDraft(p.id, { stock_status: v })}
+                          disabled={isVariableParent}
                         >
-                          <SelectTrigger className="h-7 rounded-none border-0 text-xs focus-visible:ring-1">
+                          <SelectTrigger className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-xs focus-visible:ring-1">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -535,21 +507,23 @@ function WooInventory() {
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="border-b px-2 py-1 text-center">
+                      <td className="h-9 border-b px-2 text-center align-middle">
                         <Checkbox
                           checked={d.manage_stock}
                           onCheckedChange={(v) => updateDraft(p.id, { manage_stock: !!v })}
+                          disabled={isVariableParent}
                         />
                       </td>
-                      <td className="border-b p-0">
+                      <td className="h-9 border-b p-0 align-middle">
                         <Input
                           value={d.weight}
                           onChange={(e) => updateDraft(p.id, { weight: e.target.value })}
                           inputMode="decimal"
-                          className="h-7 w-16 rounded-none border-0 text-right font-mono text-xs focus-visible:ring-1"
+                          disabled={isVariableParent}
+                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
                         />
                       </td>
-                      <td className="border-b px-2 py-1 text-right">
+                      <td className="h-9 border-b px-2 text-right align-middle">
                         {isDirty && (
                           <Badge variant="outline" className="text-[10px] border-brand-amber text-brand-amber">
                             edited
@@ -558,8 +532,8 @@ function WooInventory() {
                       </td>
                     </tr>
                     {isOpen && (
-                      <tr key={`${p.id}-desc`} className={cn(isDirty && "bg-brand-amber-soft/40")}>
-                        <td colSpan={11} className="border-b bg-muted/20 px-3 py-2">
+                      <tr className={cn(isDirty && "bg-brand-amber-soft/40")}>
+                        <td colSpan={12} className="border-b bg-muted/20 px-3 py-2">
                           <label className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                             Description (HTML)
                           </label>
@@ -573,7 +547,7 @@ function WooInventory() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

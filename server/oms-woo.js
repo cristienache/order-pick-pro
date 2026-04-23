@@ -42,6 +42,19 @@ const PRODUCT_EXTRA_COLS = [
   // Drives the WC push to send ONLY user-touched fields, so we never
   // overwrite WC values we don't have locally (e.g. real sale_price).
   ["dirty_fields", "TEXT"],
+  // Small thumbnail URL pulled from the WC product images[0].src — used in
+  // the inventory grid so the user can recognise rows at a glance.
+  ["image_url", "TEXT"],
+  // Variable-product support. A "variable" parent is the umbrella row that
+  // carries the catalogue copy (name, description, image). Each "variation"
+  // is a sellable child with its own SKU, prices, weight and stock. The
+  // parent links to its WC product id; the variation also stores the WC
+  // parent product id so we can target /products/{parent}/variations/{id}
+  // when pushing.
+  ["wc_type", "TEXT NOT NULL DEFAULT 'simple'"],   // simple | variable | variation
+  ["parent_product_id", "TEXT"],                   // oms_products.id of the variable parent
+  ["wc_parent_id", "INTEGER"],                     // WC parent product id (for variations)
+  ["variation_label", "TEXT"],                     // e.g. "Red / Large" — derived from attributes
 ];
 for (const [col, type] of PRODUCT_EXTRA_COLS) {
   if (!productCols.has(col)) db.exec(`ALTER TABLE oms_products ADD COLUMN ${col} ${type}`);
@@ -129,9 +142,12 @@ function snapshotShape(p) {
   };
 }
 
-/** PUT one WC product. Returns the updated WC payload. */
-async function pushOneToWc(site, wcId, body) {
-  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${wcId}`;
+/** PUT one WC product (or variation). Returns the updated WC payload.
+ *  When `parentId` is provided, targets /products/{parent}/variations/{wcId}
+ *  instead of /products/{wcId}. */
+async function pushOneToWc(site, wcId, body, parentId = null) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
+  const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
   const res = await fetch(url, {
     method: "PUT",
     headers: {
@@ -156,9 +172,10 @@ async function pushOneToWc(site, wcId, body) {
   try { return JSON.parse(text); } catch { return null; }
 }
 
-/** GET one WC product (used for snapshots). */
-async function fetchOneFromWc(site, wcId) {
-  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${wcId}`;
+/** GET one WC product (or variation) — used for snapshots. */
+async function fetchOneFromWc(site, wcId, parentId = null) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
+  const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
   const res = await fetch(url, {
     headers: {
       Authorization: authHeader(site.consumer_key, site.consumer_secret),
@@ -169,11 +186,156 @@ async function fetchOneFromWc(site, wcId) {
   return res.json();
 }
 
+/** Fetch all variations for a variable parent (paginated). */
+async function fetchAllVariations(site, parentId) {
+  const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products/${parentId}/variations`;
+  const perPage = 100;
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const url = `${base}?per_page=${perPage}&page=${page}`;
+    const res = await fetch(url, {
+      headers: {
+        Authorization: authHeader(site.consumer_key, site.consumer_secret),
+        Accept: "application/json",
+      },
+    });
+    if (!res.ok) break;
+    const batch = await res.json();
+    if (!Array.isArray(batch) || batch.length === 0) break;
+    all.push(...batch);
+    if (batch.length < perPage) break;
+  }
+  return all;
+}
+
+/** Pull a small thumbnail URL out of a WC product/variation. */
+function pickThumb(wc) {
+  if (Array.isArray(wc.images) && wc.images.length > 0) {
+    return wc.images[0].src || null;
+  }
+  if (wc.image && wc.image.src) return wc.image.src;
+  return null;
+}
+
+/** Build "Red / Large"-style label from variation attribute objects. */
+function variationLabel(attrs) {
+  if (!Array.isArray(attrs)) return null;
+  return attrs.map((a) => a.option || a.value).filter(Boolean).join(" / ") || null;
+}
+
 /** Coerce a WC numeric string ("19.99") → number, blank → null. */
 function num(v) {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Upsert a single WC product or variation into oms_products + oms_inventory.
+ * Returns { id, created } where `created` is true on insert, false on update.
+ * `wcType` is one of "simple" | "variable" | "variation".
+ */
+function upsertWcProduct({
+  site, warehouseId, wc, nowIso, wcType,
+  parentOmsId = null, wcParentId = null, fallbackName = null,
+}) {
+  const isVariation = wcType === "variation";
+  const baseSku = wc.sku && wc.sku.trim() ? wc.sku.trim() : `WC-${site.id}-${wc.id}`;
+  const stockQty = Number.isFinite(Number(wc.stock_quantity))
+    ? Number(wc.stock_quantity) : 0;
+  const thumb = pickThumb(wc);
+  const label = isVariation ? variationLabel(wc.attributes) : null;
+  const displayName = isVariation
+    ? `${fallbackName || baseSku}${label ? ` — ${label}` : ""}`
+    : (wc.name || baseSku);
+
+  // Match on (site, woo_product_id, wc_type, wc_parent_id) so a variation
+  // and its parent (which can share a WC id space across product types) are
+  // treated as distinct rows.
+  const existing = db.prepare(
+    `SELECT id FROM oms_products
+       WHERE site_id = ? AND woo_product_id = ?
+         AND COALESCE(wc_type,'simple') = ?
+         AND COALESCE(wc_parent_id, 0) = COALESCE(?, 0)`,
+  ).get(site.id, wc.id, wcType, wcParentId);
+
+  let productId = existing?.id || crypto.randomUUID();
+  let created = false;
+
+  if (existing) {
+    db.prepare(
+      `UPDATE oms_products
+         SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
+             description = ?, short_description = ?, stock_status = ?,
+             manage_stock = ?, weight = ?, image_url = ?, wc_type = ?,
+             parent_product_id = ?, wc_parent_id = ?, variation_label = ?,
+             dirty = 0, dirty_fields = NULL, last_synced_at = ?
+       WHERE id = ?`,
+    ).run(
+      baseSku, displayName,
+      num(wc.price) ?? num(wc.regular_price) ?? 0,
+      num(wc.regular_price), num(wc.sale_price),
+      wc.description ?? null, wc.short_description ?? null,
+      wc.stock_status ?? "instock",
+      wc.manage_stock ? 1 : 0,
+      num(wc.weight),
+      thumb, wcType, parentOmsId, wcParentId, label,
+      nowIso,
+      productId,
+    );
+  } else {
+    // SKUs are UNIQUE in oms_products. Suffix on collision.
+    let finalSku = baseSku;
+    let i = 1;
+    while (db.prepare("SELECT 1 FROM oms_products WHERE sku = ?").get(finalSku)) {
+      finalSku = `${baseSku}-WC${site.id}-${i++}`;
+      if (i > 50) break;
+    }
+    db.prepare(
+      `INSERT INTO oms_products
+         (id, sku, name, source, base_price, woo_product_id, site_id,
+          description, short_description, regular_price, sale_price,
+          stock_status, manage_stock, weight, image_url, wc_type,
+          parent_product_id, wc_parent_id, variation_label,
+          dirty, last_synced_at)
+       VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
+    ).run(
+      productId, finalSku, displayName,
+      num(wc.price) ?? num(wc.regular_price) ?? 0,
+      wc.id, site.id,
+      wc.description ?? null, wc.short_description ?? null,
+      num(wc.regular_price), num(wc.sale_price),
+      wc.stock_status ?? "instock",
+      wc.manage_stock ? 1 : 0,
+      num(wc.weight),
+      thumb, wcType, parentOmsId, wcParentId, label,
+      nowIso,
+    );
+    created = true;
+  }
+
+  // Inventory mirror — variable parents themselves don't carry stock, only
+  // their variations do. Skip inventory for variable parents so totals
+  // aren't double-counted.
+  if (wcType !== "variable") {
+    const invRow = db.prepare(
+      `SELECT version FROM oms_inventory WHERE product_id = ? AND warehouse_id = ?`,
+    ).get(productId, warehouseId);
+    if (invRow) {
+      db.prepare(
+        `UPDATE oms_inventory SET quantity = ?, version = version + 1
+          WHERE product_id = ? AND warehouse_id = ?`,
+      ).run(stockQty, productId, warehouseId);
+    } else {
+      db.prepare(
+        `INSERT INTO oms_inventory
+           (product_id, warehouse_id, quantity, reserved, reorder_level, version)
+         VALUES (?, ?, ?, 0, 0, 1)`,
+      ).run(productId, warehouseId, stockQty);
+    }
+  }
+
+  return { id: productId, created };
 }
 
 /* ---------------- Mount ---------------- */
@@ -209,6 +371,40 @@ export function mountOmsWoo(app, { requireAuth }) {
     res.json(stats);
   });
 
+  // ----- List WC products for a site (with all extra columns the editor needs) -----
+  // Returns parents + variations sorted so variations come right after their
+  // parent. Excludes variable PARENTS' stock (parents have no stock of their
+  // own; only variations carry quantity).
+  app.get(`${r}/products`, requireAuth, (req, res) => {
+    const siteId = Number(req.query.site_id);
+    if (!Number.isInteger(siteId)) {
+      return res.status(422).json({ error: "site_id required" });
+    }
+    let site;
+    try { site = getSiteForUser(req.user.id, siteId); }
+    catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+    const warehouseId = ensureMirrorWarehouse(site);
+    const rows = db.prepare(
+      `SELECT p.id, p.sku, p.name, p.source, p.base_price, p.woo_product_id,
+              p.site_id, p.description, p.short_description, p.regular_price,
+              p.sale_price, p.stock_status, p.manage_stock, p.weight,
+              p.image_url, p.wc_type, p.parent_product_id, p.wc_parent_id,
+              p.variation_label, p.dirty, p.dirty_fields, p.last_synced_at,
+              COALESCE((SELECT quantity FROM oms_inventory
+                          WHERE product_id = p.id AND warehouse_id = ?), 0) AS stock_quantity,
+              COALESCE((SELECT version FROM oms_inventory
+                          WHERE product_id = p.id AND warehouse_id = ?), 1) AS inventory_version
+         FROM oms_products p
+        WHERE p.site_id = ?
+        ORDER BY COALESCE(p.parent_product_id, p.id), p.wc_type DESC, p.name ASC`,
+    ).all(warehouseId, warehouseId, site.id);
+    res.json(rows.map((r) => ({
+      ...r,
+      manage_stock: !!r.manage_stock,
+      dirty: !!r.dirty,
+    })));
+  });
+
   // ----- Sync a site's WC catalog into oms_products -----
   app.post(`${r}/sync/:siteId`, requireAuth, async (req, res) => {
     let site;
@@ -241,82 +437,46 @@ export function mountOmsWoo(app, { requireAuth }) {
         const nowIso = new Date().toISOString();
         const upsert = db.transaction((rows) => {
           for (const wc of rows) {
-            const sku = wc.sku && wc.sku.trim() ? wc.sku.trim() : `WC-${site.id}-${wc.id}`;
-            const existing = db.prepare(
-              `SELECT id FROM oms_products WHERE site_id = ? AND woo_product_id = ?`,
-            ).get(site.id, wc.id);
-            const productId = existing?.id || crypto.randomUUID();
-            const stockQty = Number.isFinite(Number(wc.stock_quantity))
-              ? Number(wc.stock_quantity) : 0;
-
-            if (existing) {
-              db.prepare(
-                `UPDATE oms_products
-                   SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
-                       description = ?, short_description = ?, stock_status = ?,
-                       manage_stock = ?, weight = ?, dirty = 0, dirty_fields = NULL,
-                       last_synced_at = ?
-                 WHERE id = ?`,
-              ).run(
-                sku, wc.name || sku,
-                num(wc.price) ?? num(wc.regular_price) ?? 0,
-                num(wc.regular_price), num(wc.sale_price),
-                wc.description ?? null, wc.short_description ?? null,
-                wc.stock_status ?? "instock",
-                wc.manage_stock ? 1 : 0,
-                num(wc.weight),
-                nowIso,
-                productId,
-              );
-              updated++;
-            } else {
-              // SKUs are UNIQUE in oms_products. If the same SKU is already
-              // taken (e.g. it was created manually before sync), suffix it.
-              let finalSku = sku;
-              let i = 1;
-              while (db.prepare("SELECT 1 FROM oms_products WHERE sku = ?").get(finalSku)) {
-                finalSku = `${sku}-WC${site.id}-${i++}`;
-                if (i > 50) break;
-              }
-              db.prepare(
-                `INSERT INTO oms_products
-                   (id, sku, name, source, base_price, woo_product_id, site_id,
-                    description, short_description, regular_price, sale_price,
-                    stock_status, manage_stock, weight, dirty, last_synced_at)
-                 VALUES (?, ?, ?, 'woo', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-              ).run(
-                productId, finalSku, wc.name || finalSku,
-                num(wc.price) ?? num(wc.regular_price) ?? 0,
-                wc.id, site.id,
-                wc.description ?? null, wc.short_description ?? null,
-                num(wc.regular_price), num(wc.sale_price),
-                wc.stock_status ?? "instock",
-                wc.manage_stock ? 1 : 0,
-                num(wc.weight),
-                nowIso,
-              );
-              created++;
-            }
-
-            // Inventory mirror — one row per (product, mirror warehouse).
-            const invRow = db.prepare(
-              `SELECT version FROM oms_inventory WHERE product_id = ? AND warehouse_id = ?`,
-            ).get(productId, warehouseId);
-            if (invRow) {
-              db.prepare(
-                `UPDATE oms_inventory SET quantity = ?, version = version + 1
-                  WHERE product_id = ? AND warehouse_id = ?`,
-              ).run(stockQty, productId, warehouseId);
-            } else {
-              db.prepare(
-                `INSERT INTO oms_inventory
-                   (product_id, warehouse_id, quantity, reserved, reorder_level, version)
-                 VALUES (?, ?, ?, 0, 0, 1)`,
-              ).run(productId, warehouseId, stockQty);
+            const productId = upsertWcProduct({
+              site, warehouseId, wc, nowIso,
+              wcType: wc.type === "variable" ? "variable" : "simple",
+            });
+            if (productId.created) created++; else updated++;
+            // Stash the parent for the variation pass below.
+            if (wc.type === "variable") {
+              variableParents.push({ wcId: wc.id, omsId: productId.id });
             }
           }
         });
+        // Variable parents discovered in this batch — we'll fetch their
+        // variations after the batch is upserted so we have stable parent ids.
+        const variableParents = [];
         upsert(batch);
+
+        // Pull variations for each variable product in this batch and upsert
+        // them as their own oms_products rows so users can edit each
+        // variation's price/stock individually.
+        for (const parent of variableParents) {
+          let variations = [];
+          try { variations = await fetchAllVariations(site, parent.wcId); }
+          catch (e) { errors.push({ wc_id: parent.wcId, error: `variations: ${e.message}` }); }
+          if (variations.length === 0) continue;
+          const upsertVars = db.transaction((vars) => {
+            for (const v of vars) {
+              const r = upsertWcProduct({
+                site, warehouseId, wc: v, nowIso,
+                wcType: "variation",
+                parentOmsId: parent.omsId,
+                wcParentId: parent.wcId,
+                fallbackName: db.prepare("SELECT name FROM oms_products WHERE id = ?")
+                  .get(parent.omsId)?.name,
+              });
+              if (r.created) created++; else updated++;
+            }
+          });
+          upsertVars(variations);
+        }
+
         total += batch.length;
         if (batch.length < perPage) break;
         page++;
@@ -428,11 +588,23 @@ export function mountOmsWoo(app, { requireAuth }) {
     const snapshots = [];
     const errors = [];
     // Sequential to keep WC happy. Most pushes are <50 products.
-    for (const row of rows) {
+    const fullRows = db.prepare(
+      `SELECT id, woo_product_id, wc_type, wc_parent_id FROM oms_products
+        WHERE site_id = ? AND id IN (${product_ids.map(() => "?").join(",")})`,
+    ).all(site.id, ...product_ids);
+    for (const row of fullRows) {
       if (!row.woo_product_id) continue;
       try {
-        const p = await fetchOneFromWc(site, row.woo_product_id);
-        snapshots.push({ oms_product_id: row.id, ...snapshotShape(p) });
+        const p = await fetchOneFromWc(
+          site, row.woo_product_id,
+          row.wc_type === "variation" ? row.wc_parent_id : null,
+        );
+        snapshots.push({
+          oms_product_id: row.id,
+          wc_type: row.wc_type || "simple",
+          wc_parent_id: row.wc_parent_id || null,
+          ...snapshotShape(p),
+        });
       } catch (e) {
         errors.push({ oms_product_id: row.id, error: e.message });
       }
@@ -477,7 +649,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     let ok = 0; const failed = [];
     for (const snap of payload) {
       try {
-        await pushOneToWc(site, snap.id, {
+        const body = {
           name: snap.name,
           sku: snap.sku,
           regular_price: snap.regular_price ?? "",
@@ -488,7 +660,15 @@ export function mountOmsWoo(app, { requireAuth }) {
           stock_status: snap.stock_status,
           manage_stock: snap.manage_stock,
           weight: snap.weight ?? "",
-        });
+        };
+        if (snap.wc_type === "variation") {
+          delete body.name;
+          delete body.short_description;
+        }
+        await pushOneToWc(
+          site, snap.id, body,
+          snap.wc_type === "variation" ? snap.wc_parent_id : null,
+        );
         ok++;
       } catch (e) {
         failed.push({ wc_id: snap.id, error: e.message });
@@ -516,7 +696,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.regular_price, p.sale_price, p.description,
               p.short_description, p.stock_status, p.manage_stock, p.weight,
-              p.woo_product_id, p.dirty_fields,
+              p.woo_product_id, p.dirty_fields, p.wc_type, p.wc_parent_id,
               (SELECT quantity FROM oms_inventory
                 WHERE product_id = p.id AND warehouse_id = ?) AS stock_quantity
          FROM oms_products p
@@ -528,6 +708,14 @@ export function mountOmsWoo(app, { requireAuth }) {
     for (const row of rows) {
       if (!row.woo_product_id) {
         failed.push({ product_id: row.id, error: "Not linked to WC" });
+        continue;
+      }
+      if (row.wc_type === "variable") {
+        // The variable parent has no editable price/stock of its own — those
+        // live on its variations. Just clear the dirty flag and move on.
+        db.prepare(`UPDATE oms_products SET dirty = 0, dirty_fields = NULL WHERE id = ?`)
+          .run(row.id);
+        ok++;
         continue;
       }
       let touched;
@@ -543,7 +731,9 @@ export function mountOmsWoo(app, { requireAuth }) {
 
       // Build the WC payload from ONLY the fields the user touched.
       const body = {};
-      if (touched.has("name")) body.name = row.name;
+      // Variations don't accept `name` — their display name is derived from
+      // the parent + attributes. Drop it to avoid 400s.
+      if (touched.has("name") && row.wc_type !== "variation") body.name = row.name;
       if (touched.has("sku")) body.sku = row.sku;
       if (touched.has("regular_price")) {
         body.regular_price = row.regular_price != null ? String(row.regular_price) : "";
@@ -551,8 +741,12 @@ export function mountOmsWoo(app, { requireAuth }) {
       if (touched.has("sale_price")) {
         body.sale_price = row.sale_price != null ? String(row.sale_price) : "";
       }
+      // Variations only have a single `description` field; short_description
+      // is parent-only.
       if (touched.has("description")) body.description = row.description ?? "";
-      if (touched.has("short_description")) body.short_description = row.short_description ?? "";
+      if (touched.has("short_description") && row.wc_type !== "variation") {
+        body.short_description = row.short_description ?? "";
+      }
       if (touched.has("weight")) body.weight = row.weight != null ? String(row.weight) : "";
       if (touched.has("manage_stock")) body.manage_stock = !!row.manage_stock;
       if (touched.has("stock_status")) body.stock_status = row.stock_status ?? "instock";
@@ -561,9 +755,20 @@ export function mountOmsWoo(app, { requireAuth }) {
         // WC ignores stock_quantity unless manage_stock is true; force it on.
         body.manage_stock = true;
       }
+      if (Object.keys(body).length === 0) {
+        // All touched fields were dropped (e.g. variation-only "name"). Just
+        // clear dirty so we don't loop forever.
+        db.prepare(`UPDATE oms_products SET dirty = 0, dirty_fields = NULL WHERE id = ?`)
+          .run(row.id);
+        ok++;
+        continue;
+      }
 
       try {
-        await pushOneToWc(site, row.woo_product_id, body);
+        await pushOneToWc(
+          site, row.woo_product_id, body,
+          row.wc_type === "variation" ? row.wc_parent_id : null,
+        );
         db.prepare(
           `UPDATE oms_products
               SET dirty = 0, dirty_fields = NULL, last_synced_at = ?

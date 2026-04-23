@@ -61,6 +61,7 @@ import {
   normalizeEbayOrder,
 } from "./ebay.js";
 import { sendContactEmail, smtpConfig } from "./mailer.js";
+import { mountOms } from "./oms.js";
 
 const isDevelopment = process.env.NODE_ENV !== "production";
 

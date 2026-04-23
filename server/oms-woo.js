@@ -262,6 +262,30 @@ function upsertWcProduct({
   let productId = existing?.id || crypto.randomUUID();
   let created = false;
 
+  // SKUs are UNIQUE in oms_products across the whole table. WC sites can
+  // legitimately reuse the same SKU on different stores (or a manual OMS
+  // product can collide with a freshly-imported WC SKU), so on every
+  // upsert we resolve `baseSku` to a unique value, EXCLUDING the row we're
+  // about to update. This prevents "UNIQUE constraint failed: oms_products.sku"
+  // on both INSERT and UPDATE paths.
+  const skuTaken = db.prepare(
+    "SELECT 1 FROM oms_products WHERE sku = ? AND id != ?",
+  );
+  let finalSku = baseSku;
+  if (skuTaken.get(finalSku, productId)) {
+    let i = 1;
+    finalSku = `${baseSku}-WC${site.id}-${i}`;
+    while (skuTaken.get(finalSku, productId)) {
+      i++;
+      finalSku = `${baseSku}-WC${site.id}-${i}`;
+      if (i > 50) {
+        // Final fallback: append the WC product id (always unique per site).
+        finalSku = `${baseSku}-WC${site.id}-${wc.id}`;
+        break;
+      }
+    }
+  }
+
   if (existing) {
     db.prepare(
       `UPDATE oms_products
@@ -272,7 +296,7 @@ function upsertWcProduct({
              dirty = 0, dirty_fields = NULL, last_synced_at = ?
        WHERE id = ?`,
     ).run(
-      baseSku, displayName,
+      finalSku, displayName,
       num(wc.price) ?? num(wc.regular_price) ?? 0,
       num(wc.regular_price), num(wc.sale_price),
       wc.description ?? null, wc.short_description ?? null,
@@ -284,13 +308,6 @@ function upsertWcProduct({
       productId,
     );
   } else {
-    // SKUs are UNIQUE in oms_products. Suffix on collision.
-    let finalSku = baseSku;
-    let i = 1;
-    while (db.prepare("SELECT 1 FROM oms_products WHERE sku = ?").get(finalSku)) {
-      finalSku = `${baseSku}-WC${site.id}-${i++}`;
-      if (i > 50) break;
-    }
     db.prepare(
       `INSERT INTO oms_products
          (id, sku, name, source, base_price, woo_product_id, site_id,

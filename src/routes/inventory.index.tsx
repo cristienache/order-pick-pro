@@ -112,6 +112,11 @@ function InventoryGrid() {
         case "sku": return a.sku.localeCompare(b.sku) * dir;
         case "regular_price": return (a.base_price - b.base_price) * dir;
         case "stock_quantity": return (totalsLocal(a.id) - totalsLocal(b.id)) * dir;
+        case "wc_date_created": {
+          const ta = a.created_at ? Date.parse(a.created_at) : 0;
+          const tb = b.created_at ? Date.parse(b.created_at) : 0;
+          return (ta - tb) * dir;
+        }
         case "name":
         default: return a.name.localeCompare(b.name) * dir;
       }

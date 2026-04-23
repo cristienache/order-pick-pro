@@ -34,7 +34,10 @@ export const Route = createFileRoute("/inventory/woo")({
   component: WooInventory,
 });
 
-/** Locally-edited row state. We mirror the server fields the user can edit. */
+/** Locally-edited row state. We mirror the server fields the user can edit.
+ *  Keeping `description` as `string | null` lets us tell "user typed empty"
+ *  apart from "never touched" (null). Same idea for the other fields: blank
+ *  string = user cleared it on purpose; null = unchanged from sync. */
 type DraftRow = {
   name: string;
   sku: string;
@@ -45,6 +48,17 @@ type DraftRow = {
   manage_stock: boolean;
   weight: string;
   description: string;
+};
+
+/** Snapshot of the row as it was right after the last sync. Used to compute
+ *  a per-field diff so we only push fields the user actually changed —
+ *  prevents wiping WC data we never had locally (real regular_price,
+ *  sale_price, weight, description, etc.). */
+type OriginalRow = {
+  name: string;
+  sku: string;
+  regular_price: string;
+  stock_quantity: string;
 };
 
 /** Pull WC mirror products + stock from the OMS endpoints (already implemented). */
@@ -122,31 +136,42 @@ function WooInventory() {
 
   /* ---------- Local edit buffer ---------- */
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
+  const [originals, setOriginals] = useState<Record<string, OriginalRow>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
 
-  // Initialise drafts whenever the site or product list changes.
+  // Initialise drafts whenever the site or product list changes. Defaults
+  // intentionally use blank strings for fields we don't have locally
+  // (sale_price, weight, description) — sending them would clobber WC data.
   useEffect(() => {
-    const next: Record<string, DraftRow> = {};
+    const nextDrafts: Record<string, DraftRow> = {};
+    const nextOriginals: Record<string, OriginalRow> = {};
     for (const p of siteProducts) {
-      next[p.id] = {
+      const stock = String(stockByProduct.get(p.id) ?? 0);
+      const regular = String(p.base_price ?? "");
+      nextDrafts[p.id] = {
         name: p.name ?? "",
         sku: p.sku ?? "",
-        // base_price isn't editable — we don't have regular/sale here,
-        // so we keep them as empty strings until the user types.
-        regular_price: String(p.base_price ?? ""),
+        regular_price: regular,
         sale_price: "",
-        stock_quantity: String(stockByProduct.get(p.id) ?? 0),
+        stock_quantity: stock,
         stock_status: "instock",
         manage_stock: true,
         weight: "",
         description: "",
       };
+      nextOriginals[p.id] = {
+        name: p.name ?? "",
+        sku: p.sku ?? "",
+        regular_price: regular,
+        stock_quantity: stock,
+      };
     }
-    setDrafts(next);
+    setDrafts(nextDrafts);
+    setOriginals(nextOriginals);
     setSelected(new Set());
   }, [siteId, siteProducts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -167,14 +192,15 @@ function WooInventory() {
   const selectedIds = [...selected];
   const dirtyIds = useMemo(() => {
     return siteProducts.filter((p) => {
-      const d = drafts[p.id]; if (!d) return false;
-      const stockMatches = String(stockByProduct.get(p.id) ?? 0) === d.stock_quantity;
-      return d.name !== p.name || d.sku !== p.sku ||
-        d.regular_price !== String(p.base_price ?? "") ||
-        !stockMatches ||
+      const d = drafts[p.id]; const o = originals[p.id];
+      if (!d || !o) return false;
+      return d.name !== o.name ||
+        d.sku !== o.sku ||
+        d.regular_price !== o.regular_price ||
+        d.stock_quantity !== o.stock_quantity ||
         d.sale_price !== "" || d.weight !== "" || d.description !== "";
     }).map((p) => p.id);
-  }, [siteProducts, drafts, stockByProduct]);
+  }, [siteProducts, drafts, originals]);
 
   /* ---------- Mutations ---------- */
   const sync = async () => {
@@ -193,20 +219,32 @@ function WooInventory() {
     }
   };
 
+  /** Build a diff payload for the bulk-save endpoint. Only includes fields
+   *  the user actually changed since the last sync — prevents wiping WC
+   *  values we never had locally (real sale_price, weight, etc.). */
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
-      const d = drafts[pid]; if (!d) return null;
-      const fields: WcEditPayload["fields"] = {
-        name: d.name,
-        sku: d.sku,
-        regular_price: d.regular_price === "" ? null : Number(d.regular_price),
-        sale_price: d.sale_price === "" ? null : Number(d.sale_price),
-        stock_quantity: Number(d.stock_quantity) || 0,
-        stock_status: d.stock_status,
-        manage_stock: d.manage_stock,
-        weight: d.weight === "" ? null : Number(d.weight),
-      };
-      if (d.description) fields.description = d.description;
+      const d = drafts[pid]; const o = originals[pid];
+      if (!d || !o) return null;
+      const fields: WcEditPayload["fields"] = {};
+      if (d.name !== o.name) fields.name = d.name;
+      if (d.sku !== o.sku) fields.sku = d.sku;
+      if (d.regular_price !== o.regular_price) {
+        fields.regular_price = d.regular_price === "" ? null : Number(d.regular_price);
+      }
+      if (d.sale_price !== "") fields.sale_price = Number(d.sale_price);
+      if (d.stock_quantity !== o.stock_quantity) {
+        fields.stock_quantity = Number(d.stock_quantity) || 0;
+      }
+      if (d.weight !== "") fields.weight = Number(d.weight);
+      if (d.description !== "") fields.description = d.description;
+      // Only send stock_status / manage_stock when the user touched stock,
+      // so we don't overwrite the existing WC values on price-only edits.
+      if (d.stock_quantity !== o.stock_quantity) {
+        fields.stock_status = d.stock_status;
+        fields.manage_stock = d.manage_stock;
+      }
+      if (Object.keys(fields).length === 0) return null;
       return { product_id: pid, fields };
     }).filter((x): x is WcEditPayload => x !== null);
   };
@@ -217,9 +255,11 @@ function WooInventory() {
     if (ids.length === 0) {
       toast.info("Nothing to save"); return;
     }
-    const t = toast.loading(`Saving ${ids.length} change${ids.length === 1 ? "" : "s"}…`);
+    const payload = buildEditsForIds(ids);
+    if (payload.length === 0) { toast.info("Nothing to save"); return; }
+    const t = toast.loading(`Saving ${payload.length} change${payload.length === 1 ? "" : "s"}…`);
     try {
-      const r = await wcApi.saveLocal(siteId, buildEditsForIds(ids));
+      const r = await wcApi.saveLocal(siteId, payload);
       toast.success(`Saved locally: ${r.ok}${r.failed.length ? `, ${r.failed.length} failed` : ""}`, { id: t });
       qc.invalidateQueries({ queryKey: ["wc-sites"] });
     } catch (e) {
@@ -256,7 +296,11 @@ function WooInventory() {
     try {
       const r = await wcApi.push(siteId, idsForPush);
       if (r.failed.length) {
-        toast.warning(`Pushed ${r.ok}, failed ${r.failed.length}. Check logs.`, { id: t });
+        const first = r.failed[0]?.error || r.failed[0]?.reason || "unknown";
+        toast.warning(
+          `Pushed ${r.ok}, failed ${r.failed.length}. First error: ${first}`,
+          { id: t, duration: 8000 },
+        );
       } else {
         toast.success(`Pushed ${r.ok} product${r.ok === 1 ? "" : "s"} to WooCommerce`, { id: t });
       }

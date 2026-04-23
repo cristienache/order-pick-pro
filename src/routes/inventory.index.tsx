@@ -260,8 +260,8 @@ function InventoryGrid() {
                   return r && r.quantity <= r.reorder_level;
                 });
                 return (
-                  <tr key={p.id} className={cn("group", isLowRow && "bg-destructive/5")}>
-                    <td className="sticky left-0 z-10 w-10 border-b border-r bg-background px-2 py-1 group-hover:bg-muted/50">
+                  <tr key={p.id} className={cn("group h-9", isLowRow && "bg-destructive/5")}>
+                    <td className="sticky left-0 z-10 h-9 w-10 border-b border-r bg-background px-2 group-hover:bg-muted/50">
                       <Checkbox
                         checked={visibleWarehouses.every((w) => selected.has(`${p.id}:${w.id}`))}
                         onCheckedChange={(v) => {
@@ -274,7 +274,7 @@ function InventoryGrid() {
                         }}
                       />
                     </td>
-                    <td className="sticky left-10 z-10 min-w-[260px] border-b border-r bg-background px-3 py-1 group-hover:bg-muted/50">
+                    <td className="sticky left-10 z-10 h-9 min-w-[260px] border-b border-r bg-background px-3 group-hover:bg-muted/50">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-medium">{p.sku}</span>
                         <span className="text-xs text-muted-foreground truncate">{p.name}</span>
@@ -288,7 +288,7 @@ function InventoryGrid() {
                       const r = invByKey.get(key);
                       const editable = isAdmin || assignedWh.includes(w.id);
                       return (
-                        <td key={w.id} className={cn("border-b border-r bg-background p-0 group-hover:bg-muted/30", selected.has(key) && "bg-foreground/5")}>
+                        <td key={w.id} className={cn("h-9 border-b border-r bg-background p-0 group-hover:bg-muted/30", selected.has(key) && "bg-foreground/5")}>
                           {r ? (
                             <StockCell
                               cellId={`r${rIdx}-c${cIdx}`}
@@ -300,12 +300,12 @@ function InventoryGrid() {
                               onSelect={() => toggleSel(key)}
                             />
                           ) : (
-                            <div className="px-2 text-right font-mono text-xs text-muted-foreground">—</div>
+                            <div className="flex h-9 items-center justify-end px-2 font-mono text-xs text-muted-foreground">—</div>
                           )}
                         </td>
                       );
                     })}
-                    <td className="border-b bg-muted/30 px-3 py-1 text-right font-mono text-xs font-semibold">
+                    <td className="h-9 border-b bg-muted/30 px-3 text-right font-mono text-xs font-semibold align-middle">
                       {totalsByProduct.get(p.id) ?? 0}
                     </td>
                   </tr>

@@ -38,6 +38,10 @@ const PRODUCT_EXTRA_COLS = [
   ["weight", "REAL"],
   ["dirty", "INTEGER NOT NULL DEFAULT 0"],
   ["last_synced_at", "TEXT"],
+  // JSON array of field names the user has changed since the last sync.
+  // Drives the WC push to send ONLY user-touched fields, so we never
+  // overwrite WC values we don't have locally (e.g. real sale_price).
+  ["dirty_fields", "TEXT"],
 ];
 for (const [col, type] of PRODUCT_EXTRA_COLS) {
   if (!productCols.has(col)) db.exec(`ALTER TABLE oms_products ADD COLUMN ${col} ${type}`);
@@ -138,7 +142,17 @@ async function pushOneToWc(site, wcId, body) {
     body: JSON.stringify(body),
   });
   const text = await res.text().catch(() => "");
-  if (!res.ok) throw new Error(`WC ${res.status}: ${text.slice(0, 300)}`);
+  if (!res.ok) {
+    // WC errors look like {"code":"product_invalid_sku","message":"...","data":{...}}.
+    // Surface the human message when present so the UI toast is useful.
+    let msg = text.slice(0, 300);
+    try {
+      const j = JSON.parse(text);
+      if (j && (j.message || j.code)) msg = `${j.code || "wc_error"}: ${j.message || ""}`.trim();
+    } catch { /* leave raw */ }
+    console.error(`[oms-woo] push ${wcId} failed (${res.status}):`, msg, "body:", JSON.stringify(body));
+    throw new Error(`WC ${res.status}: ${msg}`);
+  }
   try { return JSON.parse(text); } catch { return null; }
 }
 
@@ -240,7 +254,8 @@ export function mountOmsWoo(app, { requireAuth }) {
                 `UPDATE oms_products
                    SET sku = ?, name = ?, base_price = ?, regular_price = ?, sale_price = ?,
                        description = ?, short_description = ?, stock_status = ?,
-                       manage_stock = ?, weight = ?, dirty = 0, last_synced_at = ?
+                       manage_stock = ?, weight = ?, dirty = 0, dirty_fields = NULL,
+                       last_synced_at = ?
                  WHERE id = ?`,
               ).run(
                 sku, wc.name || sku,
@@ -340,25 +355,34 @@ export function mountOmsWoo(app, { requireAuth }) {
           failed.push({ product_id, reason: "validation" }); continue;
         }
         const prod = db.prepare(
-          "SELECT id FROM oms_products WHERE id = ? AND site_id = ?",
+          "SELECT id, dirty_fields FROM oms_products WHERE id = ? AND site_id = ?",
         ).get(product_id, site.id);
         if (!prod) { failed.push({ product_id, reason: "not_found" }); continue; }
+
+        // Track which columns the user has touched since last sync. We OR
+        // into any existing set so multiple saves accumulate.
+        let touched;
+        try { touched = new Set(JSON.parse(prod.dirty_fields || "[]")); }
+        catch { touched = new Set(); }
 
         const sets = []; const values = [];
         for (const [k, v] of Object.entries(fields)) {
           if (!ALLOWED_FIELDS.has(k)) continue;
           if (k === "stock_quantity") continue; // handled below
+          touched.add(k);
           if (k === "manage_stock") { sets.push(`manage_stock = ?`); values.push(v ? 1 : 0); continue; }
-          if (k === "name" || k === "sku") sets.push(`${k} = ?`);
-          else sets.push(`${k} = ?`);
+          sets.push(`${k} = ?`);
           values.push(v ?? null);
         }
-        if (sets.length) {
-          sets.push("dirty = 1");
-          db.prepare(
-            `UPDATE oms_products SET ${sets.join(", ")} WHERE id = ?`,
-          ).run(...values, product_id);
+        if (Object.prototype.hasOwnProperty.call(fields, "stock_quantity")) {
+          touched.add("stock_quantity");
         }
+        sets.push("dirty = 1", "dirty_fields = ?");
+        values.push(JSON.stringify([...touched]));
+        db.prepare(
+          `UPDATE oms_products SET ${sets.join(", ")} WHERE id = ?`,
+        ).run(...values, product_id);
+
         if (Object.prototype.hasOwnProperty.call(fields, "stock_quantity")) {
           const qty = Math.max(0, Math.floor(Number(fields.stock_quantity) || 0));
           const inv = db.prepare(
@@ -377,7 +401,6 @@ export function mountOmsWoo(app, { requireAuth }) {
                VALUES (?, ?, ?, 0, 0, 1)`,
             ).run(product_id, warehouseId, qty);
           }
-          db.prepare(`UPDATE oms_products SET dirty = 1 WHERE id = ?`).run(product_id);
         }
         ok++;
       }
@@ -493,7 +516,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     const rows = db.prepare(
       `SELECT p.id, p.sku, p.name, p.regular_price, p.sale_price, p.description,
               p.short_description, p.stock_status, p.manage_stock, p.weight,
-              p.woo_product_id,
+              p.woo_product_id, p.dirty_fields,
               (SELECT quantity FROM oms_inventory
                 WHERE product_id = p.id AND warehouse_id = ?) AS stock_quantity
          FROM oms_products p
@@ -507,24 +530,44 @@ export function mountOmsWoo(app, { requireAuth }) {
         failed.push({ product_id: row.id, error: "Not linked to WC" });
         continue;
       }
-      const body = {
-        name: row.name,
-        sku: row.sku,
-        regular_price: row.regular_price != null ? String(row.regular_price) : "",
-        sale_price: row.sale_price != null ? String(row.sale_price) : "",
-        description: row.description ?? "",
-        short_description: row.short_description ?? "",
-        stock_status: row.stock_status ?? "instock",
-        manage_stock: !!row.manage_stock,
-        weight: row.weight != null ? String(row.weight) : "",
-      };
-      if (row.manage_stock) {
-        body.stock_quantity = Math.max(0, Math.floor(Number(row.stock_quantity) || 0));
+      let touched;
+      try { touched = new Set(JSON.parse(row.dirty_fields || "[]")); }
+      catch { touched = new Set(); }
+      if (touched.size === 0) {
+        // Nothing to push for this row — clear dirty flag and skip the
+        // network call entirely. Prevents wiping WC data on a no-op push.
+        db.prepare(`UPDATE oms_products SET dirty = 0 WHERE id = ?`).run(row.id);
+        ok++;
+        continue;
       }
+
+      // Build the WC payload from ONLY the fields the user touched.
+      const body = {};
+      if (touched.has("name")) body.name = row.name;
+      if (touched.has("sku")) body.sku = row.sku;
+      if (touched.has("regular_price")) {
+        body.regular_price = row.regular_price != null ? String(row.regular_price) : "";
+      }
+      if (touched.has("sale_price")) {
+        body.sale_price = row.sale_price != null ? String(row.sale_price) : "";
+      }
+      if (touched.has("description")) body.description = row.description ?? "";
+      if (touched.has("short_description")) body.short_description = row.short_description ?? "";
+      if (touched.has("weight")) body.weight = row.weight != null ? String(row.weight) : "";
+      if (touched.has("manage_stock")) body.manage_stock = !!row.manage_stock;
+      if (touched.has("stock_status")) body.stock_status = row.stock_status ?? "instock";
+      if (touched.has("stock_quantity")) {
+        body.stock_quantity = Math.max(0, Math.floor(Number(row.stock_quantity) || 0));
+        // WC ignores stock_quantity unless manage_stock is true; force it on.
+        body.manage_stock = true;
+      }
+
       try {
         await pushOneToWc(site, row.woo_product_id, body);
         db.prepare(
-          `UPDATE oms_products SET dirty = 0, last_synced_at = ? WHERE id = ?`,
+          `UPDATE oms_products
+              SET dirty = 0, dirty_fields = NULL, last_synced_at = ?
+            WHERE id = ?`,
         ).run(nowIso, row.id);
         ok++;
       } catch (e) {

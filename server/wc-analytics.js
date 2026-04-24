@@ -80,6 +80,11 @@ function fmtDay(d) {
 const MAX_ORDER_SCAN = 1000;
 const PER_PAGE = 100;
 
+// WooCommerce Analytics' "Revenue" report counts only these statuses by default
+// (the `actionable_statuses` setting). Matches the headline numbers in
+// /wp-admin/admin.php?page=wc-admin&path=/analytics/revenue.
+const REVENUE_STATUSES = ["processing", "completed"];
+
 async function scanOrders(site, { from, to, statuses }) {
   const after = fmtIsoDate(from);
   const before = fmtIsoDate(to);
@@ -106,33 +111,137 @@ async function scanOrders(site, { from, to, statuses }) {
   return orders;
 }
 
-function summarizeOrders(orders) {
-  let revenue = 0;
-  let refunds = 0;
+// Per-order refunds cache keyed by `${siteUrl}:${orderId}` so re-fetches across
+// quick page reloads don't re-hit WooCommerce. Refund totals are immutable once
+// posted, so caching aggressively is safe.
+const refundsCache = new Map();
+
+async function fetchOrderRefundTotal(site, orderId) {
+  const cacheKey = `${normalizeUrl(site.store_url)}:${orderId}`;
+  const hit = refundsCache.get(cacheKey);
+  if (hit && Date.now() - hit.at < 10 * 60 * 1000) return hit.value;
+  try {
+    const data = await wcGet(site, `wc/v3/orders/${orderId}/refunds`, { per_page: "100" });
+    let lineRefunds = 0;
+    let shippingRefunds = 0;
+    let taxRefunds = 0;
+    let total = 0;
+    if (Array.isArray(data)) {
+      for (const r of data) {
+        // r.amount is the absolute refund amount (positive in WC API).
+        total += Math.abs(Number(r.amount || 0));
+        if (Array.isArray(r.line_items)) {
+          for (const li of r.line_items) {
+            // Refund line totals come back negative; take absolute.
+            lineRefunds += Math.abs(Number(li.subtotal ?? li.total ?? 0));
+          }
+        }
+        if (Array.isArray(r.shipping_lines)) {
+          for (const sl of r.shipping_lines) {
+            shippingRefunds += Math.abs(Number(sl.total || 0));
+          }
+        }
+        if (Array.isArray(r.tax_lines)) {
+          for (const tl of r.tax_lines) {
+            taxRefunds += Math.abs(Number(tl.tax_total || 0));
+          }
+        }
+      }
+    }
+    const value = { total, lineRefunds, shippingRefunds, taxRefunds };
+    refundsCache.set(cacheKey, { at: Date.now(), value });
+    return value;
+  } catch {
+    return { total: 0, lineRefunds: 0, shippingRefunds: 0, taxRefunds: 0 };
+  }
+}
+
+/**
+ * Build a Woo-Analytics-equivalent breakdown from a list of orders.
+ * Mirrors the formulas used by /wp-admin > Analytics > Revenue:
+ *   Gross sales  = Σ line_item.subtotal
+ *   Coupons      = Σ coupon_lines.discount
+ *   Refunds      = Σ refunded line-item amounts (from /orders/:id/refunds)
+ *   Net sales    = Gross − Coupons − Refunds
+ *   Shipping     = Σ shipping_lines.total
+ *   Taxes        = Σ tax_lines.tax_total + shipping_tax_total
+ *   Total sales  = Net + Shipping + Taxes + Fees
+ */
+async function summarizeOrdersForRevenue(site, orders) {
+  let gross = 0;
+  let coupons = 0;
+  let shipping = 0;
+  let taxes = 0;
+  let fees = 0;
   let items = 0;
+  let refunds = 0;
   const customerIds = new Set();
   const guestEmails = new Set();
+
+  // Fetch refunds in parallel for orders that have them.
+  const ordersWithRefunds = orders.filter(
+    (o) => Array.isArray(o.refunds) && o.refunds.length > 0,
+  );
+  const refundResults = await Promise.all(
+    ordersWithRefunds.map((o) => fetchOrderRefundTotal(site, o.id).then((r) => [o.id, r])),
+  );
+  const refundsByOrder = new Map(refundResults);
+
   for (const o of orders) {
-    const total = Number(o.total || 0);
-    const totalRefund = Math.abs(Number(o.total_refund || o.total_refunds || 0));
-    if (o.status === "refunded") {
-      refunds += total;
-    } else {
-      revenue += total - totalRefund;
-      refunds += totalRefund;
-    }
+    // Line items: Σ subtotal (pre-discount, ex tax, ex shipping)
     if (Array.isArray(o.line_items)) {
-      for (const li of o.line_items) items += Number(li.quantity || 0);
+      for (const li of o.line_items) {
+        gross += Number(li.subtotal || 0);
+        items += Number(li.quantity || 0);
+      }
     }
+    // Coupons applied
+    if (Array.isArray(o.coupon_lines)) {
+      for (const cl of o.coupon_lines) {
+        coupons += Number(cl.discount || 0);
+      }
+    }
+    // Shipping
+    if (Array.isArray(o.shipping_lines)) {
+      for (const sl of o.shipping_lines) {
+        shipping += Number(sl.total || 0);
+      }
+    }
+    // Taxes (both order taxes and shipping taxes)
+    if (Array.isArray(o.tax_lines)) {
+      for (const tl of o.tax_lines) {
+        taxes += Number(tl.tax_total || 0) + Number(tl.shipping_tax_total || 0);
+      }
+    }
+    // Fees
+    if (Array.isArray(o.fee_lines)) {
+      for (const fl of o.fee_lines) {
+        fees += Number(fl.total || 0);
+      }
+    }
+    // Refunds for this order
+    const refund = refundsByOrder.get(o.id);
+    if (refund) refunds += refund.lineRefunds;
+
+    // Customer
     if (o.customer_id && Number(o.customer_id) > 0) {
       customerIds.add(Number(o.customer_id));
     } else if (o.billing?.email) {
       guestEmails.add(String(o.billing.email).toLowerCase());
     }
   }
+
+  const net = gross - coupons - refunds;
+  const total = net + shipping + taxes + fees;
   return {
-    revenue,
+    gross,
+    coupons,
     refunds,
+    net,
+    shipping,
+    taxes,
+    fees,
+    total,
     items,
     orders: orders.length,
     customers: customerIds.size + guestEmails.size,

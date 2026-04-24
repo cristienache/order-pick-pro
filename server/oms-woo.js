@@ -228,6 +228,88 @@ async function fetchAllVariations(site, parentId) {
   return all;
 }
 
+const incrementalCandidateCache = new Map();
+
+async function fetchWcProducts(site, query) {
+  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products?${query}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: authHeader(site.consumer_key, site.consumer_secret),
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`WC ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const items = await res.json();
+  return {
+    items: Array.isArray(items) ? items : [],
+    total: Number(res.headers.get("x-wp-total")) || 0,
+    totalPages: Number(res.headers.get("x-wp-totalpages")) || 0,
+  };
+}
+
+function wcProductTimestamp(wc) {
+  return wc?.date_modified_gmt || wc?.date_modified || wc?.date_created_gmt || wc?.date_created || null;
+}
+
+function wcProductSortValue(wc) {
+  const ts = Date.parse(wcProductTimestamp(wc) || "");
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+async function listIncrementalCandidates(site, since) {
+  const now = Date.now();
+  for (const [key, value] of incrementalCandidateCache) {
+    if (!value || value.expiresAt <= now) incrementalCandidateCache.delete(key);
+  }
+
+  const cacheKey = `${site.id}:${since}`;
+  const cached = incrementalCandidateCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.items;
+
+  const merged = new Map();
+  const summaryFields = encodeURIComponent("id,date_created,date_created_gmt,date_modified,date_modified_gmt");
+  const sources = [
+    `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`,
+    `orderby=date&order=asc&after=${encodeURIComponent(since)}&dates_are_gmt=true`,
+  ];
+
+  for (const source of sources) {
+    for (let page = 1; page <= 200; page += 1) {
+      const { items } = await fetchWcProducts(
+        site,
+        `per_page=100&page=${page}&_fields=${summaryFields}&${source}`,
+      );
+      if (items.length === 0) break;
+      for (const item of items) {
+        const id = Number(item?.id);
+        if (!Number.isFinite(id)) continue;
+        const sortTs = wcProductSortValue(item);
+        const prev = merged.get(id);
+        if (!prev || sortTs >= prev.sortTs) merged.set(id, { id, sortTs });
+      }
+      if (items.length < 100) break;
+    }
+  }
+
+  const ordered = [...merged.values()].sort((a, b) => a.sortTs - b.sortTs || a.id - b.id);
+  incrementalCandidateCache.set(cacheKey, {
+    expiresAt: now + 10 * 60 * 1000,
+    items: ordered,
+  });
+  return ordered;
+}
+
+async function fetchProductsByIds(site, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const include = ids.map((id) => String(id)).join(",");
+  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}`);
+  const order = new Map(ids.map((id, index) => [Number(id), index]));
+  return items.sort((a, b) => (order.get(Number(a.id)) ?? 0) - (order.get(Number(b.id)) ?? 0));
+}
+
 /** Pull a small thumbnail URL out of a WC product/variation. */
 function pickThumb(wc) {
   if (Array.isArray(wc.images) && wc.images.length > 0) {

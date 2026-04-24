@@ -31,7 +31,7 @@ import { SortablePanel } from "@/components/dashboard/sortable-panel";
 import { EditToolbar } from "@/components/dashboard/edit-toolbar";
 import { TodaySchedule } from "@/components/dashboard/today-schedule";
 import {
-  loadLayout, saveLayout, resetLayout, DEFAULT_LAYOUT, PANEL_LABELS,
+  loadLayout, saveLayout, resetLayout, DEFAULT_LAYOUT,
   type DashboardLayout, type PanelId,
 } from "@/lib/dashboard-layout";
 

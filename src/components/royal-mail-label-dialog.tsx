@@ -709,15 +709,22 @@ function FormRow({
 // ---------------- Viewer ----------------
 
 function LabelViewer({
-  shipment, onClose, onVoided,
+  shipment: initialShipment, onClose, onVoided,
 }: {
   shipment: RmShipment;
   onClose: () => void;
   onVoided: () => void;
 }) {
+  // Local copy so the retry-fetch button can update has_label / click_and_drop_url
+  // without forcing the parent to refetch.
+  const [shipment, setShipment] = useState<RmShipment>(initialShipment);
+  useEffect(() => { setShipment(initialShipment); }, [initialShipment]);
+
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [voiding, setVoiding] = useState(false);
+  const [refetching, setRefetching] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Cancel = delete the Click & Drop order (when still cancellable) and
@@ -748,14 +755,39 @@ function LabelViewer({
     }
   };
 
+  // Ask the server to re-poll Click & Drop for the label PDF — useful when the
+  // user has just confirmed customs or paid for postage in the C&D dashboard.
+  const refetchLabel = async () => {
+    setRefetching(true);
+    try {
+      const res = await api<{ shipment: RmShipment }>(
+        `/api/royal-mail/shipments/${shipment.id}/refetch-label`,
+        { method: "POST" },
+      );
+      setShipment(res.shipment);
+      if (res.shipment.has_label) {
+        toast.success("Label is ready");
+      } else {
+        toast.warning("Royal Mail still has no PDF for this order. Try again after confirming in Click & Drop.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Refetch failed");
+    } finally {
+      setRefetching(false);
+    }
+  };
+
   useEffect(() => {
     if (!shipment.has_label) {
       setPdfUrl(null);
+      setPdfError(null);
       setLoading(false);
       return;
     }
     let url: string | null = null;
     let cancelled = false;
+    setLoading(true);
+    setPdfError(null);
     apiBlob(`/api/royal-mail/shipments/${shipment.id}/label.pdf`)
       .then((blob) => {
         if (cancelled) return;
@@ -768,7 +800,7 @@ function LabelViewer({
       .catch((e) => {
         if (!cancelled) {
           setPdfUrl(null);
-          toast.error(e instanceof Error ? e.message : "Could not load label");
+          setPdfError(e instanceof Error ? e.message : "Could not load label");
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });

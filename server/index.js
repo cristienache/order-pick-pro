@@ -2899,7 +2899,7 @@ async function createShipmentForUser({ userId, data: input, creds }) {
 
   if (orderIdentifier) {
     try {
-      const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier });
+      const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier, includeCN: isInternational });
       if (lab.ok && lab.buffer) {
         labelBase64 = lab.buffer.toString("base64");
       } else if (!lab.ok) {

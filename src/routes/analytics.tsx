@@ -20,7 +20,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, TrendingDown, Calendar as CalIcon, Download,
-  Store as StoreIcon, AlertTriangle, RefreshCcw,
+  Store as StoreIcon, AlertTriangle, RefreshCcw, HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
@@ -30,7 +30,9 @@ import {
   getCustomers, getCoupons,
   type Overview, type RevenueResponse, type TopProduct,
   type OrdersStats, type CustomersStats, type CouponItem, type AnalyticsWarning,
+  type RevenueBreakdownGbp,
 } from "@/lib/analytics-api";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/analytics")({
   component: () => (
@@ -79,6 +81,11 @@ function fmtDay(d: Date) { return format(d, "yyyy-MM-dd"); }
 function gbp(v: number) {
   if (!Number.isFinite(v)) return "—";
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(v);
+}
+
+function gbpExact(v: number) {
+  if (!Number.isFinite(v)) return "—";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 }
 
 function num(v: number) {
@@ -348,21 +355,22 @@ function AnalyticsPage() {
         </div>
       </section>
 
-      {/* Warnings */}
-      {allWarnings.length > 0 && (
-        <Card className="border-brand-amber/40 bg-brand-amber-soft/40">
-          <CardContent className="p-3 flex flex-wrap items-center gap-2 text-xs">
-            <AlertTriangle className="h-4 w-4 text-brand-amber" />
-            <span className="font-medium">Limited analytics:</span>
-            {Array.from(new Set(allWarnings.map((w) => w.error))).slice(0, 3).map((e, i) => (
-              <Badge key={i} variant="secondary" className="rounded-full font-normal">{e}</Badge>
-            ))}
-            <span className="text-muted-foreground ml-auto">
-              Falling back to direct order scan — first load can take a moment.
-            </span>
-          </CardContent>
-        </Card>
-      )}
+      {/* Warnings — shown only when the data actually came from the fallback path. */}
+      {(() => {
+        const usedFallback = !!overview?.per_site?.some((s) => s.limited);
+        if (!usedFallback || allWarnings.length === 0) return null;
+        return (
+          <Card className="border-brand-amber/40 bg-brand-amber-soft/40">
+            <CardContent className="p-3 flex flex-wrap items-center gap-2 text-xs">
+              <AlertTriangle className="h-4 w-4 text-brand-amber" />
+              <span className="font-medium">Using fallback order scan:</span>
+              <span className="text-muted-foreground">
+                wc-analytics didn't return data for this period; numbers were computed from raw orders (processing + completed only). They should match WooCommerce's Revenue report exactly.
+              </span>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* No stores */}
       {!sitesLoading && sites.length === 0 ? (
@@ -387,7 +395,8 @@ function AnalyticsPage() {
           {/* KPI strip */}
           <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <KpiCard
-              label="Revenue"
+              label="Net sales"
+              hint="Gross sales − coupons − refunds. Excludes shipping & tax. Matches WooCommerce › Analytics › Revenue › Net sales."
               value={overview ? gbp(overview.totals.revenue_gbp) : "—"}
               delta={overview ? pctDelta(overview.totals.revenue_gbp, overview.previous?.revenue_gbp) : null}
               loading={overviewLoading}
@@ -430,6 +439,13 @@ function AnalyticsPage() {
               <CardContent className="p-4 text-sm text-destructive">{overviewError}</CardContent>
             </Card>
           )}
+
+          {/* Revenue breakdown — mirrors WooCommerce › Analytics › Revenue */}
+          <RevenueBreakdownCard
+            current={overview?.breakdown_gbp || null}
+            previous={overview?.previous_breakdown_gbp || null}
+            loading={overviewLoading}
+          />
 
           {/* Revenue + Status */}
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -540,18 +556,32 @@ function AnalyticsPage() {
 /* ---------------- Sub-components ---------------- */
 
 function KpiCard({
-  label, value, delta, loading, invertDelta,
+  label, value, delta, loading, invertDelta, hint,
 }: {
   label: string; value: string;
   delta: { v: number; positive: boolean } | null;
-  loading: boolean; invertDelta?: boolean;
+  loading: boolean; invertDelta?: boolean; hint?: string;
 }) {
   const showPositive = delta ? (invertDelta ? !delta.positive : delta.positive) : true;
+  const labelEl = hint ? (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            {label} <HelpCircle className="h-3 w-3 opacity-60" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[260px] text-xs">{hint}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : (
+    <div className="text-xs text-muted-foreground">{label}</div>
+  );
   return (
     <Card className="border border-border/70">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
-          <div className="text-xs text-muted-foreground">{label}</div>
+          {labelEl}
           {delta && (
             <Badge
               variant="secondary"
@@ -687,5 +717,103 @@ function CustomersChart({ data }: { data: CustomersStats }) {
         </ResponsiveContainer>
       </div>
     </div>
+  );
+}
+
+/* ---------------- Revenue breakdown ---------------- */
+
+const BREAKDOWN_HINTS: Record<string, string> = {
+  gross_sales_gbp: "Sum of line-item subtotals before discounts, shipping, and tax.",
+  coupons_gbp: "Total coupon discounts applied across all orders in the period.",
+  refunds_gbp: "Sum of refunded line-item amounts (from each order's Refunds).",
+  net_sales_gbp: "Gross sales − coupons − refunds. The headline 'Net sales' figure WooCommerce shows.",
+  shipping_gbp: "Sum of shipping line totals (excluding shipping tax).",
+  taxes_gbp: "Order taxes + shipping taxes.",
+  fees_gbp: "Sum of fee_lines on orders.",
+  total_sales_gbp: "Net sales + shipping + taxes + fees. What the customer actually paid.",
+};
+
+function BreakdownRow({
+  k, label, value, prev, emphasis,
+}: {
+  k: string; label: string; value: number; prev?: number | null; emphasis?: boolean;
+}) {
+  const delta = pctDelta(value, prev ?? undefined);
+  return (
+    <div className={cn(
+      "flex items-center justify-between gap-3 py-2.5 px-3 rounded-lg",
+      emphasis ? "bg-muted/50 font-semibold" : "border-b border-border/50 last:border-b-0",
+    )}>
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="inline-flex items-center gap-1 text-sm text-left hover:text-foreground text-muted-foreground">
+              <span className={emphasis ? "text-foreground" : ""}>{label}</span>
+              <HelpCircle className="h-3 w-3 opacity-60" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="max-w-[280px] text-xs">
+            {BREAKDOWN_HINTS[k] || ""}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      <div className="flex items-center gap-2">
+        <span className="tabular-nums text-sm">{gbpExact(value)}</span>
+        {delta && (
+          <Badge variant="secondary" className={cn(
+            "rounded-full text-[10px] gap-1",
+            delta.positive ? "bg-brand-emerald-soft text-brand-emerald" : "bg-brand-rose-soft text-brand-rose",
+          )}>
+            {delta.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {delta.v.toFixed(1)}%
+          </Badge>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RevenueBreakdownCard({
+  current, previous, loading,
+}: {
+  current: RevenueBreakdownGbp | null;
+  previous: RevenueBreakdownGbp | null;
+  loading: boolean;
+}) {
+  return (
+    <Card className="border border-border/70">
+      <CardContent className="p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-semibold">Revenue breakdown</div>
+          <div className="text-[11px] text-muted-foreground">All figures in GBP · matches WooCommerce › Analytics › Revenue</div>
+        </div>
+        {loading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-9 w-full" />)}
+          </div>
+        ) : !current ? (
+          <div className="text-sm text-muted-foreground py-6 text-center">
+            Revenue breakdown is not available for this period.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+            <div>
+              <BreakdownRow k="gross_sales_gbp" label="Gross sales" value={current.gross_sales_gbp} prev={previous?.gross_sales_gbp} />
+              <BreakdownRow k="coupons_gbp" label="Coupons" value={-Math.abs(current.coupons_gbp)} prev={previous ? -Math.abs(previous.coupons_gbp) : null} />
+              <BreakdownRow k="refunds_gbp" label="Returns / refunds" value={-Math.abs(current.refunds_gbp)} prev={previous ? -Math.abs(previous.refunds_gbp) : null} />
+              <BreakdownRow k="net_sales_gbp" label="Net sales" value={current.net_sales_gbp} prev={previous?.net_sales_gbp} emphasis />
+            </div>
+            <div>
+              <BreakdownRow k="shipping_gbp" label="Shipping" value={current.shipping_gbp} prev={previous?.shipping_gbp} />
+              <BreakdownRow k="taxes_gbp" label="Taxes" value={current.taxes_gbp} prev={previous?.taxes_gbp} />
+              {current.fees_gbp !== 0 && (
+                <BreakdownRow k="fees_gbp" label="Fees" value={current.fees_gbp} prev={previous?.fees_gbp} />
+              )}
+              <BreakdownRow k="total_sales_gbp" label="Total sales" value={current.total_sales_gbp} prev={previous?.total_sales_gbp} emphasis />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

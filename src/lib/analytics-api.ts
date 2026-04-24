@@ -4,6 +4,17 @@ import { api } from "./api";
 
 export type AnalyticsWarning = { site_id: number; site_name?: string; error: string };
 
+export type RevenueBreakdownGbp = {
+  gross_sales_gbp: number;
+  coupons_gbp: number;
+  refunds_gbp: number;
+  net_sales_gbp: number;
+  shipping_gbp: number;
+  taxes_gbp: number;
+  fees_gbp: number;
+  total_sales_gbp: number;
+};
+
 export type Overview = {
   totals: {
     revenue_gbp: number;
@@ -15,16 +26,20 @@ export type Overview = {
     refunds_gbp: number;
     refund_count: number;
   };
+  breakdown_gbp?: RevenueBreakdownGbp | null;
   previous?: Overview["totals"];
+  previous_breakdown_gbp?: RevenueBreakdownGbp | null;
   per_site: Array<{
     site_id: number;
     site_name: string;
     currency: string;
+    limited?: boolean;
     revenue: number;
     revenue_gbp: number;
     orders: number;
     items_sold: number;
     refunds: number;
+    breakdown?: Record<string, number> | null;
   }>;
   warnings: AnalyticsWarning[];
   fx_source?: string;

@@ -212,10 +212,13 @@ function WooInventory() {
       return true;
     });
 
-    // Sort
+    // Sort. Variations are NEVER mixed in with simple/variable products —
+    // they always render directly under their own parent (and only when that
+    // parent is in the visible set). The sort key applies to parents/simples;
+    // variations under a sorted parent keep their original WC order.
     const dir = filters.sortDir === "asc" ? 1 : -1;
     const num = (v: number | null | undefined) => (v == null ? -Infinity : v);
-    list.sort((a, b) => {
+    const cmp = (a: typeof list[number], b: typeof list[number]) => {
       switch (filters.sortKey) {
         case "sku": return a.sku.localeCompare(b.sku) * dir;
         case "regular_price": return (num(a.regular_price) - num(b.regular_price)) * dir;
@@ -235,13 +238,34 @@ function WooInventory() {
         case "dirty": {
           const da = dirtySet.has(a.id) ? 1 : 0;
           const db = dirtySet.has(b.id) ? 1 : 0;
-          return (db - da); // dirty rows always first regardless of dir
+          return (db - da);
         }
         case "name":
         default: return a.name.localeCompare(b.name) * dir;
       }
-    });
-    return list;
+    };
+
+    // Split into top-level rows (simples + variable parents) and a lookup of
+    // variations indexed by their parent_product_id. Sort the top-level rows
+    // by the chosen key, then re-assemble: each parent immediately followed
+    // by its own variations (kept in their original WC order).
+    const topLevel = list.filter((p) => !p.parent_product_id);
+    const variationsByParent = new Map<string, typeof list>();
+    for (const p of list) {
+      if (p.parent_product_id) {
+        const arr = variationsByParent.get(p.parent_product_id) ?? [];
+        arr.push(p);
+        variationsByParent.set(p.parent_product_id, arr);
+      }
+    }
+    topLevel.sort(cmp);
+    const ordered: typeof list = [];
+    for (const p of topLevel) {
+      ordered.push(p);
+      const vars = variationsByParent.get(p.id);
+      if (vars && vars.length) ordered.push(...vars);
+    }
+    return ordered;
   }, [siteProducts, filters, collapsed, dirtyIds]);
 
   // Reset to page 1 whenever the filter/search changes the visible set.

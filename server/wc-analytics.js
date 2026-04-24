@@ -394,24 +394,39 @@ export async function getRevenueStats(site, { from, to, interval = "day" }) {
     return { limited: false, points };
   } catch (e) {
     if (e.status !== 404 && e.status !== 401 && e.status !== 403 && e.status !== 400) throw e;
-    // Fallback: scan wc/v3/orders and bucket by interval.
+    // Fallback: scan wc/v3/orders and bucket by interval. Use Net sales
+    // (line-item subtotals minus coupons & refunds) so the chart matches Woo.
     try {
       const orders = await scanOrders(site, {
         from, to,
-        statuses: ["processing", "completed", "on-hold"],
+        statuses: REVENUE_STATUSES,
       });
+      // Pre-fetch refunds for orders that have them.
+      const ordersWithRefunds = orders.filter((o) => Array.isArray(o.refunds) && o.refunds.length > 0);
+      const refundPairs = await Promise.all(
+        ordersWithRefunds.map((o) => fetchOrderRefundTotal(site, o.id).then((r) => [o.id, r])),
+      );
+      const refundsByOrder = new Map(refundPairs);
       const buckets = new Map();
       for (const o of orders) {
         const d = new Date(o.date_created || o.date_paid || from);
         const key = bucketKey(d, interval);
         const cur = buckets.get(key) || { date: key, revenue: 0, orders: 0, items: 0 };
-        const total = Number(o.total || 0);
-        const refund = Math.abs(Number(o.total_refund || 0));
-        cur.revenue += total - refund;
-        cur.orders += 1;
+        let gross = 0;
         if (Array.isArray(o.line_items)) {
-          for (const li of o.line_items) cur.items += Number(li.quantity || 0);
+          for (const li of o.line_items) {
+            gross += Number(li.subtotal || 0);
+            cur.items += Number(li.quantity || 0);
+          }
         }
+        let coupons = 0;
+        if (Array.isArray(o.coupon_lines)) {
+          for (const cl of o.coupon_lines) coupons += Number(cl.discount || 0);
+        }
+        const refund = refundsByOrder.get(o.id);
+        const refunds = refund ? refund.lineRefunds : 0;
+        cur.revenue += gross - coupons - refunds;
+        cur.orders += 1;
         buckets.set(key, cur);
       }
       const points = Array.from(buckets.values()).sort((a, b) => a.date.localeCompare(b.date));

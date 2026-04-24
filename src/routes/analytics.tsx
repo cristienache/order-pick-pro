@@ -20,7 +20,7 @@ import {
 } from "recharts";
 import {
   TrendingUp, TrendingDown, Calendar as CalIcon, Download,
-  Store as StoreIcon, AlertTriangle, RefreshCcw,
+  Store as StoreIcon, AlertTriangle, RefreshCcw, HelpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DateRange } from "react-day-picker";
@@ -30,7 +30,9 @@ import {
   getCustomers, getCoupons,
   type Overview, type RevenueResponse, type TopProduct,
   type OrdersStats, type CustomersStats, type CouponItem, type AnalyticsWarning,
+  type RevenueBreakdownGbp,
 } from "@/lib/analytics-api";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export const Route = createFileRoute("/analytics")({
   component: () => (

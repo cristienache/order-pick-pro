@@ -477,7 +477,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       const code = `WC-${s.id}`;
       const wh = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
       const lastSync = db.prepare(
-        `SELECT MAX(last_synced_at) AS ts FROM oms_products WHERE site_id = ?`,
+        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(s.id);
       const dirty = db.prepare(
         `SELECT COUNT(*) AS c FROM oms_products WHERE site_id = ? AND dirty = 1`,
@@ -568,7 +568,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       since = String(req.query.since || req.body?.since || "");
     } else if (!forceFull) {
       const prev = db.prepare(
-        `SELECT MAX(last_synced_at) AS ts FROM oms_products WHERE site_id = ?`,
+        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(site.id);
       if (prev?.ts) {
         const t = new Date(prev.ts).getTime();
@@ -676,6 +676,10 @@ export function mountOmsWoo(app, { requireAuth }) {
       }
 
       const done = batch.length < perPage;
+      if (done && nextSince) {
+        db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextSince, site.id);
+        incrementalCandidateCache.delete(`${site.id}:${since}`);
+      }
       res.json({
         page, per_page: perPage, batch_size: batch.length,
         created, updated, errors,

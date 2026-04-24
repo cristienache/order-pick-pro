@@ -599,7 +599,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         const slice = newCandidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
         batch = await fetchProductsByIds(site, slice);
       } else {
-        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc`);
+        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc&status=publish`);
         batch = full.items;
         totalProducts = full.total || null;
         totalPages = full.totalPages || null;

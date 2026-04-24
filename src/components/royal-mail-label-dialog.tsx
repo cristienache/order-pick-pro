@@ -157,12 +157,38 @@ function LabelForm({
   const [height, setHeight] = useState<string>("");
   const [safePlace, setSafePlace] = useState<string>("");
   const [reference, setReference] = useState<string>(order.number);
+  const [requireSignature, setRequireSignature] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
-  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+  const destScope = rmDestinationScope(recipient.country_code);
+  const availableServices = useMemo(
+    () => rmServicesForFormat(packageFormat, { country: recipient.country_code }),
+    [packageFormat, recipient.country_code],
+  );
+
+  // If destination changes and current selection is no longer available, reset.
+  useEffect(() => {
+    if (serviceMode === "auto" || serviceMode === "custom") return;
+    if (!availableServices.some((s) => s.code === serviceMode)) {
+      setServiceMode("auto");
+      setRequireSignature(false);
+    }
+  }, [availableServices, serviceMode]);
+
+  // Resolve the final service code, applying signature mapping for domestic.
+  const resolvedServiceCode = useMemo(() => {
+    if (serviceMode === "custom") return customServiceCode.trim().toUpperCase();
+    if (serviceMode === "auto") return "auto";
+    if (requireSignature && destScope === "domestic") {
+      return rmSignedVariant(serviceMode) ?? serviceMode;
+    }
+    return serviceMode;
+  }, [serviceMode, customServiceCode, requireSignature, destScope]);
+
+  const serviceCode = resolvedServiceCode;
 
   // Look up suggestion metadata if the selected/typed code matches one we know about.
   // Falls back to a generic 20kg cap so unknown codes still pass weight checks.
@@ -176,6 +202,20 @@ function LabelForm({
       }
     );
   }, [serviceCode]);
+
+  // Whether the "Signature required" checkbox should be offered for the
+  // currently-selected base service. Only domestic, non-signed picks qualify.
+  const baseServiceDef = useMemo(
+    () => RM_SERVICES.find((s) => s.code === serviceMode),
+    [serviceMode],
+  );
+  const canToggleSignature =
+    destScope === "domestic" &&
+    serviceMode !== "auto" &&
+    serviceMode !== "custom" &&
+    !!baseServiceDef &&
+    !baseServiceDef.signed &&
+    !!rmSignedVariant(serviceMode);
 
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;

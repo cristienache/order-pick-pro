@@ -452,7 +452,29 @@ function WooInventory() {
     }
   };
 
-  const idsForPush = selectedIds.length ? selectedIds : dirtyIds;
+  // What we'll push: any selected rows that actually have unsaved changes,
+  // PLUS any dirty variations under a selected variable parent (so picking the
+  // parent row pushes its edited children too). If nothing is selected, fall
+  // back to all dirty rows. We never include rows that are already in sync —
+  // those just produce a confusing "No changes to push" error per row.
+  const dirtySet = useMemo(() => new Set(dirtyIds), [dirtyIds]);
+  const idsForPush = useMemo(() => {
+    if (selectedIds.length === 0) return dirtyIds;
+    const expanded = new Set<string>();
+    for (const id of selectedIds) {
+      const row = siteProducts.find((p) => p.id === id);
+      if (!row) continue;
+      if (dirtySet.has(id)) expanded.add(id);
+      // Selecting a variable parent implicitly includes any dirty variation
+      // beneath it — so the user doesn't have to expand + tick each one.
+      if (row.wc_type === "variable") {
+        for (const v of siteProducts) {
+          if (v.parent_product_id === id && dirtySet.has(v.id)) expanded.add(v.id);
+        }
+      }
+    }
+    return [...expanded];
+  }, [selectedIds, siteProducts, dirtyIds, dirtySet]);
 
   const doBackup = async () => {
     if (!siteId || idsForPush.length === 0) return false;

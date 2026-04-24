@@ -45,6 +45,7 @@ db.exec(`
     consumer_key_enc TEXT NOT NULL,
     consumer_secret_enc TEXT NOT NULL,
     wc_sync_cursor TEXT,
+    wc_full_sync_cursor TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -139,6 +140,9 @@ for (const col of RETURN_COLS) {
 }
 if (!sitesCols.has("wc_sync_cursor")) {
   db.exec(`ALTER TABLE sites ADD COLUMN wc_sync_cursor TEXT`);
+}
+if (!sitesCols.has("wc_full_sync_cursor")) {
+  db.exec(`ALTER TABLE sites ADD COLUMN wc_full_sync_cursor TEXT`);
 }
 
 // Add status + approval_token to existing users tables. Existing users are

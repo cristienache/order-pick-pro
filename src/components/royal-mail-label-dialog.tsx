@@ -215,10 +215,39 @@ function LabelForm({
   const [requireSignature, setRequireSignature] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Royal Mail settings — used to seed sender defaults (origin country) for
+  // the customs panel. Loaded once on mount; falls back to "GB" while loading.
+  const [rmSettings, setRmSettings] = useState<RmSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ settings: RmSettings }>("/api/royal-mail/settings")
+      .then((r) => { if (!cancelled) setRmSettings(r.settings); })
+      .catch(() => { /* non-fatal — defaults still work */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const defaultOrigin = (rmSettings?.default_origin_country || "GB").toUpperCase();
+  const defaultContentType: RmCustomsContentType = rmSettings?.default_content_type || "saleOfGoods";
+  const orderCurrency = (order.currency || "GBP").toUpperCase();
+
+  // Customs state — only used for international destinations.
+  const [contentType, setContentType] = useState<RmCustomsContentType>(defaultContentType);
+  const [currencyCode, setCurrencyCode] = useState<string>(orderCurrency);
+  const [customsRows, setCustomsRows] = useState<CustomsRow[]>(
+    () => customsRowsFromOrder(order, defaultOrigin),
+  );
+  // Re-seed customs rows whenever the order or sender defaults change.
+  useEffect(() => {
+    setCustomsRows(customsRowsFromOrder(order, defaultOrigin));
+    setCurrencyCode(orderCurrency);
+    setContentType(defaultContentType);
+  }, [order.id, defaultOrigin, orderCurrency, defaultContentType]);
+
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
   const destScope = rmDestinationScope(recipient.country_code);
+  const isInternational = destScope === "international";
   const availableServices = useMemo(
     () => rmServicesForFormat(packageFormat, { country: recipient.country_code }),
     [packageFormat, recipient.country_code],
@@ -275,6 +304,37 @@ function LabelForm({
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
 
+  // Customs validation — only enforced when shipping internationally.
+  const customsErrors = useMemo(() => {
+    if (!isInternational) return [];
+    const errs: string[] = [];
+    if (customsRows.length === 0) errs.push("At least one customs item is required.");
+    customsRows.forEach((row, i) => {
+      if (!row.customs_code.trim()) errs.push(`Line ${i + 1}: HS / commodity code is required.`);
+      if (!row.origin_country.trim() || row.origin_country.length !== 2) {
+        errs.push(`Line ${i + 1}: Origin country must be a 2-letter ISO code.`);
+      }
+      const v = Number(row.unit_value);
+      if (!Number.isFinite(v) || v < 0) errs.push(`Line ${i + 1}: Unit value must be a positive number.`);
+      if (!row.customs_description.trim()) errs.push(`Line ${i + 1}: Description is required.`);
+      if (!Number.isInteger(row.quantity) || row.quantity < 1) {
+        errs.push(`Line ${i + 1}: Quantity must be a whole number ≥ 1.`);
+      }
+    });
+    return errs;
+  }, [isInternational, customsRows]);
+
+  const updateCustomsRow = (idx: number, patch: Partial<CustomsRow>) =>
+    setCustomsRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const addCustomsRow = () =>
+    setCustomsRows((rows) => [...rows, {
+      key: `row-new-${Date.now()}`,
+      sku: "", name: "", quantity: 1, unit_value: "0",
+      customs_code: "", origin_country: defaultOrigin, customs_description: "",
+    }]);
+  const removeCustomsRow = (idx: number) =>
+    setCustomsRows((rows) => rows.filter((_, i) => i !== idx));
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!Number.isInteger(weightNum) || weightNum < 1) {
@@ -283,6 +343,10 @@ function LabelForm({
     }
     if (overweight) {
       toast.error(`Weight exceeds the ${service.maxWeight}g limit for ${service.label}.`);
+      return;
+    }
+    if (isInternational && customsErrors.length > 0) {
+      toast.error(customsErrors[0]);
       return;
     }
     setSubmitting(true);
@@ -295,6 +359,24 @@ function LabelForm({
               height_mm: Number(height),
             }
           : {};
+
+      // Build the customs block only for international shipments.
+      const customs = isInternational
+        ? {
+            content_type: contentType,
+            currency_code: currencyCode.toUpperCase(),
+            items: customsRows.map<RmCustomsItem>((r) => ({
+              sku: r.sku || undefined,
+              name: r.name || r.customs_description || "Goods",
+              quantity: r.quantity,
+              unit_value: Number(r.unit_value),
+              customs_code: r.customs_code.trim(),
+              origin_country: r.origin_country.trim().toUpperCase(),
+              customs_description: r.customs_description.trim(),
+            })),
+          }
+        : undefined;
+
       const res = await api<{ shipment: RmShipment }>("/api/royal-mail/shipments", {
         method: "POST",
         body: {
@@ -319,6 +401,7 @@ function LabelForm({
             phone: recipient.phone || undefined,
             email: recipient.email || undefined,
           },
+          ...(customs ? { customs } : {}),
         },
       });
       toast.success("Label created");

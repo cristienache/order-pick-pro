@@ -778,13 +778,25 @@ app.post("/api/pages", requireAuth, requireAdmin, (req, res) => {
 
 app.put("/api/pages/:id", requireAuth, requireAdmin, (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare("SELECT id FROM pages WHERE id = ?").get(id);
+  const existing = db.prepare("SELECT * FROM pages WHERE id = ?").get(id);
   if (!existing) return res.status(404).json({ error: "Not found" });
   const parsed = pageWriteSchema.safeParse(req.body || {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });
   }
   const d = parsed.data;
+
+  // Only the master admin may rename a page (title) or change its URL slug.
+  // Other admins keep block / visibility / description editing rights.
+  const isMaster = String(req.user?.email || "").toLowerCase() === ADMIN_EMAIL;
+  const titleChanged = d.title !== existing.title;
+  const slugChanged = d.slug !== existing.slug;
+  if (!isMaster && (titleChanged || slugChanged)) {
+    return res.status(403).json({
+      error: "Only the master admin can change a page's title or slug.",
+    });
+  }
+
   const slugClash = db.prepare("SELECT id FROM pages WHERE slug = ? AND id != ?").get(d.slug, id);
   if (slugClash) return res.status(409).json({ error: "Slug already in use" });
   db.prepare(

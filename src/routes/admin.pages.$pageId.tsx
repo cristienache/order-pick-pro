@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { RequireAuth } from "@/components/require-auth";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
@@ -68,8 +69,15 @@ const EMPTY_DRAFT: Draft = {
 function PageEditor() {
   const { pageId } = Route.useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isNew = pageId === "new";
   const numericId = isNew ? null : Number(pageId);
+
+  // Title and slug edits on existing pages are master-admin-only.
+  // New pages can be created by any admin (they choose the initial title/slug
+  // at creation time; from then on only the master admin can rename them).
+  const isMaster = !!user?.master_admin;
+  const canEditIdentity = isNew || isMaster;
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [original, setOriginal] = useState<Draft>(EMPTY_DRAFT);
@@ -231,17 +239,28 @@ function PageEditor() {
           <Card>
             <CardHeader>
               <CardTitle>Page details</CardTitle>
-              <CardDescription>Title, URL slug and short description for SEO and previews.</CardDescription>
+              <CardDescription>
+                Title, URL slug and short description for SEO and previews.
+                {!canEditIdentity && (
+                  <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                    Only the master admin can rename a page or change its URL slug. Other fields remain editable.
+                  </span>
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
+                <Label htmlFor="title">
+                  Title <span className="text-xs text-muted-foreground font-normal">(also used as the page meta title)</span>
+                </Label>
                 <Input
                   id="title"
                   value={draft.title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="About us"
                   maxLength={120}
+                  disabled={!canEditIdentity}
+                  title={!canEditIdentity ? "Master admin only" : undefined}
                 />
               </div>
               <div className="space-y-2">
@@ -255,6 +274,8 @@ function PageEditor() {
                     placeholder="about-us"
                     maxLength={60}
                     className="font-mono"
+                    disabled={!canEditIdentity}
+                    title={!canEditIdentity ? "Master admin only" : undefined}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">

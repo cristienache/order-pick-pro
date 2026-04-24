@@ -25,7 +25,8 @@ import {
   Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, rmDestinationScope, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Just enough of the WooCommerce order shape to prefill the recipient.
 type WCAddress = {

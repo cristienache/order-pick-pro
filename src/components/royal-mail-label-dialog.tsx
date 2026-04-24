@@ -329,7 +329,7 @@ function LabelForm({
               <SelectTrigger id="service"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                {rmServicesForFormat(packageFormat).map((s) => (
+                {availableServices.map((s) => (
                   <SelectItem key={s.code} value={s.code}>
                     {s.label} ({s.code})
                   </SelectItem>
@@ -347,6 +347,20 @@ function LabelForm({
                 autoComplete="off"
                 required
               />
+            )}
+            {canToggleSignature && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pt-1">
+                <Checkbox
+                  checked={requireSignature}
+                  onCheckedChange={(v) => setRequireSignature(v === true)}
+                />
+                Signature required (uses {rmSignedVariant(serviceMode)})
+              </label>
+            )}
+            {destScope === "eu" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                EU destination — ship via Packeta instead of Royal Mail.
+              </p>
             )}
             <p className="text-xs text-muted-foreground">
               Choose Auto if a code is rejected; otherwise use a service enabled on your account.

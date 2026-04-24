@@ -2362,6 +2362,27 @@ app.get("/api/packeta/shipments/by-order/:siteId/:orderId", requireAuth, (req, r
 // serviceCode is optional in the official schema, so we allow blank/"auto" and
 // let Click & Drop apply the account's postage rules/defaults when omitted.
 
+// Per-line customs item (CN22/CN23). Required on international shipments.
+// `unit_value` is the declared value of one unit in `currency_code` (sent at
+// the parent shipment level). HS/origin are required by Royal Mail for non-GB.
+const customsItemSchema = z.object({
+  sku: z.string().trim().max(60).optional().or(z.literal("")).transform((v) => v || ""),
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().int().min(1).max(999),
+  unit_value: z.number().min(0).max(1_000_000),
+  customs_code: z.string().trim().min(2).max(20), // HS / commodity code
+  origin_country: z.string().trim().length(2).transform((v) => v.toUpperCase()),
+  customs_description: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
+});
+const customsBlockSchema = z.object({
+  content_type: z.enum([
+    "saleOfGoods", "gift", "documents", "commercialSample",
+    "returnedGoods", "mixedContent", "other",
+  ]).default("saleOfGoods"),
+  currency_code: z.string().trim().length(3).default("GBP").transform((v) => v.toUpperCase()),
+  items: z.array(customsItemSchema).min(1).max(50),
+});
+
 const shipmentSchema = z.object({
   site_id: z.number().int().positive(),
   woocommerce_order_id: z.number().int().positive(),
@@ -2385,6 +2406,11 @@ const shipmentSchema = z.object({
     name: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || ""),
     quantity: z.number().int().min(1).max(999).default(1),
   })).max(50).optional(),
+  // International only — overrides line_items for the C&D `contents[]` so
+  // declared values, HS codes and origin countries can flow into the customs
+  // declaration. The server validates this is present whenever the recipient
+  // country isn't GB.
+  customs: customsBlockSchema.optional(),
   recipient: z.object({
     name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(100).optional().or(z.literal("")).transform((v) => v || null),

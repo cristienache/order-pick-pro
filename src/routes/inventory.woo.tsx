@@ -588,8 +588,16 @@ function WooInventory() {
         />
 
         <div className="ml-auto flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">
-            {selectedIds.length || dirtyIds.length} pending
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            title={
+              selectedIds.length > 0 && idsForPush.length === 0
+                ? "Selected rows have no unsaved changes — edit a field first, or use ‘Copy to variations’ on the parent row."
+                : `${idsForPush.length} row${idsForPush.length === 1 ? "" : "s"} ready to push`
+            }
+          >
+            {idsForPush.length} to push
           </Badge>
           <WcBulkPanel selectedCount={selectedIds.length} onApply={applyBulk} />
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredProducts.length === 0}>

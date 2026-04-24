@@ -660,7 +660,8 @@ export function mountOmsWoo(app, { requireAuth }) {
         const slice = variableParents.slice(i, i + CONCURRENCY);
         const results = await Promise.all(slice.map(async (parent) => {
           try {
-            const variations = await fetchAllVariations(site, parent.wcId);
+            const allVariations = await fetchAllVariations(site, parent.wcId);
+            const variations = allVariations.filter((v) => (v?.status || "publish") === "publish");
             return { parent, variations, error: null };
           } catch (e) {
             return { parent, variations: [], error: e.message };

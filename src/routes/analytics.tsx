@@ -440,6 +440,13 @@ function AnalyticsPage() {
             </Card>
           )}
 
+          {/* Revenue breakdown — mirrors WooCommerce › Analytics › Revenue */}
+          <RevenueBreakdownCard
+            current={overview?.breakdown_gbp || null}
+            previous={overview?.previous_breakdown_gbp || null}
+            loading={overviewLoading}
+          />
+
           {/* Revenue + Status */}
           <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <PanelCard

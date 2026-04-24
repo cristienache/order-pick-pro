@@ -435,7 +435,54 @@ app.post("/api/contact", contactLimiter, async (req, res) => {
 app.get("/api/auth/me", requireAuth, (req, res) => {
   const user = db.prepare("SELECT id, email, role FROM users WHERE id = ?").get(req.user.id);
   if (!user) return res.status(404).json({ error: "Not found" });
-  res.json({ user });
+  const master_admin = String(user.email || "").toLowerCase() === ADMIN_EMAIL;
+  res.json({ user: { ...user, master_admin } });
+});
+
+// Profile updates — any signed-in user can change their own email/password.
+function requireMasterAdmin(req, res, next) {
+  if (String(req.user?.email || "").toLowerCase() !== ADMIN_EMAIL) {
+    return res.status(403).json({ error: "Master admin only" });
+  }
+  next();
+}
+
+const updateMeSchema = z.object({
+  email: z.string().email().optional(),
+  current_password: z.string().min(1).optional(),
+  new_password: z.string().min(8).optional(),
+}).refine((d) => d.email || d.new_password, { message: "Nothing to update" });
+
+app.put("/api/auth/me", requireAuth, async (req, res) => {
+  const parsed = updateMeSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });
+  const { email, current_password, new_password } = parsed.data;
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id);
+  if (!user) return res.status(404).json({ error: "Not found" });
+
+  // Any change requires the current password (basic re-auth).
+  if (!current_password) return res.status(400).json({ error: "Current password is required" });
+  const ok = await bcrypt.compare(current_password, user.password_hash);
+  if (!ok) return res.status(401).json({ error: "Current password is incorrect" });
+
+  // Master admin email cannot be changed (it's set via env).
+  if (email && email.toLowerCase() !== user.email.toLowerCase()) {
+    if (user.email.toLowerCase() === ADMIN_EMAIL) {
+      return res.status(403).json({ error: "Master admin email is fixed via ADMIN_EMAIL." });
+    }
+    const taken = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(email, user.id);
+    if (taken) return res.status(409).json({ error: "Email already in use" });
+    db.prepare("UPDATE users SET email = ? WHERE id = ?").run(email, user.id);
+  }
+  if (new_password) {
+    const hash = await bcrypt.hash(new_password, 12);
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, user.id);
+  }
+
+  const updated = db.prepare("SELECT id, email, role FROM users WHERE id = ?").get(user.id);
+  const master_admin = String(updated.email || "").toLowerCase() === ADMIN_EMAIL;
+  res.json({ user: { ...updated, master_admin } });
 });
 
 // ---------- FX rates (GBP base, cached for 1h) ----------

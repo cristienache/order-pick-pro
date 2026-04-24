@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import type { PageNavItem } from "@/lib/pages";
 import {
   LogOut, Package, Settings, Users, Plug, Home, Palette, FileText, Boxes,
-  ClipboardList, Menu, Search, Bell, MessageCircle, Loader2, X,
+  ClipboardList, Menu, Search, Bell, MessageCircle, Loader2, X, BarChart3,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -57,6 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       { to: "/orders", label: navLabel(branding, "orders"), icon: <Package className="h-4 w-4" />, match: "/orders", authedOnly: true },
       { to: "/inventory", label: "Inventory", icon: <Boxes className="h-4 w-4" />, match: "/inventory", authedOnly: true },
       { to: "/purchase-orders", label: "Purchase orders", icon: <ClipboardList className="h-4 w-4" />, match: "/purchase-orders", authedOnly: true },
+      { to: "/analytics", label: "Analytics", icon: <BarChart3 className="h-4 w-4" />, match: "/analytics", authedOnly: true },
     ];
     const setup: NavItem[] = [
       { to: "/integrations", label: navLabel(branding, "integrations"), icon: <Plug className="h-4 w-4" />, match: "/integrations", authedOnly: true },

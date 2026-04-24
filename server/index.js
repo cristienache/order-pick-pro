@@ -3287,6 +3287,420 @@ app.get("/api/ebay/accounts/:id/orders", requireAuth, async (req, res) => {
 //
 // We verify the HMAC signature, then fire scripts/deploy.sh in the background
 // and return 202 immediately so GitHub doesn't time out waiting for the build.
+// ---------- Analytics endpoints (WooCommerce wc-analytics) ----------
+// Per-user, multi-store, GBP-normalised reports. 60s in-memory cache to
+// avoid hammering WooCommerce when the user clicks around quickly.
+import {
+  getPerformanceIndicators as wcaPerf,
+  getRevenueStats as wcaRevenue,
+  getTopProducts as wcaTopProducts,
+  getOrdersStats as wcaOrdersStats,
+  getCustomersStats as wcaCustomers,
+  getTopCoupons as wcaCoupons,
+  getStoreCurrency as wcaCurrency,
+} from "./wc-analytics.js";
+
+const analyticsCache = new Map(); // key -> { at, value }
+const ANALYTICS_TTL_MS = 60_000;
+
+function cacheGet(key) {
+  const hit = analyticsCache.get(key);
+  if (hit && Date.now() - hit.at < ANALYTICS_TTL_MS) return hit.value;
+  if (hit) analyticsCache.delete(key);
+  return null;
+}
+function cacheSet(key, value) {
+  analyticsCache.set(key, { at: Date.now(), value });
+  // Soft cap so the map can't grow unbounded.
+  if (analyticsCache.size > 200) {
+    const oldestKey = analyticsCache.keys().next().value;
+    if (oldestKey) analyticsCache.delete(oldestKey);
+  }
+}
+
+function parseAnalyticsParams(req) {
+  const from = String(req.query.from || "").slice(0, 10);
+  const to = String(req.query.to || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return { error: "from and to are required (YYYY-MM-DD)" };
+  }
+  const siteIds = String(req.query.site_ids || "")
+    .split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  return { from: `${from}T00:00:00`, to: `${to}T23:59:59`, fromDay: from, toDay: to, siteIds };
+}
+
+function loadUserSitesFiltered(userId, requestedIds) {
+  let rows;
+  if (requestedIds.length > 0) {
+    const placeholders = requestedIds.map(() => "?").join(",");
+    rows = db.prepare(
+      `SELECT id, name FROM sites WHERE user_id = ? AND id IN (${placeholders})`,
+    ).all(userId, ...requestedIds);
+  } else {
+    rows = db.prepare("SELECT id, name FROM sites WHERE user_id = ?").all(userId);
+  }
+  return rows;
+}
+
+function previousRange(fromDay, toDay) {
+  const a = new Date(`${fromDay}T00:00:00Z`);
+  const b = new Date(`${toDay}T00:00:00Z`);
+  const days = Math.max(1, Math.round((b - a) / 86400000) + 1);
+  const prevTo = new Date(a.getTime() - 86400000);
+  const prevFrom = new Date(prevTo.getTime() - (days - 1) * 86400000);
+  const fmt = (d) => d.toISOString().slice(0, 10);
+  return { from: `${fmt(prevFrom)}T00:00:00`, to: `${fmt(prevTo)}T23:59:59` };
+}
+
+async function loadFx() {
+  try { return await getFxRates(); } catch { return { rates: { GBP: 1 } }; }
+}
+
+function toGbpAmount(amount, currency, rates) {
+  const code = String(currency || "GBP").toUpperCase();
+  if (code === "GBP") return amount;
+  const r = rates?.[code];
+  if (!r || !Number.isFinite(r) || r <= 0) return amount; // fallback: treat as GBP
+  return amount / r;
+}
+
+// ---- /api/analytics/overview ----
+app.get("/api/analytics/overview", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+  const compare = req.query.compare === "previous_year" ? "previous_year"
+    : req.query.compare === "previous_period" ? "previous_period" : null;
+
+  const cacheKey = `overview:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}:${compare || ""}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const fx = await loadFx();
+    const warnings = [];
+
+    async function aggregate(from, to) {
+      const perSite = await Promise.all(sites.map(async (s) => {
+        const site = loadSiteWithKeys(s.id, req.user.id);
+        if (!site) return null;
+        try {
+          const [perf, currency] = await Promise.all([
+            wcaPerf(site, { from, to }),
+            wcaCurrency(site),
+          ]);
+          if (perf.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "wc-analytics unavailable, using legacy reports" });
+          return {
+            site_id: s.id,
+            site_name: s.name,
+            currency,
+            revenue: perf.revenue,
+            revenue_gbp: toGbpAmount(perf.revenue, currency, fx.rates),
+            orders: perf.orders,
+            avg_order_value: perf.avg_order_value,
+            avg_order_value_gbp: toGbpAmount(perf.avg_order_value, currency, fx.rates),
+            items_sold: perf.items_sold,
+            customers: perf.customers,
+            refunds: perf.refunds,
+            refunds_gbp: toGbpAmount(perf.refunds, currency, fx.rates),
+          };
+        } catch (e) {
+          warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+          return null;
+        }
+      }));
+      const valid = perSite.filter(Boolean);
+      const totals = valid.reduce((acc, x) => {
+        acc.revenue_gbp += x.revenue_gbp;
+        acc.orders += x.orders;
+        acc.items_sold += x.items_sold;
+        acc.refunds_gbp += x.refunds_gbp;
+        acc.customers += x.customers;
+        return acc;
+      }, { revenue_gbp: 0, orders: 0, items_sold: 0, refunds_gbp: 0, customers: 0 });
+      return { perSite: valid, totals };
+    }
+
+    const current = await aggregate(p.from, p.to);
+    let previousTotals;
+    if (compare) {
+      const prev = compare === "previous_year"
+        ? { from: p.from.replace(/^(\d{4})/, (_, y) => String(Number(y) - 1)),
+            to: p.to.replace(/^(\d{4})/, (_, y) => String(Number(y) - 1)) }
+        : previousRange(p.fromDay, p.toDay);
+      const prevAgg = await aggregate(prev.from, prev.to).catch(() => null);
+      if (prevAgg) previousTotals = prevAgg.totals;
+    }
+
+    const tot = current.totals;
+    const aov = tot.orders > 0 ? tot.revenue_gbp / tot.orders : 0;
+    const prevAov = previousTotals && previousTotals.orders > 0
+      ? previousTotals.revenue_gbp / previousTotals.orders : 0;
+
+    const result = {
+      totals: {
+        revenue_gbp: tot.revenue_gbp,
+        orders: tot.orders,
+        items_sold: tot.items_sold,
+        avg_order_value_gbp: aov,
+        new_customers: tot.customers,
+        returning_customers: 0,
+        refunds_gbp: tot.refunds_gbp,
+        refund_count: 0,
+      },
+      previous: previousTotals ? {
+        revenue_gbp: previousTotals.revenue_gbp,
+        orders: previousTotals.orders,
+        items_sold: previousTotals.items_sold,
+        avg_order_value_gbp: prevAov,
+        new_customers: previousTotals.customers,
+        returning_customers: 0,
+        refunds_gbp: previousTotals.refunds_gbp,
+        refund_count: 0,
+      } : undefined,
+      per_site: current.perSite,
+      warnings,
+      fx_source: fx.source || "fallback",
+    };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Analytics unavailable" });
+  }
+});
+
+// ---- /api/analytics/revenue ----
+app.get("/api/analytics/revenue", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+  const interval = ["day", "week", "month"].includes(req.query.interval) ? req.query.interval : "day";
+
+  const cacheKey = `revenue:${req.user.id}:${p.fromDay}:${p.toDay}:${interval}:${p.siteIds.join(",")}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const fx = await loadFx();
+    const warnings = [];
+
+    const perSite = await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return null;
+      try {
+        const [stats, currency] = await Promise.all([
+          wcaRevenue(site, { from: p.from, to: p.to, interval }),
+          wcaCurrency(site),
+        ]);
+        if (stats.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "Limited revenue series" });
+        return {
+          site_id: s.id,
+          site_name: s.name,
+          points: stats.points.map((pt) => ({
+            date: pt.date,
+            revenue: toGbpAmount(pt.revenue, currency, fx.rates),
+            orders: pt.orders,
+            items: pt.items,
+          })),
+        };
+      } catch (e) {
+        warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+        return null;
+      }
+    }));
+
+    const valid = perSite.filter(Boolean);
+    // Combine across sites by date.
+    const byDate = new Map();
+    for (const s of valid) {
+      for (const pt of s.points) {
+        const key = pt.date.slice(0, 10);
+        const cur = byDate.get(key) || { date: key, revenue: 0, orders: 0, items: 0 };
+        cur.revenue += pt.revenue;
+        cur.orders += pt.orders;
+        cur.items += pt.items;
+        byDate.set(key, cur);
+      }
+    }
+    const combined = Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
+
+    const result = { interval, combined, per_site: valid, warnings };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Revenue unavailable" });
+  }
+});
+
+// ---- /api/analytics/top-products ----
+app.get("/api/analytics/top-products", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+
+  const cacheKey = `top-products:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const fx = await loadFx();
+    const warnings = [];
+    const all = [];
+    await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return;
+      try {
+        const [r, currency] = await Promise.all([
+          wcaTopProducts(site, { from: p.from, to: p.to, limit }),
+          wcaCurrency(site),
+        ]);
+        if (r.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "Limited product report" });
+        for (const prod of r.products) {
+          all.push({
+            product_id: prod.product_id,
+            name: prod.name,
+            items_sold: prod.items_sold,
+            net_revenue_gbp: toGbpAmount(prod.net_revenue, currency, fx.rates),
+            site_id: s.id,
+            site_name: s.name,
+          });
+        }
+      } catch (e) {
+        warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+      }
+    }));
+    all.sort((a, b) => b.items_sold - a.items_sold);
+    const result = { products: all.slice(0, limit), warnings };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Top products unavailable" });
+  }
+});
+
+// ---- /api/analytics/orders-stats ----
+app.get("/api/analytics/orders-stats", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+
+  const cacheKey = `orders-stats:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const warnings = [];
+    const combined = {};
+    let total = 0;
+    await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return;
+      try {
+        const r = await wcaOrdersStats(site, { from: p.from, to: p.to });
+        if (r.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "Limited order stats" });
+        for (const [k, v] of Object.entries(r.by_status || {})) {
+          combined[k] = (combined[k] || 0) + Number(v || 0);
+          total += Number(v || 0);
+        }
+      } catch (e) {
+        warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+      }
+    }));
+    const result = { by_status: combined, total_orders: total, warnings };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Orders stats unavailable" });
+  }
+});
+
+// ---- /api/analytics/customers ----
+app.get("/api/analytics/customers", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+
+  const cacheKey = `customers:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const warnings = [];
+    let totalCustomers = 0; let newC = 0; let retC = 0;
+    await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return;
+      try {
+        const r = await wcaCustomers(site, { from: p.from, to: p.to });
+        if (r.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "Limited customer stats" });
+        totalCustomers += r.total_customers;
+        newC += r.new_customers;
+        retC += r.returning_customers;
+      } catch (e) {
+        warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+      }
+    }));
+    const result = {
+      total_customers: totalCustomers,
+      new_customers: newC,
+      returning_customers: retC,
+      by_period: [],
+      warnings,
+    };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Customers unavailable" });
+  }
+});
+
+// ---- /api/analytics/coupons ----
+app.get("/api/analytics/coupons", requireAuth, async (req, res) => {
+  const p = parseAnalyticsParams(req);
+  if (p.error) return res.status(400).json({ error: p.error });
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
+
+  const cacheKey = `coupons:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const sites = loadUserSitesFiltered(req.user.id, p.siteIds);
+    const fx = await loadFx();
+    const warnings = [];
+    const all = [];
+    await Promise.all(sites.map(async (s) => {
+      const site = loadSiteWithKeys(s.id, req.user.id);
+      if (!site) return;
+      try {
+        const [r, currency] = await Promise.all([
+          wcaCoupons(site, { from: p.from, to: p.to, limit }),
+          wcaCurrency(site),
+        ]);
+        if (r.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "Coupon report unavailable" });
+        for (const c of r.coupons) {
+          all.push({
+            coupon_id: c.coupon_id,
+            code: c.code,
+            orders_count: c.orders_count,
+            amount_gbp: toGbpAmount(c.amount, currency, fx.rates),
+            site_name: s.name,
+          });
+        }
+      } catch (e) {
+        warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
+      }
+    }));
+    all.sort((a, b) => b.orders_count - a.orders_count);
+    const result = { coupons: all.slice(0, limit), warnings };
+    cacheSet(cacheKey, result);
+    res.json(result);
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Coupons unavailable" });
+  }
+});
+
 // ---------- HeyShop Inventory ("OMS") module ----------
 // All /api/oms/* endpoints. Schema, seed, and handlers live in ./oms.js.
 mountOms(app, { requireAuth });

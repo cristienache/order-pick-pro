@@ -17,9 +17,23 @@ import type { DateRange } from "react-day-picker";
 import {
   Package, Truck, Store, Users, Settings, ArrowUpRight, Sparkles,
   Search, Calendar, Download, SlidersHorizontal, TrendingUp, TrendingDown,
-  ChevronRight, Boxes, ClipboardList, X,
+  ChevronRight, Boxes, ClipboardList, X, BarChart3,
   type LucideIcon,
 } from "lucide-react";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, arrayMove, rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { SortablePanel } from "@/components/dashboard/sortable-panel";
+import { EditToolbar } from "@/components/dashboard/edit-toolbar";
+import { TodaySchedule } from "@/components/dashboard/today-schedule";
+import {
+  loadLayout, saveLayout, resetLayout, DEFAULT_LAYOUT,
+  type DashboardLayout, type PanelId,
+} from "@/lib/dashboard-layout";
 
 export const Route = createFileRoute("/")({
   component: () => (
@@ -42,10 +56,10 @@ export const Route = createFileRoute("/")({
 });
 
 type Tool = {
-  to: "/orders" | "/inventory" | "/purchase-orders" | "/integrations/shipping/royal-mail" | "/integrations" | "/admin/users" | "/admin/invites";
+  to: "/orders" | "/inventory" | "/purchase-orders" | "/integrations/shipping/royal-mail" | "/integrations" | "/analytics" | "/admin/users" | "/admin/invites";
   label: string;
   caption: string;
-  category: "Operations" | "Catalog" | "Shipping" | "Channels" | "Admin";
+  category: "Operations" | "Catalog" | "Shipping" | "Channels" | "Analytics" | "Admin";
   icon: LucideIcon;
   adminOnly?: boolean;
 };
@@ -54,13 +68,14 @@ const TOOLS: Tool[] = [
   { to: "/orders", label: "Orders", caption: "Pick, pack & ship", category: "Operations", icon: Package },
   { to: "/inventory", label: "Inventory", caption: "Stock & SKUs", category: "Catalog", icon: Boxes },
   { to: "/purchase-orders", label: "Purchase Orders", caption: "Suppliers & POs", category: "Catalog", icon: ClipboardList },
+  { to: "/analytics", label: "Analytics", caption: "Reports & insights", category: "Analytics", icon: BarChart3 },
   { to: "/integrations/shipping/royal-mail", label: "Royal Mail", caption: "Labels & manifests", category: "Shipping", icon: Truck },
   { to: "/integrations", label: "Integrations", caption: "Sales channels", category: "Channels", icon: Store },
   { to: "/admin/users", label: "Users", caption: "Team access", category: "Admin", icon: Users, adminOnly: true },
   { to: "/admin/invites", label: "Invites", caption: "Onboard teammates", category: "Admin", icon: Settings, adminOnly: true },
 ];
 
-const ALL_CATEGORIES = ["Operations", "Catalog", "Shipping", "Channels", "Admin"] as const;
+const ALL_CATEGORIES = ["Operations", "Catalog", "Shipping", "Channels", "Analytics", "Admin"] as const;
 type Category = (typeof ALL_CATEGORIES)[number];
 
 function HomePage() {
@@ -75,6 +90,41 @@ function HomePage() {
     new Set(ALL_CATEGORIES),
   );
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Editable layout state
+  const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_LAYOUT);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setLayout(loadLayout()); }, []);
+  useEffect(() => { saveLayout(layout); }, [layout]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    setLayout((prev) => {
+      const oldIdx = prev.order.indexOf(active.id as PanelId);
+      const newIdx = prev.order.indexOf(over.id as PanelId);
+      if (oldIdx === -1 || newIdx === -1) return prev;
+      return { ...prev, order: arrayMove(prev.order, oldIdx, newIdx) };
+    });
+  }
+
+  function hidePanel(id: PanelId) {
+    setLayout((prev) => ({
+      order: prev.order.filter((p) => p !== id),
+      hidden: [...prev.hidden, id],
+    }));
+  }
+
+  function showPanel(id: PanelId) {
+    setLayout((prev) => ({
+      order: [...prev.order, id],
+      hidden: prev.hidden.filter((p) => p !== id),
+    }));
+  }
+
+  function doResetLayout() { setLayout(resetLayout()); }
 
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
@@ -231,9 +281,17 @@ function HomePage() {
             </PopoverContent>
           </Popover>
 
-          <Button size="sm" className="h-10 rounded-xl gap-2" onClick={handleExport}>
+          <Button size="sm" variant="outline" className="h-10 rounded-xl gap-2" onClick={handleExport}>
             <Download className="h-4 w-4" /> Export
           </Button>
+
+          <EditToolbar
+            editing={editing}
+            hidden={layout.hidden}
+            onToggle={() => setEditing((e) => !e)}
+            onAdd={showPanel}
+            onReset={doResetLayout}
+          />
 
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
             <PopoverTrigger asChild>
@@ -318,40 +376,94 @@ function HomePage() {
         </div>
       )}
 
-      {/* KPI row: promo + 3 stats */}
-      <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <PromoCard />
-        <StatCard
-          label="Connected Stores"
-          value={String(storeCount)}
-          delta="+0.00%"
-          deltaPositive
-          subtitle="WooCommerce active"
-        />
-        <StatCard
-          label="Orders Today"
-          value="—"
-          delta="0.00%"
-          deltaPositive
-          subtitle="Live from your stores"
-        />
-        <StatCard
-          label="Total Items"
-          value="—"
-          delta="0.00%"
-          deltaPositive={false}
-          subtitle="Across warehouses"
-        />
-      </section>
+      {/* Sortable dashboard grid */}
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+        <SortableContext items={layout.order} strategy={rectSortingStrategy}>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-4 auto-rows-min">
+            {layout.order.map((id) => {
+              const span = PANEL_SPAN[id];
+              return (
+                <SortablePanel
+                  key={id}
+                  id={id}
+                  editing={editing}
+                  onHide={hidePanel}
+                  className={span}
+                >
+                  {renderPanel(id, {
+                    storeCount,
+                    visibleTools,
+                    visibleSites,
+                    sites,
+                    search,
+                    activityBars,
+                    dateRange,
+                    dateLabel,
+                    clearFilters,
+                  })}
+                </SortablePanel>
+              );
+            })}
+          </div>
+        </SortableContext>
+      </DndContext>
 
-      {/* Two large cards + schedule-style sidebar */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      {layout.order.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center space-y-3">
+            <div className="text-sm text-muted-foreground">All panels are hidden.</div>
+            <Button size="sm" variant="outline" onClick={doResetLayout}>Restore default layout</Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- Panel registry ---------------- */
+
+const PANEL_SPAN: Record<PanelId, string> = {
+  promo: "md:col-span-1 lg:col-span-3",
+  "stat-stores": "md:col-span-1 lg:col-span-3",
+  "stat-orders": "md:col-span-1 lg:col-span-3",
+  "stat-items": "md:col-span-1 lg:col-span-3",
+  workspace: "md:col-span-2 lg:col-span-4",
+  activity: "md:col-span-2 lg:col-span-4",
+  schedule: "md:col-span-2 lg:col-span-4",
+  "stores-strip": "md:col-span-2 lg:col-span-12",
+  "all-tools": "md:col-span-2 lg:col-span-12",
+};
+
+type PanelCtx = {
+  storeCount: number;
+  visibleTools: Tool[];
+  visibleSites: Site[];
+  sites: Site[] | null;
+  search: string;
+  activityBars: number[];
+  dateRange: DateRange | undefined;
+  dateLabel: string;
+  clearFilters: () => void;
+};
+
+function renderPanel(id: PanelId, ctx: PanelCtx) {
+  switch (id) {
+    case "promo":
+      return <PromoCard />;
+    case "stat-stores":
+      return <StatCard label="Connected Stores" value={String(ctx.storeCount)} delta="+0.00%" deltaPositive subtitle="WooCommerce active" />;
+    case "stat-orders":
+      return <StatCard label="Orders Today" value="—" delta="0.00%" deltaPositive subtitle="Live from your stores" />;
+    case "stat-items":
+      return <StatCard label="Total Items" value="—" delta="0.00%" deltaPositive={false} subtitle="Across warehouses" />;
+    case "workspace":
+      return (
         <PanelCard title="Workspace" right={<span className="text-xs text-muted-foreground">Quick access</span>}>
-          {visibleTools.length === 0 ? (
-            <EmptyState message="No tools match your filters." onReset={clearFilters} />
+          {ctx.visibleTools.length === 0 ? (
+            <EmptyState message="No tools match your filters." onReset={ctx.clearFilters} />
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {visibleTools.slice(0, 6).map((t) => (
+              {ctx.visibleTools.slice(0, 6).map((t) => (
                 <Link
                   key={t.to}
                   to={t.to}
@@ -361,9 +473,7 @@ function HomePage() {
                     <t.icon className="h-5 w-5" />
                   </div>
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold">
-                      {t.caption}
-                    </div>
+                    <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground font-semibold">{t.caption}</div>
                     <div className="text-sm font-semibold mt-0.5">{t.label}</div>
                   </div>
                   <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition self-end" />
@@ -372,146 +482,126 @@ function HomePage() {
             </div>
           )}
         </PanelCard>
-
+      );
+    case "activity":
+      return (
         <PanelCard
           title="Activity"
-          right={
-            <Badge variant="secondary" className="rounded-full text-[10px]">
-              {dateRange?.from ? dateLabel : "Last Year"}
-            </Badge>
-          }
+          right={<Badge variant="secondary" className="rounded-full text-[10px]">{ctx.dateRange?.from ? ctx.dateLabel : "Last Year"}</Badge>}
         >
           <div className="h-48 rounded-xl bg-gradient-to-b from-accent/40 to-transparent border border-dashed border-border flex items-end p-4 gap-1.5">
-            {activityBars.map((h, i) => (
-              <div
-                key={i}
-                className="flex-1 rounded-md bg-primary/70 hover:bg-primary transition"
-                style={{ height: `${h}%` }}
-              />
+            {ctx.activityBars.map((h, i) => (
+              <div key={i} className="flex-1 rounded-md bg-primary/70 hover:bg-primary transition" style={{ height: `${h}%` }} />
             ))}
           </div>
           <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              {dateRange?.from
-                ? `Showing ${activityBars.length} day${activityBars.length === 1 ? "" : "s"}`
+              {ctx.dateRange?.from
+                ? `Showing ${ctx.activityBars.length} day${ctx.activityBars.length === 1 ? "" : "s"}`
                 : "Connect a store to see live activity"}
             </span>
-            <Link to="/integrations" className="text-primary font-medium hover:underline">
-              Connect →
-            </Link>
+            <Link to="/analytics" className="text-primary font-medium hover:underline">View analytics →</Link>
           </div>
         </PanelCard>
-
+      );
+    case "schedule":
+      return (
         <PanelCard
-          title="Schedule"
+          title="Today"
+          right={<span className="text-xs text-muted-foreground">To-do</span>}
+        >
+          <TodaySchedule />
+        </PanelCard>
+      );
+    case "stores-strip":
+      return (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {ctx.visibleSites && ctx.visibleSites.length > 0 ? (
+            ctx.visibleSites.slice(0, 4).map((s) => <StoreCard key={s.id} name={s.name} />)
+          ) : (
+            <Card className="lg:col-span-4 border-dashed">
+              <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center">
+                    <Store className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold">
+                      {ctx.sites && ctx.sites.length > 0 && ctx.search
+                        ? "No stores match your search"
+                        : "No stores connected yet"}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {ctx.sites && ctx.sites.length > 0 && ctx.search
+                        ? "Try a different keyword."
+                        : "Hook up your first WooCommerce store to start syncing orders."}
+                    </div>
+                  </div>
+                </div>
+                <Button asChild size="sm" className="rounded-xl">
+                  <Link to="/integrations">Connect a store</Link>
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      );
+    case "all-tools":
+      return (
+        <PanelCard
+          title="All Tools"
           right={
-            <Link to="/orders" className="text-xs text-primary font-medium hover:underline">
-              See All
-            </Link>
+            <Badge variant="secondary" className="rounded-full text-[10px] gap-1">
+              <Sparkles className="h-3 w-3" /> {ctx.visibleTools.length} available
+            </Badge>
           }
         >
-          <div className="space-y-3">
-            <ScheduleItem tag="Orders" tagColor="bg-brand-violet-soft text-primary" title="Process new orders" time="Updated continuously" />
-            <ScheduleItem tag="Shipping" tagColor="bg-brand-emerald-soft text-brand-emerald" title="Generate Royal Mail labels" time="On demand" />
-            <ScheduleItem tag="Inventory" tagColor="bg-brand-amber-soft text-brand-amber" title="Review low-stock SKUs" time="Daily" />
-          </div>
-        </PanelCard>
-      </section>
-
-      {/* Stores strip */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {visibleSites && visibleSites.length > 0 ? (
-          visibleSites.slice(0, 4).map((s) => (
-            <StoreCard key={s.id} name={s.name} />
-          ))
-        ) : (
-          <Card className="lg:col-span-4 border-dashed">
-            <CardContent className="p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-accent text-accent-foreground flex items-center justify-center">
-                  <Store className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-semibold">
-                    {sites && sites.length > 0 && search
-                      ? "No stores match your search"
-                      : "No stores connected yet"}
-                  </div>
-                  <div className="text-xs text-muted-foreground">
-                    {sites && sites.length > 0 && search
-                      ? "Try a different keyword."
-                      : "Hook up your first WooCommerce store to start syncing orders."}
-                  </div>
-                </div>
-              </div>
-              <Button asChild size="sm" className="rounded-xl">
-                <Link to="/integrations">Connect a store</Link>
-              </Button>
-            </CardContent>
-          </Card>
-        )}
-      </section>
-
-      {/* Tools list (Product List style) */}
-      <PanelCard
-        title="All Tools"
-        right={
-          <Badge variant="secondary" className="rounded-full text-[10px] gap-1">
-            <Sparkles className="h-3 w-3" /> {visibleTools.length} available
-          </Badge>
-        }
-      >
-        {visibleTools.length === 0 ? (
-          <EmptyState message="No tools match your filters." onReset={clearFilters} />
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-border/70">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/60 text-muted-foreground">
-                <tr className="text-left text-xs uppercase tracking-[0.12em]">
-                  <th className="px-4 py-3 font-semibold">Tool</th>
-                  <th className="px-4 py-3 font-semibold hidden sm:table-cell">Category</th>
-                  <th className="px-4 py-3 font-semibold hidden md:table-cell">Status</th>
-                  <th className="px-4 py-3 font-semibold text-right">Open</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleTools.map((t, i) => (
-                  <tr
-                    key={t.to}
-                    className={`border-t border-border/60 hover:bg-muted/40 transition ${i % 2 === 1 ? "bg-muted/20" : ""}`}
-                  >
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center">
-                          <t.icon className="h-4 w-4" />
-                        </div>
-                        <div className="font-medium">{t.label}</div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{t.category}</td>
-                    <td className="px-4 py-3 hidden md:table-cell">
-                      <span className="inline-flex items-center gap-1.5 text-xs">
-                        <span className="h-1.5 w-1.5 rounded-full bg-brand-emerald" />
-                        Active
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        to={t.to}
-                        className="inline-flex items-center gap-1 text-primary text-xs font-semibold hover:underline"
-                      >
-                        Open <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </td>
+          {ctx.visibleTools.length === 0 ? (
+            <EmptyState message="No tools match your filters." onReset={ctx.clearFilters} />
+          ) : (
+            <div className="overflow-hidden rounded-xl border border-border/70">
+              <table className="w-full text-sm">
+                <thead className="bg-muted/60 text-muted-foreground">
+                  <tr className="text-left text-xs uppercase tracking-[0.12em]">
+                    <th className="px-4 py-3 font-semibold">Tool</th>
+                    <th className="px-4 py-3 font-semibold hidden sm:table-cell">Category</th>
+                    <th className="px-4 py-3 font-semibold hidden md:table-cell">Status</th>
+                    <th className="px-4 py-3 font-semibold text-right">Open</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </PanelCard>
-    </div>
-  );
+                </thead>
+                <tbody>
+                  {ctx.visibleTools.map((t, i) => (
+                    <tr key={t.to} className={`border-t border-border/60 hover:bg-muted/40 transition ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-accent text-accent-foreground flex items-center justify-center">
+                            <t.icon className="h-4 w-4" />
+                          </div>
+                          <div className="font-medium">{t.label}</div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground hidden sm:table-cell">{t.category}</td>
+                      <td className="px-4 py-3 hidden md:table-cell">
+                        <span className="inline-flex items-center gap-1.5 text-xs">
+                          <span className="h-1.5 w-1.5 rounded-full bg-brand-emerald" /> Active
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Link to={t.to} className="inline-flex items-center gap-1 text-primary text-xs font-semibold hover:underline">
+                          Open <ChevronRight className="h-3.5 w-3.5" />
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </PanelCard>
+      );
+    default:
+      return null;
+  }
 }
 
 /* ---------------- Sub-components ---------------- */
@@ -593,19 +683,6 @@ function PanelCard({
   );
 }
 
-function ScheduleItem({
-  tag, tagColor, title, time,
-}: { tag: string; tagColor: string; title: string; time: string }) {
-  return (
-    <div className="rounded-xl border border-border/70 p-3 hover:bg-muted/40 transition">
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${tagColor}`}>
-        {tag}
-      </span>
-      <div className="mt-2 text-sm font-semibold">{title}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{time}</div>
-    </div>
-  );
-}
 
 function StoreCard({ name }: { name: string }) {
   return (

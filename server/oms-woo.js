@@ -476,7 +476,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       const code = `WC-${s.id}`;
       const wh = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
       const lastSync = db.prepare(
-        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
+        `SELECT wc_full_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(s.id);
       const dirty = db.prepare(
         `SELECT COUNT(*) AS c FROM oms_products WHERE site_id = ? AND dirty = 1`,
@@ -531,11 +531,10 @@ export function mountOmsWoo(app, { requireAuth }) {
   });
 
   // ----- Sync a site's WC catalog into oms_products -----
-  // INCREMENTAL by default: only fetches products WC has modified since the
-  // last successful sync (`modified_after` query). On a store with 5000
-  // products and 10 recent edits, this pulls 1 page of ~10 rows instead of
-  // 100 pages of 50. WC bumps `date_modified` on a parent whenever any of
-  // its variations change, so variation edits are picked up automatically.
+  // Incremental by default: only fetches products CREATED since the last full
+  // sync. This keeps the default button cheap and predictable for large stores:
+  // if 10 new products were added since the last full baseline, only those 10
+  // are imported instead of walking the whole catalog again.
   //
   // Force a full re-import with `?full=1` (used after a wipe, or for
   // recovery if the local mirror is suspected stale).
@@ -556,25 +555,20 @@ export function mountOmsWoo(app, { requireAuth }) {
     let created = 0, updated = 0;
     const errors = [];
 
-    // Resolve the "modified_after" cursor.
-    //  - Page > 1: trust the `since` the client carried over (or empty for full).
-    //  - Page 1 + forceFull: empty → full sync.
-    //  - Page 1 + no prior sync ever: empty → full first-time import.
-    //  - Page 1 + prior sync exists: use MAX(last_synced_at) minus 5min buffer
-    //    (clock skew + WC eventual consistency on `date_modified`).
+    // Resolve the sync cursor.
+    //  - Incremental runs use the last SUCCESSFUL FULL sync as their baseline.
+    //  - Full runs clear the baseline for this request and replace it on finish.
+    //  - Page > 1 trusts the carried `since` / `cursor` values for stability.
     let since = "";
     let cursor = String(req.query.cursor || req.body?.cursor || "");
     if (page > 1) {
       since = String(req.query.since || req.body?.since || "");
     } else if (!forceFull) {
       const prev = db.prepare(
-        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
+        `SELECT wc_full_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(site.id);
       if (prev?.ts) {
-        const t = new Date(prev.ts).getTime();
-        if (Number.isFinite(t)) {
-          since = new Date(t - 5 * 60 * 1000).toISOString();
-        }
+        since = String(prev.ts);
       }
       cursor = prev?.ts ? String(prev.ts) : "";
     }
@@ -609,7 +603,9 @@ export function mountOmsWoo(app, { requireAuth }) {
 
       if (!Array.isArray(batch) || batch.length === 0) {
         if (done && nextCursor) {
-          db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor, site.id);
+          if (forceFull) {
+            db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(nextCursor, nextCursor, site.id);
+          }
           incrementalCandidateCache.delete(`${site.id}:${since}`);
         }
         return res.json({
@@ -682,7 +678,9 @@ export function mountOmsWoo(app, { requireAuth }) {
       }
 
       if (done && nextCursor) {
-        db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor, site.id);
+        if (forceFull) {
+          db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(nextCursor, nextCursor, site.id);
+        }
         incrementalCandidateCache.delete(`${site.id}:${since}`);
       }
       res.json({

@@ -1084,6 +1084,44 @@ function WooInventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Delete-from-HeyShop-only confirmation. WC store is NOT touched. */}
+      <AlertDialog open={deleteOpen} onOpenChange={(o) => !deleting && setDeleteOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Remove {selectedIds.length} product{selectedIds.length === 1 ? "" : "s"} from HeyShop?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This removes the selected product{selectedIds.length === 1 ? "" : "s"}
+                  {" "}from HeyShop only. Your <strong>WooCommerce store is not touched</strong>
+                  {" "}— the product{selectedIds.length === 1 ? "" : "s"} will still exist on
+                  {" "}<strong>{site?.name ?? "your store"}</strong>.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  If you select a variable parent, its variations are removed too.
+                  Running a Sync will re-import anything you remove here.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); deleteSelectedLocal(); }}
+              disabled={deleting || selectedIds.length === 0}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting
+                ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Removing…</>
+                : `Remove ${selectedIds.length} from HeyShop`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

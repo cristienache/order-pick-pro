@@ -610,7 +610,7 @@ export function BulkRoyalMailDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 Cancel
               </Button>
-              <Button onClick={runCreate} disabled={busy || overweight}>
+              <Button onClick={runCreate} disabled={busy || overweight || (isInternational && !customsValid)}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Create {totalOrders} label{totalOrders === 1 ? "" : "s"}
               </Button>

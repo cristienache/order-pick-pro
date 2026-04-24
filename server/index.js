@@ -2771,6 +2771,7 @@ app.post("/api/royal-mail/shipments/:id/refetch-label", requireAuth, async (req,
   }
 });
 
+// Core: create one Click & Drop shipment for an already-validated payload.
 // Returns { status, body } where body is what we'd JSON-respond with. Used by
 // both the single-order and bulk endpoints so behaviour stays in lock-step
 // (duplicate guard, line-item enrichment, WC note, persistence).

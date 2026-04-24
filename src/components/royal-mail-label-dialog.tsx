@@ -559,8 +559,130 @@ function LabelForm({
         </div>
       </section>
 
+      {isInternational && (
+        <>
+          <Separator />
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Customs declaration (CN22 / CN23)
+              </h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Required for international shipments. Declared values are pre-filled
+              from each WooCommerce line subtotal — review before submitting.
+              {rmSettings?.eori_number && (
+                <> Your EORI <span className="font-mono">{rmSettings.eori_number}</span> will be attached.</>
+              )}
+              {rmSettings?.ioss_number && (
+                <> IOSS <span className="font-mono">{rmSettings.ioss_number}</span> included.</>
+              )}
+            </p>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="content-type">Content type</Label>
+                <Select value={contentType} onValueChange={(v) => setContentType(v as RmCustomsContentType)}>
+                  <SelectTrigger id="content-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="saleOfGoods">Sale of goods</SelectItem>
+                    <SelectItem value="gift">Gift</SelectItem>
+                    <SelectItem value="commercialSample">Commercial sample</SelectItem>
+                    <SelectItem value="documents">Documents</SelectItem>
+                    <SelectItem value="returnedGoods">Returned goods</SelectItem>
+                    <SelectItem value="mixedContent">Mixed content</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency">Currency</Label>
+                <Input
+                  id="currency"
+                  value={currencyCode}
+                  onChange={(e) => setCurrencyCode(e.target.value.toUpperCase().slice(0, 3))}
+                  maxLength={3}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {customsRows.map((row, idx) => (
+                <div key={row.key} className="rounded-md border bg-muted/20 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-xs font-medium text-foreground truncate">
+                      {idx + 1}. {row.name || "Item"}{row.sku ? ` · ${row.sku}` : ""}
+                    </div>
+                    {customsRows.length > 1 && (
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        className="h-7 px-2 text-destructive hover:text-destructive"
+                        onClick={() => removeCustomsRow(idx)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Qty</Label>
+                      <Input
+                        type="number" min={1} value={row.quantity}
+                        onChange={(e) => updateCustomsRow(idx, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Unit value ({currencyCode})</Label>
+                      <Input
+                        type="number" min={0} step="0.01" value={row.unit_value}
+                        onChange={(e) => updateCustomsRow(idx, { unit_value: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">HS code</Label>
+                      <Input
+                        value={row.customs_code} placeholder="e.g. 6109.10"
+                        onChange={(e) => updateCustomsRow(idx, { customs_code: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Origin</Label>
+                      <Input
+                        value={row.origin_country} maxLength={2}
+                        onChange={(e) => updateCustomsRow(idx, { origin_country: e.target.value.toUpperCase().slice(0, 2) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Description (printed on the customs form)</Label>
+                    <Input
+                      value={row.customs_description} maxLength={120}
+                      onChange={(e) => updateCustomsRow(idx, { customs_description: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addCustomsRow}>
+                Add line
+              </Button>
+            </div>
+
+            {customsErrors.length > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive flex items-start gap-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <div>{customsErrors[0]}</div>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="submit" disabled={submitting || overweight}>
+        <Button
+          type="submit"
+          disabled={submitting || overweight || (isInternational && customsErrors.length > 0)}
+        >
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Create label
         </Button>

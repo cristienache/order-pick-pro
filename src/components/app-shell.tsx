@@ -9,7 +9,7 @@ import { api } from "@/lib/api";
 import type { PageNavItem } from "@/lib/pages";
 import {
   LogOut, Package, Settings, Users, Plug, Home, Palette, FileText, Boxes,
-  ClipboardList, Menu, Search, Bell, MessageCircle, Loader2, X, BarChart3,
+  ClipboardList, Menu, Search, Bell, MessageCircle, Loader2, X, BarChart3, UserCog,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
@@ -21,6 +21,7 @@ type NavItem = {
   exact?: boolean;
   match?: string;
   adminOnly?: boolean;
+  masterAdminOnly?: boolean;
   authedOnly?: boolean;
 };
 

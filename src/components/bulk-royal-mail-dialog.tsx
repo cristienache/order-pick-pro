@@ -19,9 +19,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Printer, Truck, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, Printer, Truck, AlertCircle, CheckCircle2, Globe } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import {
+  api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant,
+  markShipmentsPrinted,
+  type RmShipment, type RmCustomsContentType, type RmSettings,
+} from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import { printPdfBlob } from "@/lib/print-pdf";
 

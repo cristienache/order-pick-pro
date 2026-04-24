@@ -239,17 +239,28 @@ function PageEditor() {
           <Card>
             <CardHeader>
               <CardTitle>Page details</CardTitle>
-              <CardDescription>Title, URL slug and short description for SEO and previews.</CardDescription>
+              <CardDescription>
+                Title, URL slug and short description for SEO and previews.
+                {!canEditIdentity && (
+                  <span className="block mt-1 text-amber-600 dark:text-amber-400">
+                    Only the master admin can rename a page or change its URL slug. Other fields remain editable.
+                  </span>
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="title">Title</Label>
+                <Label htmlFor="title">
+                  Title <span className="text-xs text-muted-foreground font-normal">(also used as the page meta title)</span>
+                </Label>
                 <Input
                   id="title"
                   value={draft.title}
                   onChange={(e) => setTitle(e.target.value)}
                   placeholder="About us"
                   maxLength={120}
+                  disabled={!canEditIdentity}
+                  title={!canEditIdentity ? "Master admin only" : undefined}
                 />
               </div>
               <div className="space-y-2">
@@ -263,6 +274,8 @@ function PageEditor() {
                     placeholder="about-us"
                     maxLength={60}
                     className="font-mono"
+                    disabled={!canEditIdentity}
+                    title={!canEditIdentity ? "Master admin only" : undefined}
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">

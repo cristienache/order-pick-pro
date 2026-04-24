@@ -102,7 +102,7 @@ export const wcApi = {
     siteId: number,
     page: number,
     perPage = 50,
-    opts: { since?: string; full?: boolean } = {},
+    opts: { since?: string; cursor?: string; full?: boolean } = {},
   ) => {
     const qs = new URLSearchParams({
       page: String(page),
@@ -110,6 +110,7 @@ export const wcApi = {
     });
     if (opts.full) qs.set("full", "1");
     if (opts.since) qs.set("since", opts.since);
+    if (opts.cursor) qs.set("cursor", opts.cursor);
     return api<{
       page: number; per_page: number; batch_size: number;
       created: number; updated: number;
@@ -117,7 +118,7 @@ export const wcApi = {
       done: boolean; next_page: number | null;
       total_products: number | null; total_pages: number | null;
       warehouse_id: string;
-      incremental: boolean; since: string;
+      incremental: boolean; since: string; cursor: string;
     }>(`${BASE}/sync/${siteId}?${qs.toString()}`, {
       method: "POST", body: {},
     });

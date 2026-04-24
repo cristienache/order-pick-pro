@@ -68,6 +68,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     );
     let page = 1;
     let since = "";
+    let cursor = "";
     let incremental = !opts.full;
     let totalCreated = 0, totalUpdated = 0, totalErrors = 0;
 
@@ -79,11 +80,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           full: opts.full,
           // Thread the cursor the server captured on page 1 across all pages.
           since: page > 1 ? since : undefined,
+          cursor: page > 1 ? cursor : undefined,
         });
         if (page === 1) {
           since = r.since || "";
-          incremental = r.incremental;
         }
+        cursor = r.cursor || cursor || since;
+        incremental = r.incremental;
         totalCreated += r.created;
         totalUpdated += r.updated;
         totalErrors += r.errors.length;

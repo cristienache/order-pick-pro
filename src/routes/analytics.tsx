@@ -11,9 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 import {
@@ -45,7 +43,7 @@ export const Route = createFileRoute("/analytics")({
   head: () => ({
     meta: [
       { title: "Analytics — Ultrax" },
-      { name: "description", content: "Reports & analytics across every WooCommerce store you operate." },
+      { name: "description", content: "Reports & analytics for the WooCommerce store you operate." },
     ],
   }),
 });
@@ -79,10 +77,12 @@ function presetRange(p: Preset): DateRange {
 function fmtDay(d: Date) { return format(d, "yyyy-MM-dd"); }
 
 function gbp(v: number) {
+  if (!Number.isFinite(v)) return "—";
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(v);
 }
 
 function num(v: number) {
+  if (!Number.isFinite(v)) return "—";
   return new Intl.NumberFormat("en-GB").format(v);
 }
 
@@ -113,70 +113,74 @@ const STATUS_COLORS: Record<string, string> = {
 
 function AnalyticsPage() {
   const [sites, setSites] = useState<Site[]>([]);
-  const [selectedSites, setSelectedSites] = useState<Set<number>>(new Set());
+  const [sitesLoading, setSitesLoading] = useState(true);
+  const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [preset, setPreset] = useState<Preset>("30d");
-  const [range, setRange] = useState<DateRange>(presetRange("30d"));
+  const [range, setRange] = useState<DateRange>(() => presetRange("30d"));
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [compare, setCompare] = useState<Compare>("previous_period");
-  const [interval, setInterval] = useState<Interval>("day");
-  const [siteSelectOpen, setSiteSelectOpen] = useState(false);
+  const [intervalChoice, setIntervalChoice] = useState<Interval>("day");
 
   const [overview, setOverview] = useState<Overview | null>(null);
-  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewLoading, setOverviewLoading] = useState(false);
   const [overviewError, setOverviewError] = useState<string | null>(null);
 
   const [revenue, setRevenue] = useState<RevenueResponse | null>(null);
-  const [revenueLoading, setRevenueLoading] = useState(true);
+  const [revenueLoading, setRevenueLoading] = useState(false);
 
   const [products, setProducts] = useState<TopProduct[]>([]);
-  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsLoading, setProductsLoading] = useState(false);
 
   const [orderStats, setOrderStats] = useState<OrdersStats | null>(null);
-  const [orderStatsLoading, setOrderStatsLoading] = useState(true);
+  const [orderStatsLoading, setOrderStatsLoading] = useState(false);
 
   const [customers, setCustomers] = useState<CustomersStats | null>(null);
-  const [customersLoading, setCustomersLoading] = useState(true);
+  const [customersLoading, setCustomersLoading] = useState(false);
 
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
-  const [couponsLoading, setCouponsLoading] = useState(true);
+  const [couponsLoading, setCouponsLoading] = useState(false);
 
-  // Load sites on mount.
+  // Load sites on mount; auto-select the first one.
   useEffect(() => {
+    setSitesLoading(true);
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => {
-        setSites(r.sites);
-        setSelectedSites(new Set(r.sites.map((s) => s.id)));
+        setSites(r.sites || []);
+        if (r.sites && r.sites.length > 0) {
+          setSelectedSiteId(r.sites[0].id);
+        }
       })
-      .catch(() => setSites([]));
+      .catch(() => setSites([]))
+      .finally(() => setSitesLoading(false));
   }, []);
 
   const params = useMemo(() => {
-    if (!range.from) return null;
+    if (!range.from || !selectedSiteId) return null;
     return {
       from: fmtDay(range.from),
       to: fmtDay(range.to || range.from),
-      site_ids: Array.from(selectedSites),
+      site_ids: [selectedSiteId],
     };
-  }, [range, selectedSites]);
+  }, [range, selectedSiteId]);
 
   const fetchAll = useCallback(() => {
-    if (!params || params.site_ids.length === 0) return;
+    if (!params) return;
     setOverviewLoading(true); setOverviewError(null);
     setRevenueLoading(true); setProductsLoading(true);
     setOrderStatsLoading(true); setCustomersLoading(true); setCouponsLoading(true);
 
     getOverview({ ...params, compare: compare === "none" ? undefined : compare })
       .then(setOverview)
-      .catch((e) => setOverviewError(e.message || "Failed to load overview"))
+      .catch((e) => { setOverview(null); setOverviewError(e.message || "Failed to load overview"); })
       .finally(() => setOverviewLoading(false));
 
-    getRevenue({ ...params, interval })
+    getRevenue({ ...params, interval: intervalChoice })
       .then(setRevenue)
       .catch(() => setRevenue(null))
       .finally(() => setRevenueLoading(false));
 
     getTopProducts({ ...params, limit: 10 })
-      .then((r) => setProducts(r.products))
+      .then((r) => setProducts(r.products || []))
       .catch(() => setProducts([]))
       .finally(() => setProductsLoading(false));
 
@@ -191,10 +195,10 @@ function AnalyticsPage() {
       .finally(() => setCustomersLoading(false));
 
     getCoupons({ ...params, limit: 10 })
-      .then((r) => setCoupons(r.coupons))
+      .then((r) => setCoupons(r.coupons || []))
       .catch(() => setCoupons([]))
       .finally(() => setCouponsLoading(false));
-  }, [params, compare, interval]);
+  }, [params, compare, intervalChoice]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -203,34 +207,26 @@ function AnalyticsPage() {
     if (p !== "custom") setRange(presetRange(p));
   }
 
-  function toggleSite(id: number) {
-    setSelectedSites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }
-
   function exportCsv() {
     const rows: string[] = [];
     rows.push("Section,Key,Value");
     if (overview) {
       const t = overview.totals;
-      rows.push(`Overview,Revenue (GBP),${t.revenue_gbp.toFixed(2)}`);
-      rows.push(`Overview,Orders,${t.orders}`);
-      rows.push(`Overview,Items sold,${t.items_sold}`);
-      rows.push(`Overview,Avg order value (GBP),${t.avg_order_value_gbp.toFixed(2)}`);
-      rows.push(`Overview,New customers,${t.new_customers}`);
-      rows.push(`Overview,Returning customers,${t.returning_customers}`);
-      rows.push(`Overview,Refunds (GBP),${t.refunds_gbp.toFixed(2)}`);
+      rows.push(`Overview,Revenue (GBP),${(t.revenue_gbp || 0).toFixed(2)}`);
+      rows.push(`Overview,Orders,${t.orders || 0}`);
+      rows.push(`Overview,Items sold,${t.items_sold || 0}`);
+      rows.push(`Overview,Avg order value (GBP),${(t.avg_order_value_gbp || 0).toFixed(2)}`);
+      rows.push(`Overview,New customers,${t.new_customers || 0}`);
+      rows.push(`Overview,Refunds (GBP),${(t.refunds_gbp || 0).toFixed(2)}`);
     }
     rows.push("");
     rows.push("Top Products,Name,Items sold,Net revenue (GBP),Store");
-    products.forEach((p) => rows.push(`,${JSON.stringify(p.name)},${p.items_sold},${p.net_revenue_gbp.toFixed(2)},${JSON.stringify(p.site_name)}`));
+    products.forEach((p) => rows.push(`,${JSON.stringify(p.name)},${p.items_sold},${(p.net_revenue_gbp || 0).toFixed(2)},${JSON.stringify(p.site_name)}`));
     rows.push("");
     rows.push("Revenue,Date,Revenue,Orders,Items");
-    revenue?.combined.forEach((p) => rows.push(`,${p.date},${p.revenue.toFixed(2)},${p.orders},${p.items}`));
+    revenue?.combined?.forEach((p) => rows.push(`,${p.date},${(p.revenue || 0).toFixed(2)},${p.orders},${p.items}`));
 
+    if (typeof window === "undefined") return;
     const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -259,6 +255,8 @@ function AnalyticsPage() {
     return out;
   }, [overview, revenue, orderStats, customers]);
 
+  const selectedSite = sites.find((s) => s.id === selectedSiteId) || null;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -266,10 +264,33 @@ function AnalyticsPage() {
         <div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Analytics</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Reports & insights powered by WooCommerce Analytics across {sites.length} {sites.length === 1 ? "store" : "stores"}.
+            Reports & insights from WooCommerce.{" "}
+            {selectedSite ? <>Viewing <strong>{selectedSite.name}</strong>.</> : "Select a store to begin."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* Single-store selector */}
+          <Select
+            value={selectedSiteId ? String(selectedSiteId) : ""}
+            onValueChange={(v) => setSelectedSiteId(Number(v) || null)}
+            disabled={sitesLoading || sites.length === 0}
+          >
+            <SelectTrigger className="h-10 min-w-[180px] rounded-xl">
+              <div className="flex items-center gap-2 truncate">
+                <StoreIcon className="h-4 w-4 shrink-0" />
+                <SelectValue placeholder={sitesLoading ? "Loading…" : "Select store"} />
+              </div>
+            </SelectTrigger>
+            <SelectContent>
+              {sites.map((s) => (
+                <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+              ))}
+              {sites.length === 0 && !sitesLoading && (
+                <div className="px-3 py-2 text-xs text-muted-foreground">No stores connected</div>
+              )}
+            </SelectContent>
+          </Select>
+
           <Select value={preset} onValueChange={(v) => applyPreset(v as Preset)}>
             <SelectTrigger className="h-10 w-40 rounded-xl">
               <SelectValue />
@@ -303,32 +324,6 @@ function AnalyticsPage() {
             </PopoverContent>
           </Popover>
 
-          <Popover open={siteSelectOpen} onOpenChange={setSiteSelectOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" size="sm" className="h-10 rounded-xl gap-2">
-                <StoreIcon className="h-4 w-4" />
-                {selectedSites.size === sites.length ? "All stores" : `${selectedSites.size} of ${sites.length}`}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent align="end" className="w-60 p-3">
-              <div className="text-sm font-semibold mb-2">Stores</div>
-              <div className="space-y-2 max-h-60 overflow-y-auto">
-                {sites.map((s) => (
-                  <Label key={s.id} className="flex items-center gap-2 text-sm font-normal cursor-pointer">
-                    <Checkbox
-                      checked={selectedSites.has(s.id)}
-                      onCheckedChange={() => toggleSite(s.id)}
-                    />
-                    <span className="truncate">{s.name}</span>
-                  </Label>
-                ))}
-                {sites.length === 0 && (
-                  <div className="text-xs text-muted-foreground">No stores connected.</div>
-                )}
-              </div>
-            </PopoverContent>
-          </Popover>
-
           <Select value={compare} onValueChange={(v) => setCompare(v as Compare)}>
             <SelectTrigger className="h-10 w-44 rounded-xl">
               <SelectValue />
@@ -351,17 +346,22 @@ function AnalyticsPage() {
 
       {/* Warnings */}
       {allWarnings.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          <AlertTriangle className="h-3.5 w-3.5 text-brand-amber" />
-          <span className="text-muted-foreground">Limited analytics for:</span>
-          {Array.from(new Set(allWarnings.map((w) => w.site_name || `Site ${w.site_id}`))).map((n) => (
-            <Badge key={n} variant="secondary" className="rounded-full">{n}</Badge>
-          ))}
-        </div>
+        <Card className="border-brand-amber/40 bg-brand-amber-soft/40">
+          <CardContent className="p-3 flex flex-wrap items-center gap-2 text-xs">
+            <AlertTriangle className="h-4 w-4 text-brand-amber" />
+            <span className="font-medium">Limited analytics:</span>
+            {Array.from(new Set(allWarnings.map((w) => w.error))).slice(0, 3).map((e, i) => (
+              <Badge key={i} variant="secondary" className="rounded-full font-normal">{e}</Badge>
+            ))}
+            <span className="text-muted-foreground ml-auto">
+              Falling back to direct order scan — first load can take a moment.
+            </span>
+          </CardContent>
+        </Card>
       )}
 
       {/* No stores */}
-      {sites.length === 0 ? (
+      {!sitesLoading && sites.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-8 text-center space-y-3">
             <StoreIcon className="h-10 w-10 mx-auto text-muted-foreground" />
@@ -370,6 +370,12 @@ function AnalyticsPage() {
             <Button asChild size="sm" className="rounded-xl">
               <Link to="/integrations">Connect a store</Link>
             </Button>
+          </CardContent>
+        </Card>
+      ) : !selectedSiteId ? (
+        <Card className="border-dashed">
+          <CardContent className="p-8 text-center text-sm text-muted-foreground">
+            Select a store from the dropdown to view its analytics.
           </CardContent>
         </Card>
       ) : (
@@ -426,7 +432,7 @@ function AnalyticsPage() {
             <PanelCard
               title="Revenue over time"
               right={
-                <Tabs value={interval} onValueChange={(v) => setInterval(v as Interval)}>
+                <Tabs value={intervalChoice} onValueChange={(v) => setIntervalChoice(v as Interval)}>
                   <TabsList className="h-8">
                     <TabsTrigger value="day" className="text-xs h-6">Day</TabsTrigger>
                     <TabsTrigger value="week" className="text-xs h-6">Week</TabsTrigger>
@@ -469,7 +475,6 @@ function AnalyticsPage() {
                       <tr className="text-left text-xs uppercase tracking-[0.12em]">
                         <th className="px-3 py-2.5 font-semibold">#</th>
                         <th className="px-3 py-2.5 font-semibold">Product</th>
-                        <th className="px-3 py-2.5 font-semibold hidden md:table-cell">Store</th>
                         <th className="px-3 py-2.5 font-semibold text-right">Sold</th>
                         <th className="px-3 py-2.5 font-semibold text-right">Revenue</th>
                       </tr>
@@ -479,7 +484,6 @@ function AnalyticsPage() {
                         <tr key={`${p.site_id}-${p.product_id}`} className={`border-t border-border/60 ${i % 2 === 1 ? "bg-muted/20" : ""}`}>
                           <td className="px-3 py-2.5 text-muted-foreground tabular-nums">{i + 1}</td>
                           <td className="px-3 py-2.5 font-medium truncate max-w-xs">{p.name}</td>
-                          <td className="px-3 py-2.5 text-muted-foreground hidden md:table-cell truncate">{p.site_name}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums">{num(p.items_sold)}</td>
                           <td className="px-3 py-2.5 text-right tabular-nums font-semibold">{gbp(p.net_revenue_gbp)}</td>
                         </tr>
@@ -501,35 +505,25 @@ function AnalyticsPage() {
             </PanelCard>
           </section>
 
-          {/* Coupons + Sales by store */}
-          <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Coupons */}
+          <section className="grid grid-cols-1 gap-4">
             <PanelCard title="Top coupons" right={null}>
               {couponsLoading ? (
                 <Skeleton className="h-48 w-full" />
               ) : coupons.length === 0 ? (
                 <EmptyMsg msg="No coupons used in this period." />
               ) : (
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {coupons.map((c) => (
                     <div key={`${c.site_name}-${c.coupon_id}`} className="flex items-center justify-between rounded-lg border border-border/70 px-3 py-2">
                       <div>
                         <div className="text-sm font-semibold">{c.code}</div>
-                        <div className="text-xs text-muted-foreground">{c.site_name} · {num(c.orders_count)} orders</div>
+                        <div className="text-xs text-muted-foreground">{num(c.orders_count)} orders</div>
                       </div>
                       <div className="text-sm tabular-nums font-semibold">{gbp(c.amount_gbp)}</div>
                     </div>
                   ))}
                 </div>
-              )}
-            </PanelCard>
-
-            <PanelCard title="Sales by store" right={null}>
-              {overviewLoading ? (
-                <Skeleton className="h-48 w-full" />
-              ) : overview && overview.per_site.length > 0 ? (
-                <SalesByStoreChart data={overview.per_site} />
-              ) : (
-                <EmptyMsg msg="No store data." />
               )}
             </PanelCard>
           </section>
@@ -548,7 +542,6 @@ function KpiCard({
   delta: { v: number; positive: boolean } | null;
   loading: boolean; invertDelta?: boolean;
 }) {
-  // For refunds, "positive" delta (more refunds) is bad — invert color.
   const showPositive = delta ? (invertDelta ? !delta.positive : delta.positive) : true;
   return (
     <Card className="border border-border/70">
@@ -597,7 +590,7 @@ function EmptyMsg({ msg }: { msg: string }) {
 }
 
 function RevenueChart({ data }: { data: Array<{ date: string; revenue: number; orders: number }> }) {
-  if (data.length === 0) return <EmptyMsg msg="No revenue data." />;
+  if (!data || data.length === 0) return <EmptyMsg msg="No revenue data." />;
   return (
     <ChartContainer
       config={{ revenue: { label: "Revenue", color: "hsl(var(--primary))" } }}
@@ -620,7 +613,7 @@ function RevenueChart({ data }: { data: Array<{ date: string; revenue: number; o
           tick={{ fill: "hsl(var(--muted-foreground))" }}
         />
         <YAxis
-          tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v}
+          tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : String(v)}
           className="text-xs"
           tick={{ fill: "hsl(var(--muted-foreground))" }}
         />
@@ -638,7 +631,7 @@ function RevenueChart({ data }: { data: Array<{ date: string; revenue: number; o
 }
 
 function OrderStatusChart({ byStatus }: { byStatus: Record<string, number> }) {
-  const data = Object.entries(byStatus)
+  const data = Object.entries(byStatus || {})
     .filter(([, v]) => v > 0)
     .map(([k, v]) => ({ name: k, value: v }));
   if (data.length === 0) return <EmptyMsg msg="No orders in this period." />;
@@ -664,19 +657,19 @@ function OrderStatusChart({ byStatus }: { byStatus: Record<string, number> }) {
 
 function CustomersChart({ data }: { data: CustomersStats }) {
   const chartData = [
-    { name: "New", value: data.new_customers },
-    { name: "Returning", value: data.returning_customers },
+    { name: "New", value: data.new_customers || 0 },
+    { name: "Returning", value: data.returning_customers || 0 },
   ];
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-2 text-center">
         <div className="rounded-lg bg-muted/50 p-3">
           <div className="text-xs text-muted-foreground">Total</div>
-          <div className="text-xl font-bold tabular-nums">{num(data.total_customers)}</div>
+          <div className="text-xl font-bold tabular-nums">{num(data.total_customers || 0)}</div>
         </div>
         <div className="rounded-lg bg-muted/50 p-3">
           <div className="text-xs text-muted-foreground">New</div>
-          <div className="text-xl font-bold tabular-nums">{num(data.new_customers)}</div>
+          <div className="text-xl font-bold tabular-nums">{num(data.new_customers || 0)}</div>
         </div>
       </div>
       <div className="h-32">
@@ -689,27 +682,6 @@ function CustomersChart({ data }: { data: CustomersStats }) {
           </BarChart>
         </ResponsiveContainer>
       </div>
-    </div>
-  );
-}
-
-function SalesByStoreChart({ data }: { data: Overview["per_site"] }) {
-  const chartData = data.map((s) => ({
-    name: s.site_name,
-    revenue: s.revenue_gbp,
-    orders: s.orders,
-  }));
-  return (
-    <div className="h-48">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={chartData} layout="vertical">
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} className="stroke-border/40" />
-          <XAxis type="number" tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-          <YAxis type="category" dataKey="name" width={100} className="text-xs" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-          <ChartTooltip content={<ChartTooltipContent />} />
-          <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[0, 6, 6, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
     </div>
   );
 }

@@ -254,6 +254,10 @@ function wcProductTimestamp(wc) {
   return wc?.date_modified_gmt || wc?.date_modified || wc?.date_created_gmt || wc?.date_created || null;
 }
 
+function wcProductCreatedTimestamp(wc) {
+  return wc?.date_created_gmt || wc?.date_created || wcProductTimestamp(wc);
+}
+
 function wcProductSortValue(wc) {
   const ts = Date.parse(wcProductTimestamp(wc) || "");
   return Number.isFinite(ts) ? ts : 0;
@@ -476,7 +480,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       const code = `WC-${s.id}`;
       const wh = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
       const lastSync = db.prepare(
-        `SELECT wc_full_sync_cursor AS ts FROM sites WHERE id = ?`,
+        `SELECT COALESCE(wc_sync_cursor, wc_full_sync_cursor) AS ts FROM sites WHERE id = ?`,
       ).get(s.id);
       const dirty = db.prepare(
         `SELECT COUNT(*) AS c FROM oms_products WHERE site_id = ? AND dirty = 1`,

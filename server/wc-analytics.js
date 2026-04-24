@@ -249,68 +249,100 @@ async function summarizeOrdersForRevenue(site, orders) {
 }
 
 /**
- * Returns aggregated performance indicators for the date range.
- * Tries wc-analytics first; falls back to legacy reports/sales; finally
- * falls back to scanning wc/v3/orders directly.
+ * Returns aggregated performance indicators for the date range, with a
+ * Woo-Analytics-equivalent revenue breakdown:
+ *   { gross, coupons, refunds, net, shipping, taxes, fees, total }
+ *
+ * Strategy:
+ *   1. Try `wc-analytics/reports/revenue/stats` and read `totals.*` directly —
+ *      these match the WooCommerce > Analytics > Revenue UI exactly.
+ *   2. Fall back to scanning `wc/v3/orders` (statuses processing+completed
+ *      only) and computing the breakdown from line items + per-order refunds.
+ *   3. Last resort: legacy `wc/v3/reports/sales` (no breakdown — net only).
+ *
+ * Returns `revenue` = net sales (the headline figure WooCommerce displays).
  */
 export async function getPerformanceIndicators(site, { from, to }) {
-  // Try wc-analytics performance-indicators.
+  // Step 1: try wc-analytics revenue/stats — has the full breakdown built in.
   try {
-    const stats = [
-      "revenue/total_sales",
-      "revenue/net_revenue",
-      "orders/orders_count",
-      "orders/avg_order_value",
-      "products/items_sold",
-      "customers/customers_count",
-      "revenue/refunds",
-    ].join(",");
-    const data = await wcGet(site, "wc-analytics/reports/performance-indicators", {
+    const data = await wcGet(site, "wc-analytics/reports/revenue/stats", {
       after: fmtIsoDate(from),
       before: fmtIsoDate(to),
-      stats,
+      interval: "day",
+      per_page: 100,
     });
-    const map = {};
-    for (const row of Array.isArray(data) ? data : []) {
-      map[row.stat] = Number(row.value) || 0;
+    const t = data?.totals || {};
+    const orders = Number(t.orders_count || 0);
+    const gross = Number(t.gross_sales || 0);
+    const net = Number(t.net_revenue ?? t.net_sales ?? 0);
+    if (orders === 0 && gross === 0 && net === 0) {
+      throw Object.assign(new Error("wc-analytics revenue/stats empty"), { status: 404 });
     }
-    const orders = map["orders/orders_count"] ?? 0;
-    const revenue = map["revenue/net_revenue"] ?? map["revenue/total_sales"] ?? 0;
-    // If wc-analytics is "available" but returns all zeros AND we have orders
-    // visible via wc/v3 (common when WC Admin sync is broken), fall through
-    // to the brute-force scan.
-    if (orders === 0 && revenue === 0) {
-      throw Object.assign(new Error("wc-analytics returned empty"), { status: 404 });
-    }
+    // Pull customers from a separate cheap call; non-fatal if it fails.
+    let customers = 0;
+    let itemsSold = Number(t.num_items_sold || 0);
+    try {
+      const c = await wcGet(site, "wc-analytics/reports/performance-indicators", {
+        after: fmtIsoDate(from),
+        before: fmtIsoDate(to),
+        stats: "customers/customers_count,products/items_sold",
+      });
+      for (const row of Array.isArray(c) ? c : []) {
+        if (row.stat === "customers/customers_count") customers = Number(row.value) || 0;
+        if (row.stat === "products/items_sold" && !itemsSold) itemsSold = Number(row.value) || 0;
+      }
+    } catch { /* non-fatal */ }
+
     return {
       limited: false,
-      revenue,
+      revenue: net, // headline = Net sales (matches Woo UI)
       orders,
-      avg_order_value: map["orders/avg_order_value"] ?? (orders > 0 ? revenue / orders : 0),
-      items_sold: map["products/items_sold"] ?? 0,
-      customers: map["customers/customers_count"] ?? 0,
-      refunds: Math.abs(map["revenue/refunds"] ?? 0),
+      avg_order_value: orders > 0 ? net / orders : 0,
+      items_sold: itemsSold,
+      customers,
+      refunds: Math.abs(Number(t.refunds || 0)),
+      breakdown: {
+        gross_sales: gross,
+        coupons: Number(t.coupons || 0),
+        refunds: Math.abs(Number(t.refunds || 0)),
+        net_sales: net,
+        shipping: Number(t.shipping || 0),
+        taxes: Number(t.taxes || 0),
+        fees: Number(t.fees || 0),
+        total_sales: Number(t.total_sales || 0),
+      },
     };
   } catch (e) {
     if (e.status !== 404 && e.status !== 401 && e.status !== 403 && e.status !== 400) throw e;
-    // Final fallback — paginate wc/v3/orders. Most reliable across all WC versions.
+
+    // Step 2: scan wc/v3/orders and compute the breakdown ourselves.
     try {
       const orders = await scanOrders(site, {
         from, to,
-        statuses: ["processing", "completed", "on-hold", "refunded"],
+        statuses: REVENUE_STATUSES, // processing + completed only — matches Woo's actionable_statuses
       });
-      const sum = summarizeOrders(orders);
+      const sum = await summarizeOrdersForRevenue(site, orders);
       return {
         limited: true,
-        revenue: sum.revenue,
+        revenue: sum.net,
         orders: sum.orders,
-        avg_order_value: sum.orders > 0 ? sum.revenue / sum.orders : 0,
+        avg_order_value: sum.orders > 0 ? sum.net / sum.orders : 0,
         items_sold: sum.items,
         customers: sum.customers,
         refunds: sum.refunds,
+        breakdown: {
+          gross_sales: sum.gross,
+          coupons: sum.coupons,
+          refunds: sum.refunds,
+          net_sales: sum.net,
+          shipping: sum.shipping,
+          taxes: sum.taxes,
+          fees: sum.fees,
+          total_sales: sum.total,
+        },
       };
     } catch (e2) {
-      // Last-resort: try the legacy reports/sales endpoint.
+      // Step 3: last-resort legacy /wc/v3/reports/sales (no breakdown).
       try {
         const sales = await wcGet(site, "wc/v3/reports/sales", {
           date_min: fmtDay(from),
@@ -327,6 +359,7 @@ export async function getPerformanceIndicators(site, { from, to }) {
           items_sold: Number(row.total_items || 0),
           customers: Number(row.total_customers || 0),
           refunds: Math.abs(Number(row.total_refunds || 0)),
+          breakdown: null,
         };
       } catch {
         throw e2;

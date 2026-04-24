@@ -67,7 +67,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       { to: "/admin/users", label: navLabel(branding, "users"), icon: <Users className="h-4 w-4" />, match: "/admin/users", adminOnly: true },
       { to: "/admin/invites", label: navLabel(branding, "invites"), icon: <Settings className="h-4 w-4" />, match: "/admin/invites", adminOnly: true },
       { to: "/admin/pages", label: "Pages", icon: <FileText className="h-4 w-4" />, match: "/admin/pages", adminOnly: true },
-      { to: "/admin/branding", label: "Branding", icon: <Palette className="h-4 w-4" />, match: "/admin/branding", adminOnly: true },
+      { to: "/admin/branding", label: "Style & Branding", icon: <Palette className="h-4 w-4" />, match: "/admin/branding", masterAdminOnly: true },
+    ];
+    const account: NavItem[] = [
+      { to: "/profile", label: "Profile", icon: <UserCog className="h-4 w-4" />, match: "/profile", authedOnly: true },
     ];
     const content: NavItem[] = navPages.map((p) => ({
       to: `/p/${p.slug}`,
@@ -80,9 +83,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (user) {
       out.push({ label: "Operate", items: operate });
       out.push({ label: "Setup", items: setup });
+      out.push({ label: "Account", items: account });
     }
     if (content.length > 0) out.push({ label: "Content", items: content });
-    if (user?.role === "admin") out.push({ label: "Administration", items: admin });
+    if (user?.role === "admin") {
+      const filteredAdmin = admin.filter((i) => !i.masterAdminOnly || user.master_admin);
+      out.push({ label: "Administration", items: filteredAdmin });
+    }
     return out;
   }, [user, branding, navPages]);
 

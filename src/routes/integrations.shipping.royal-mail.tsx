@@ -23,22 +23,7 @@ export const Route = createFileRoute("/integrations/shipping/royal-mail")({
   }),
 });
 
-type RmSettings = {
-  has_api_key: boolean;
-  use_sandbox: boolean;
-  sender_name: string | null;
-  sender_company: string | null;
-  sender_address_line1: string | null;
-  sender_address_line2: string | null;
-  sender_city: string | null;
-  sender_postcode: string | null;
-  sender_country: string;
-  sender_phone: string | null;
-  sender_email: string | null;
-  last_tested_at: string | null;
-  last_test_ok: boolean | null;
-  last_test_message: string | null;
-};
+import type { RmSettings } from "@/lib/api";
 
 function RoyalMailPage() {
   const [settings, setSettings] = useState<RmSettings | null>(null);

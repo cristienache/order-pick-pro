@@ -527,6 +527,7 @@ export function mountOmsWoo(app, { requireAuth }) {
           done: true, next_page: null,
           total_products: totalProducts, total_pages: totalPages,
           warehouse_id: warehouseId,
+          incremental: !!since, since,
         });
       }
 

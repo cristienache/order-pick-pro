@@ -103,7 +103,11 @@ function WooInventory() {
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [originals, setOriginals] = useState<Record<string, OriginalRow>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "name" });
+  const [filters, setFilters] = useState<InventoryFilters>({
+    ...DEFAULT_FILTERS,
+    sortKey: "wc_date_created",
+    sortDir: "desc",
+  });
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);

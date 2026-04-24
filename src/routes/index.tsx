@@ -683,19 +683,6 @@ function PanelCard({
   );
 }
 
-function ScheduleItem({
-  tag, tagColor, title, time,
-}: { tag: string; tagColor: string; title: string; time: string }) {
-  return (
-    <div className="rounded-xl border border-border/70 p-3 hover:bg-muted/40 transition">
-      <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${tagColor}`}>
-        {tag}
-      </span>
-      <div className="mt-2 text-sm font-semibold">{title}</div>
-      <div className="text-xs text-muted-foreground mt-0.5">{time}</div>
-    </div>
-  );
-}
 
 function StoreCard({ name }: { name: string }) {
   return (

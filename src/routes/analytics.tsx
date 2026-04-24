@@ -141,6 +141,9 @@ function AnalyticsPage() {
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
   const [couponsLoading, setCouponsLoading] = useState(false);
 
+  // Initialize range on the client only (avoids SSR/CSR `new Date()` drift).
+  useEffect(() => { setRange(presetRange("30d")); }, []);
+
   // Load sites on mount; auto-select the first one.
   useEffect(() => {
     setSitesLoading(true);

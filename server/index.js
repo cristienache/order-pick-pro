@@ -2978,6 +2978,20 @@ const bulkShipmentSchema = z.object({
   height_mm: z.number().int().min(0).max(2000).optional(),
   safe_place: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
   description_of_goods: z.string().trim().max(60).default("Goods"),
+  // Shared customs declaration applied to every international order in the
+  // selection. Per-line editing isn't practical in bulk, so the user supplies
+  // a single HS code, origin and description; per-item declared values come
+  // from each order's WC line subtotals on the server.
+  bulk_customs: z.object({
+    content_type: z.enum([
+      "saleOfGoods", "gift", "documents", "commercialSample",
+      "returnedGoods", "mixedContent", "other",
+    ]).default("saleOfGoods"),
+    currency_code: z.string().trim().length(3).default("GBP").transform((v) => v.toUpperCase()),
+    customs_code: z.string().trim().min(2).max(20),
+    origin_country: z.string().trim().length(2).transform((v) => v.toUpperCase()),
+    customs_description: z.string().trim().min(1).max(120),
+  }).optional(),
   selections: z.array(z.object({
     site_id: z.number().int().positive(),
     order_ids: z.array(z.number().int().positive()).min(1).max(200),

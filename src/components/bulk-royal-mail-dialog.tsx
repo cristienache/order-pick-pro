@@ -118,7 +118,44 @@ export function BulkRoyalMailDialog({
     }
   }, [open, mode, selections]);
 
-  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+  const availableServices = useMemo(
+    () => RM_SERVICES.filter(
+      (s) => s.formats.includes(packageFormat) && s.scope === destination,
+    ),
+    [packageFormat, destination],
+  );
+
+  // Reset selection when destination/format makes it invalid.
+  useEffect(() => {
+    if (serviceMode === "auto" || serviceMode === "custom") return;
+    if (!availableServices.some((s) => s.code === serviceMode)) {
+      setServiceMode("auto");
+      setRequireSignature(false);
+    }
+  }, [availableServices, serviceMode]);
+
+  const baseServiceDef = useMemo(
+    () => RM_SERVICES.find((s) => s.code === serviceMode),
+    [serviceMode],
+  );
+  const canToggleSignature =
+    destination === "domestic" &&
+    serviceMode !== "auto" &&
+    serviceMode !== "custom" &&
+    !!baseServiceDef &&
+    !baseServiceDef.signed &&
+    !!rmSignedVariant(serviceMode);
+
+  const resolvedServiceCode = useMemo(() => {
+    if (serviceMode === "custom") return customServiceCode.trim().toUpperCase();
+    if (serviceMode === "auto") return "auto";
+    if (requireSignature && destination === "domestic") {
+      return rmSignedVariant(serviceMode) ?? serviceMode;
+    }
+    return serviceMode;
+  }, [serviceMode, customServiceCode, requireSignature, destination]);
+
+  const serviceCode = resolvedServiceCode;
   const service = useMemo(() => {
     const code = serviceCode.trim().toUpperCase();
     return (

@@ -907,19 +907,38 @@ function LabelViewer({
             onLoad={handleIframeLoaded}
           />
         ) : (
-          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-2">
+          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-3">
             <p>
               No printable PDF was returned by Royal Mail for this shipment.
             </p>
             <p>
-              The order was created in Click &amp; Drop, but PDF retrieval is only available for some account/service combinations. Open Click &amp; Drop to buy/generate the label there.
+              The order was created in Click &amp; Drop, but PDF retrieval is
+              only available for some account/service combinations.
+              International orders sometimes need a manual customs confirmation
+              before the label is generated.
             </p>
+            {pdfError && (
+              <p className="text-destructive text-xs">{pdfError}</p>
+            )}
             {shipment.royal_mail_shipment_id && (
               <p>Click &amp; Drop order ID: <span className="font-mono">{shipment.royal_mail_shipment_id}</span></p>
             )}
             {shipment.tracking_number && (
               <p>Tracking: <span className="font-mono">{shipment.tracking_number}</span></p>
             )}
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              {shipment.click_and_drop_url && (
+                <Button asChild variant="outline" size="sm">
+                  <a href={shipment.click_and_drop_url} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" /> Open in Click &amp; Drop
+                  </a>
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={refetchLabel} disabled={refetching}>
+                {refetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Retry label fetch
+              </Button>
+            </div>
           </div>
         )}
       </div>

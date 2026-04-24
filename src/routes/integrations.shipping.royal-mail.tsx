@@ -9,9 +9,13 @@ import { Switch } from "@/components/ui/switch";
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Truck, KeyRound, MapPin, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, Truck, KeyRound, MapPin, Globe, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import type { RmCustomsContentType } from "@/lib/api";
 
 export const Route = createFileRoute("/integrations/shipping/royal-mail")({
   component: RoyalMailPage,
@@ -23,22 +27,7 @@ export const Route = createFileRoute("/integrations/shipping/royal-mail")({
   }),
 });
 
-type RmSettings = {
-  has_api_key: boolean;
-  use_sandbox: boolean;
-  sender_name: string | null;
-  sender_company: string | null;
-  sender_address_line1: string | null;
-  sender_address_line2: string | null;
-  sender_city: string | null;
-  sender_postcode: string | null;
-  sender_country: string;
-  sender_phone: string | null;
-  sender_email: string | null;
-  last_tested_at: string | null;
-  last_test_ok: boolean | null;
-  last_test_message: string | null;
-};
+import type { RmSettings } from "@/lib/api";
 
 function RoyalMailPage() {
   const [settings, setSettings] = useState<RmSettings | null>(null);
@@ -70,6 +59,7 @@ function RoyalMailPage() {
       />
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />
+      <CustomsDefaultsCard settings={settings} onChanged={refresh} />
     </div>
   );
 }
@@ -274,6 +264,111 @@ function SenderCard({ settings, onChanged }: { settings: RmSettings; onChanged: 
           <Button type="submit" disabled={saving}>
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
             Save sender address
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CustomsDefaultsCard({ settings, onChanged }: { settings: RmSettings; onChanged: () => Promise<void> }) {
+  const [form, setForm] = useState({
+    default_origin_country: settings.default_origin_country ?? "GB",
+    eori_number: settings.eori_number ?? "",
+    ioss_number: settings.ioss_number ?? "",
+    default_content_type: (settings.default_content_type ?? "saleOfGoods") as RmCustomsContentType,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      // The sender PUT accepts the customs fields too, so reuse it and pass
+      // the existing sender values back unchanged.
+      await api("/api/royal-mail/sender", {
+        method: "PUT",
+        body: {
+          sender_name: settings.sender_name ?? "",
+          sender_company: settings.sender_company ?? "",
+          sender_address_line1: settings.sender_address_line1 ?? "",
+          sender_address_line2: settings.sender_address_line2 ?? "",
+          sender_city: settings.sender_city ?? "",
+          sender_postcode: settings.sender_postcode ?? "",
+          sender_country: settings.sender_country ?? "GB",
+          sender_phone: settings.sender_phone ?? "",
+          sender_email: settings.sender_email ?? "",
+          ...form,
+        },
+      });
+      await onChanged();
+      toast.success("Customs defaults saved");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Save failed");
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <Globe className="h-5 w-5 text-muted-foreground mt-0.5" />
+          <div>
+            <CardTitle>Customs defaults (international)</CardTitle>
+            <CardDescription>
+              Used to populate the CN22/CN23 customs declaration on international Click &amp; Drop orders. EORI/IOSS are optional — when set they're attached to every non-UK shipment.
+            </CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={save} className="space-y-4">
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field
+              id="c-origin"
+              label="Default origin country (ISO-2)"
+              value={form.default_origin_country}
+              onChange={(e) => setForm((f) => ({ ...f, default_origin_country: e.target.value.toUpperCase() }))}
+              maxLength={2}
+            />
+            <div className="space-y-2">
+              <Label htmlFor="c-content">Default content type</Label>
+              <Select
+                value={form.default_content_type}
+                onValueChange={(v) => setForm((f) => ({ ...f, default_content_type: v as RmCustomsContentType }))}
+              >
+                <SelectTrigger id="c-content"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="saleOfGoods">Sale of goods</SelectItem>
+                  <SelectItem value="gift">Gift</SelectItem>
+                  <SelectItem value="commercialSample">Commercial sample</SelectItem>
+                  <SelectItem value="returnedGoods">Returned goods</SelectItem>
+                  <SelectItem value="documents">Documents</SelectItem>
+                  <SelectItem value="mixedContent">Mixed content</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <Field
+              id="c-eori"
+              label="EORI number (optional)"
+              value={form.eori_number}
+              onChange={(e) => setForm((f) => ({ ...f, eori_number: e.target.value }))}
+              maxLength={40}
+            />
+            <Field
+              id="c-ioss"
+              label="IOSS number (optional)"
+              value={form.ioss_number}
+              onChange={(e) => setForm((f) => ({ ...f, ioss_number: e.target.value }))}
+              maxLength={40}
+            />
+          </div>
+          <Button type="submit" disabled={saving}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+            Save customs defaults
           </Button>
         </form>
       </CardContent>

@@ -1296,6 +1296,15 @@ const rmSenderSchema = z.object({
   sender_country: z.string().trim().min(2).max(3).optional().default("GB"),
   sender_phone: optAddrField(40),
   sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
+  // International customs defaults — all optional. When set they're attached
+  // to every international order payload so the customs declaration prints.
+  default_origin_country: z.string().trim().length(2).optional().or(z.literal("")).transform((v) => (v ? v.toUpperCase() : null)),
+  eori_number: optAddrField(40),
+  ioss_number: optAddrField(40),
+  default_content_type: z.enum([
+    "saleOfGoods", "gift", "documents", "commercialSample",
+    "returnedGoods", "mixedContent", "other",
+  ]).optional().or(z.literal("")).transform((v) => v || null),
 });
 
 // Public-safe view: never returns the encrypted credential blob, only a flag
@@ -1309,6 +1318,9 @@ function rmRowToPublic(row) {
       sender_address_line1: null, sender_address_line2: null,
       sender_city: null, sender_postcode: null,
       sender_country: "GB", sender_phone: null, sender_email: null,
+      default_origin_country: "GB",
+      eori_number: null, ioss_number: null,
+      default_content_type: "saleOfGoods",
       last_tested_at: null, last_test_ok: null, last_test_message: null,
     };
   }
@@ -1324,6 +1336,10 @@ function rmRowToPublic(row) {
     sender_country: row.sender_country || "GB",
     sender_phone: row.sender_phone,
     sender_email: row.sender_email,
+    default_origin_country: row.default_origin_country || "GB",
+    eori_number: row.eori_number || null,
+    ioss_number: row.ioss_number || null,
+    default_content_type: row.default_content_type || "saleOfGoods",
     last_tested_at: row.last_tested_at,
     last_test_ok: row.last_test_ok === null ? null : Boolean(row.last_test_ok),
     last_test_message: row.last_test_message,
@@ -1385,23 +1401,31 @@ app.put("/api/royal-mail/sender", requireAuth, (req, res) => {
       UPDATE royal_mail_credentials
       SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
           sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
+          default_origin_country = ?, eori_number = ?, ioss_number = ?, default_content_type = ?,
           updated_at = datetime('now')
       WHERE user_id = ?
     `).run(
       d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+      d.default_origin_country || "GB",
+      d.eori_number, d.ioss_number,
+      d.default_content_type || "saleOfGoods",
       req.user.id,
     );
   } else {
     db.prepare(`
       INSERT INTO royal_mail_credentials (
         user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
-        sender_city, sender_postcode, sender_country, sender_phone, sender_email
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sender_city, sender_postcode, sender_country, sender_phone, sender_email,
+        default_origin_country, eori_number, ioss_number, default_content_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user.id,
       d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+      d.default_origin_country || "GB",
+      d.eori_number, d.ioss_number,
+      d.default_content_type || "saleOfGoods",
     );
   }
   const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);
@@ -2338,6 +2362,27 @@ app.get("/api/packeta/shipments/by-order/:siteId/:orderId", requireAuth, (req, r
 // serviceCode is optional in the official schema, so we allow blank/"auto" and
 // let Click & Drop apply the account's postage rules/defaults when omitted.
 
+// Per-line customs item (CN22/CN23). Required on international shipments.
+// `unit_value` is the declared value of one unit in `currency_code` (sent at
+// the parent shipment level). HS/origin are required by Royal Mail for non-GB.
+const customsItemSchema = z.object({
+  sku: z.string().trim().max(60).optional().or(z.literal("")).transform((v) => v || ""),
+  name: z.string().trim().min(1).max(120),
+  quantity: z.number().int().min(1).max(999),
+  unit_value: z.number().min(0).max(1_000_000),
+  customs_code: z.string().trim().min(2).max(20), // HS / commodity code
+  origin_country: z.string().trim().length(2).transform((v) => v.toUpperCase()),
+  customs_description: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
+});
+const customsBlockSchema = z.object({
+  content_type: z.enum([
+    "saleOfGoods", "gift", "documents", "commercialSample",
+    "returnedGoods", "mixedContent", "other",
+  ]).default("saleOfGoods"),
+  currency_code: z.string().trim().length(3).default("GBP").transform((v) => v.toUpperCase()),
+  items: z.array(customsItemSchema).min(1).max(50),
+});
+
 const shipmentSchema = z.object({
   site_id: z.number().int().positive(),
   woocommerce_order_id: z.number().int().positive(),
@@ -2361,6 +2406,11 @@ const shipmentSchema = z.object({
     name: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || ""),
     quantity: z.number().int().min(1).max(999).default(1),
   })).max(50).optional(),
+  // International only — overrides line_items for the C&D `contents[]` so
+  // declared values, HS codes and origin countries can flow into the customs
+  // declaration. The server validates this is present whenever the recipient
+  // country isn't GB.
+  customs: customsBlockSchema.optional(),
   recipient: z.object({
     name: z.string().trim().min(1).max(100),
     company: z.string().trim().max(100).optional().or(z.literal("")).transform((v) => v || null),
@@ -2402,11 +2452,35 @@ function loadRmCreds(userId) {
   };
 }
 
-// Build the Click & Drop `contents[]` for a package from WooCommerce line items.
-// Royal Mail prints `quantity x SKU` (or name if no SKU) on the label, so we
-// surface the actual product SKUs the user is shipping. Falls back to a single
-// generic "Goods" line if there's nothing to show.
-function buildCndContents({ lineItems, fallbackName, totalWeightGrams }) {
+// Build the Click & Drop `contents[]` for a package.
+// - For domestic parcels we surface SKUs/names from WC line items so the
+//   label shows what's inside.
+// - For international parcels the caller passes a `customsItems` array which
+//   carries declared values, HS codes and origin countries — these populate
+//   the CN22/CN23 customs declaration printed alongside the label.
+function buildCndContents({ lineItems, customsItems, fallbackName, totalWeightGrams, originCountry }) {
+  // International path: caller already supplied per-item customs data.
+  if (Array.isArray(customsItems) && customsItems.length > 0) {
+    const totalUnits = customsItems.reduce(
+      (s, c) => s + Math.max(1, Number(c.quantity) || 1), 0,
+    );
+    const perUnit = totalUnits > 0 ? Math.floor((totalWeightGrams || 0) / totalUnits) : 0;
+    return customsItems.map((c) => ({
+      name: String(c.customs_description || c.name || c.sku || "Goods").slice(0, 60),
+      SKU: String(c.sku || "").slice(0, 60),
+      quantity: Math.max(1, Math.min(999, Number(c.quantity) || 1)),
+      unitValue: Math.max(0, Number(c.unit_value) || 0),
+      unitWeightInGrams: perUnit,
+      customsCode: String(c.customs_code || "").slice(0, 20),
+      // ISO-2 origin country, e.g. "GB". Royal Mail accepts ISO-2 here.
+      originCountryCode: String(
+        c.origin_country || originCountry || "GB",
+      ).toUpperCase().slice(0, 2),
+      customsDescription: String(c.customs_description || c.name || "Goods").slice(0, 120),
+    }));
+  }
+
+  // Domestic / no customs path — preserve original behaviour.
   const items = Array.isArray(lineItems)
     ? lineItems
         .map((li) => ({
@@ -2458,6 +2532,13 @@ async function loadOrderLineItemsForLabel(site, orderId) {
 }
 
 function rmShipmentToPublic(s) {
+  // Deep link into Click & Drop's order list filtered to this order. Useful
+  // when the label PDF couldn't be retrieved from the API (e.g. non-OBA
+  // accounts, manual customs confirmation required) — the user can finish
+  // the workflow inside Click & Drop.
+  const cndUrl = s.royal_mail_shipment_id
+    ? `https://business.parcel.royalmail.com/orders/?orderIdentifier=${encodeURIComponent(s.royal_mail_shipment_id)}`
+    : null;
   return {
     id: s.id,
     woocommerce_order_id: s.woocommerce_order_id,
@@ -2474,6 +2555,7 @@ function rmShipmentToPublic(s) {
     carrier: s.carrier || "royal_mail",
     packeta_packet_id: s.packeta_packet_id || null,
     packeta_barcode: s.packeta_barcode || null,
+    click_and_drop_url: cndUrl,
   };
 }
 
@@ -2639,6 +2721,56 @@ app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
   res.send(buf);
 });
 
+// Retry fetching the label PDF from Click & Drop. Useful for international
+// shipments where the user may need to confirm customs in C&D before the
+// PDF becomes available, or for non-OBA accounts where labels are generated
+// in C&D after order creation.
+app.post("/api/royal-mail/shipments/:id/refetch-label", requireAuth, async (req, res) => {
+  const row = db.prepare(
+    "SELECT * FROM shipments WHERE id = ? AND user_id = ? AND voided = 0"
+  ).get(Number(req.params.id), req.user.id);
+  if (!row) return res.status(404).json({ error: "Shipment not found" });
+  if (!row.royal_mail_shipment_id) {
+    return res.status(400).json({ error: "Shipment has no Click & Drop order ID." });
+  }
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  // Look up the original order's recipient country to know whether the CN22
+  // declaration should be requested.
+  const site = loadSiteWithKeys(row.site_id, req.user.id);
+  let isInternational = false;
+  if (site) {
+    try {
+      const order = await fetchOrderById(site, row.woocommerce_order_id);
+      const cc = (order?.shipping?.country || order?.billing?.country || "GB").toUpperCase();
+      isInternational = cc !== "GB";
+    } catch { /* fall back to domestic — no harm */ }
+  }
+
+  try {
+    const lab = await getCndLabel({
+      apiKey: creds.apiKey,
+      useSandbox: creds.useSandbox,
+      orderIdentifier: row.royal_mail_shipment_id,
+      includeCN: isInternational,
+    });
+    if (lab.ok && lab.buffer) {
+      const b64 = lab.buffer.toString("base64");
+      db.prepare("UPDATE shipments SET label_pdf_base64 = ? WHERE id = ?").run(b64, row.id);
+      const updated = db.prepare("SELECT * FROM shipments WHERE id = ?").get(row.id);
+      return res.json({ ok: true, shipment: rmShipmentToPublic(updated) });
+    }
+    return res.status(422).json({
+      ok: false,
+      error: lab.body?.message || `Royal Mail returned ${lab.status} for the label.`,
+      detail: lab.body,
+    });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: `Label refetch failed: ${e.message}` });
+  }
+});
+
 // Core: create one Click & Drop shipment for an already-validated payload.
 // Returns { status, body } where body is what we'd JSON-respond with. Used by
 // both the single-order and bulk endpoints so behaviour stays in lock-step
@@ -2680,6 +2812,27 @@ async function createShipmentForUser({ userId, data: input, creds }) {
     if (fetched && fetched.length > 0) d.line_items = fetched;
   }
 
+  // International shipments require a customs block. We hard-fail here rather
+  // than silently send a domestic-shaped payload that Royal Mail would later
+  // reject — or worse, accept and produce a label without the CN22/CN23.
+  const isInternational =
+    String(d.recipient.country_code || "GB").toUpperCase() !== "GB";
+  if (isInternational && (!d.customs || !d.customs.items?.length)) {
+    return {
+      status: 400,
+      body: { error: "Customs declaration is required for international shipments." },
+    };
+  }
+
+  // Aggregate declared values for the order-level totals. C&D wants subtotal
+  // and total to roughly match the sum of contents[].unitValue * quantity.
+  const customsTotal = d.customs
+    ? d.customs.items.reduce(
+        (s, c) => s + (Number(c.unit_value) || 0) * (Number(c.quantity) || 1), 0,
+      )
+    : 0;
+  const orderCurrency = d.customs?.currency_code || "GBP";
+
   const cndOrder = {
     orderReference: d.customer_reference,
     isRecipientABusiness: false,
@@ -2713,6 +2866,10 @@ async function createShipmentForUser({ userId, data: input, creds }) {
         postcode: rm.sender_postcode,
         countryCode: rm.sender_country || "GB",
       },
+      // EORI/IOSS only meaningful on international shipments. Royal Mail
+      // ignores the fields when the recipient is GB.
+      ...(isInternational && rm.eori_number ? { eoriNumber: rm.eori_number } : {}),
+      ...(isInternational && rm.ioss_number ? { iossNumber: rm.ioss_number } : {}),
     },
     packages: [
       {
@@ -2725,18 +2882,28 @@ async function createShipmentForUser({ userId, data: input, creds }) {
             depthInMms: d.length_mm,
           },
         } : {}),
+        // C&D expects contentType on each package for international parcels.
+        ...(isInternational ? {
+          packageOccurrence: {
+            contentType: d.customs?.content_type
+              || rm.default_content_type
+              || "saleOfGoods",
+          },
+        } : {}),
         contents: buildCndContents({
           lineItems: d.line_items,
+          customsItems: isInternational ? d.customs.items : null,
           fallbackName: d.description_of_goods,
           totalWeightGrams: d.weight_grams,
+          originCountry: rm.default_origin_country || "GB",
         }),
       },
     ],
     orderDate: new Date().toISOString(),
-    subtotal: 0,
+    subtotal: customsTotal,
     shippingCostCharged: 0,
-    total: 0,
-    currencyCode: "GBP",
+    total: customsTotal,
+    currencyCode: orderCurrency,
     ...(d.service_code ? {
       postageDetails: {
         serviceCode: d.service_code,
@@ -2747,7 +2914,8 @@ async function createShipmentForUser({ userId, data: input, creds }) {
     } : {}),
     label: {
       includeLabelInResponse: false,
-      includeCN: false,
+      // Customs declaration prints alongside the label for international.
+      includeCN: isInternational,
       includeReturnsLabel: false,
     },
   };
@@ -2789,7 +2957,7 @@ async function createShipmentForUser({ userId, data: input, creds }) {
 
   if (orderIdentifier) {
     try {
-      const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier });
+      const lab = await getCndLabel({ apiKey, useSandbox, orderIdentifier, includeCN: isInternational });
       if (lab.ok && lab.buffer) {
         labelBase64 = lab.buffer.toString("base64");
       } else if (!lab.ok) {
@@ -2868,6 +3036,20 @@ const bulkShipmentSchema = z.object({
   height_mm: z.number().int().min(0).max(2000).optional(),
   safe_place: z.string().trim().max(120).optional().or(z.literal("")).transform((v) => v || null),
   description_of_goods: z.string().trim().max(60).default("Goods"),
+  // Shared customs declaration applied to every international order in the
+  // selection. Per-line editing isn't practical in bulk, so the user supplies
+  // a single HS code, origin and description; per-item declared values come
+  // from each order's WC line subtotals on the server.
+  bulk_customs: z.object({
+    content_type: z.enum([
+      "saleOfGoods", "gift", "documents", "commercialSample",
+      "returnedGoods", "mixedContent", "other",
+    ]).default("saleOfGoods"),
+    currency_code: z.string().trim().length(3).default("GBP").transform((v) => v.toUpperCase()),
+    customs_code: z.string().trim().min(2).max(20),
+    origin_country: z.string().trim().length(2).transform((v) => v.toUpperCase()),
+    customs_description: z.string().trim().min(1).max(120),
+  }).optional(),
   selections: z.array(z.object({
     site_id: z.number().int().positive(),
     order_ids: z.array(z.number().int().positive()).min(1).max(200),
@@ -2937,6 +3119,36 @@ app.post("/api/royal-mail/shipments/bulk", requireAuth, async (req, res) => {
         quantity: Math.max(1, Number(li.quantity) || 1),
       }));
 
+      const recipient = recipientFromWcOrder(order);
+      const isInternational =
+        String(recipient.country_code || "GB").toUpperCase() !== "GB";
+
+      // Build a per-order customs block from the shared bulk_customs settings
+      // plus each WC line's subtotal (declared value = subtotal / quantity).
+      let customsForOrder;
+      if (isInternational && d.bulk_customs) {
+        const items = (order.line_items || []).map((li) => {
+          const qty = Math.max(1, Number(li.quantity) || 1);
+          const sub = Number(li.subtotal ?? li.total ?? 0) || 0;
+          return {
+            sku: String(li.sku || ""),
+            name: String(li.name || "Goods"),
+            quantity: qty,
+            unit_value: qty > 0 ? Number((sub / qty).toFixed(2)) : 0,
+            customs_code: d.bulk_customs.customs_code,
+            origin_country: d.bulk_customs.origin_country,
+            customs_description: d.bulk_customs.customs_description,
+          };
+        });
+        if (items.length > 0) {
+          customsForOrder = {
+            content_type: d.bulk_customs.content_type,
+            currency_code: (order.currency || d.bulk_customs.currency_code).toUpperCase(),
+            items,
+          };
+        }
+      }
+
       const data = {
         site_id: sel.site_id,
         woocommerce_order_id: orderId,
@@ -2950,7 +3162,8 @@ app.post("/api/royal-mail/shipments/bulk", requireAuth, async (req, res) => {
         safe_place: d.safe_place,
         description_of_goods: d.description_of_goods,
         line_items: lineItems,
-        recipient: recipientFromWcOrder(order),
+        ...(customsForOrder ? { customs: customsForOrder } : {}),
+        recipient,
       };
 
       try {

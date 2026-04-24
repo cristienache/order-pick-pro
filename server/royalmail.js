@@ -115,13 +115,15 @@ export async function createCndOrder({ apiKey, useSandbox, order }) {
   });
 }
 
-// GET /orders/{orderIdentifier}/label?documentType=postageLabel&includeReturnsLabel=false&includeCN=false
+// GET /orders/{orderIdentifier}/label?documentType=postageLabel&includeReturnsLabel=false&includeCN=...
 // This endpoint is reserved for OBA customers. Non-OBA Click & Drop accounts
 // can create orders, but may need labels generated/paid for in Click & Drop.
-export async function getCndLabel({ apiKey, useSandbox, orderIdentifier }) {
+// `includeCN` controls whether the customs declaration (CN22/CN23) is
+// printed alongside the label — required for international shipments.
+export async function getCndLabel({ apiKey, useSandbox, orderIdentifier, includeCN = false }) {
   const path =
     `/orders/${encodeURIComponent(orderIdentifier)}/label` +
-    `?documentType=postageLabel&includeReturnsLabel=false&includeCN=false`;
+    `?documentType=postageLabel&includeReturnsLabel=false&includeCN=${includeCN ? "true" : "false"}`;
   return rmBinary({ apiKey, useSandbox, method: "GET", path });
 }
 

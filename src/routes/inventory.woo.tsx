@@ -124,6 +124,9 @@ function WooInventory() {
   const [wipeOpen, setWipeOpen] = useState(false);
   const [wipeText, setWipeText] = useState("");
   const [wiping, setWiping] = useState(false);
+  // Delete-from-HeyShop-only confirmation dialog (does not touch WC).
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,
@@ -441,6 +444,29 @@ function WooInventory() {
     }
   };
 
+  /** Delete the currently selected products from HeyShop only. The
+   *  WooCommerce store is untouched — re-syncing will re-import them. */
+  const deleteSelectedLocal = async () => {
+    if (!siteId || !site || selectedIds.length === 0) return;
+    setDeleting(true);
+    try {
+      const r = await wcApi.deleteLocal(siteId, selectedIds);
+      toast.success(
+        `Removed ${r.deleted} product${r.deleted === 1 ? "" : "s"} from HeyShop. WooCommerce store was not touched.`,
+      );
+      setSelected(new Set());
+      setDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
+      qc.invalidateQueries({ queryKey: ["wc-sites"] });
+      qc.invalidateQueries({ queryKey: ["oms-products"] });
+      qc.invalidateQueries({ queryKey: ["oms-inventory"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];
@@ -690,6 +716,16 @@ function WooInventory() {
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+          <Button
+            variant="outline" size="sm"
+            onClick={() => setDeleteOpen(true)}
+            disabled={!siteId || selectedIds.length === 0 || deleting}
+            className="text-destructive hover:text-destructive"
+            title="Remove the selected products from HeyShop only — your WooCommerce store is not touched"
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete from HeyShop{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
           <Button
             variant="outline" size="sm"
             onClick={() => { setWipeText(""); setWipeOpen(true); }}
@@ -1044,6 +1080,44 @@ function WooInventory() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {wiping ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Wiping…</> : "Wipe & re-sync"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete-from-HeyShop-only confirmation. WC store is NOT touched. */}
+      <AlertDialog open={deleteOpen} onOpenChange={(o) => !deleting && setDeleteOpen(o)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="h-4 w-4 text-destructive" />
+              Remove {selectedIds.length} product{selectedIds.length === 1 ? "" : "s"} from HeyShop?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  This removes the selected product{selectedIds.length === 1 ? "" : "s"}
+                  {" "}from HeyShop only. Your <strong>WooCommerce store is not touched</strong>
+                  {" "}— the product{selectedIds.length === 1 ? "" : "s"} will still exist on
+                  {" "}<strong>{site?.name ?? "your store"}</strong>.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  If you select a variable parent, its variations are removed too.
+                  Running a Sync will re-import anything you remove here.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); deleteSelectedLocal(); }}
+              disabled={deleting || selectedIds.length === 0}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting
+                ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> Removing…</>
+                : `Remove ${selectedIds.length} from HeyShop`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

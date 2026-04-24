@@ -347,9 +347,27 @@ function WooInventory() {
           patch.manage_stock = op.value;
         } else if (op.kind === "weight") {
           patch.weight = op.value.toFixed(3);
-        } else if (op.kind === "find") {
-          const src = op.field === "name" ? d.name : d.description;
-          patch[op.field] = src.split(op.find).join(op.replace);
+        } else if (op.kind === "text") {
+          const src = (op.field === "name" ? d.name : d.description) ?? "";
+          let out = src;
+          switch (op.mode) {
+            case "find":
+              out = op.find ? src.split(op.find).join(op.replace) : src;
+              break;
+            case "prepend":
+              out = op.replace + src;
+              break;
+            case "append":
+              out = src + op.replace;
+              break;
+            case "upper":
+              out = src.toUpperCase();
+              break;
+            case "lower":
+              out = src.toLowerCase();
+              break;
+          }
+          patch[op.field] = out;
         }
         next[pid] = { ...d, ...patch };
       }

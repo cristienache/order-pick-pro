@@ -56,10 +56,10 @@ export const Route = createFileRoute("/")({
 });
 
 type Tool = {
-  to: "/orders" | "/inventory" | "/purchase-orders" | "/integrations/shipping/royal-mail" | "/integrations" | "/admin/users" | "/admin/invites";
+  to: "/orders" | "/inventory" | "/purchase-orders" | "/integrations/shipping/royal-mail" | "/integrations" | "/analytics" | "/admin/users" | "/admin/invites";
   label: string;
   caption: string;
-  category: "Operations" | "Catalog" | "Shipping" | "Channels" | "Admin";
+  category: "Operations" | "Catalog" | "Shipping" | "Channels" | "Analytics" | "Admin";
   icon: LucideIcon;
   adminOnly?: boolean;
 };
@@ -68,13 +68,14 @@ const TOOLS: Tool[] = [
   { to: "/orders", label: "Orders", caption: "Pick, pack & ship", category: "Operations", icon: Package },
   { to: "/inventory", label: "Inventory", caption: "Stock & SKUs", category: "Catalog", icon: Boxes },
   { to: "/purchase-orders", label: "Purchase Orders", caption: "Suppliers & POs", category: "Catalog", icon: ClipboardList },
+  { to: "/analytics", label: "Analytics", caption: "Reports & insights", category: "Analytics", icon: BarChart3 },
   { to: "/integrations/shipping/royal-mail", label: "Royal Mail", caption: "Labels & manifests", category: "Shipping", icon: Truck },
   { to: "/integrations", label: "Integrations", caption: "Sales channels", category: "Channels", icon: Store },
   { to: "/admin/users", label: "Users", caption: "Team access", category: "Admin", icon: Users, adminOnly: true },
   { to: "/admin/invites", label: "Invites", caption: "Onboard teammates", category: "Admin", icon: Settings, adminOnly: true },
 ];
 
-const ALL_CATEGORIES = ["Operations", "Catalog", "Shipping", "Channels", "Admin"] as const;
+const ALL_CATEGORIES = ["Operations", "Catalog", "Shipping", "Channels", "Analytics", "Admin"] as const;
 type Category = (typeof ALL_CATEGORIES)[number];
 
 function HomePage() {

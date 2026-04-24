@@ -103,7 +103,11 @@ function WooInventory() {
   const [drafts, setDrafts] = useState<Record<string, DraftRow>>({});
   const [originals, setOriginals] = useState<Record<string, OriginalRow>>({});
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [filters, setFilters] = useState<InventoryFilters>({ ...DEFAULT_FILTERS, sortKey: "name" });
+  const [filters, setFilters] = useState<InventoryFilters>({
+    ...DEFAULT_FILTERS,
+    sortKey: "wc_date_created",
+    sortDir: "desc",
+  });
   const [openDesc, setOpenDesc] = useState<Set<string>>(new Set());
   const [pushOpen, setPushOpen] = useState(false);
   const [showBackups, setShowBackups] = useState(false);
@@ -208,10 +212,13 @@ function WooInventory() {
       return true;
     });
 
-    // Sort
+    // Sort. Variations are NEVER mixed in with simple/variable products —
+    // they always render directly under their own parent (and only when that
+    // parent is in the visible set). The sort key applies to parents/simples;
+    // variations under a sorted parent keep their original WC order.
     const dir = filters.sortDir === "asc" ? 1 : -1;
     const num = (v: number | null | undefined) => (v == null ? -Infinity : v);
-    list.sort((a, b) => {
+    const cmp = (a: typeof list[number], b: typeof list[number]) => {
       switch (filters.sortKey) {
         case "sku": return a.sku.localeCompare(b.sku) * dir;
         case "regular_price": return (num(a.regular_price) - num(b.regular_price)) * dir;
@@ -231,13 +238,34 @@ function WooInventory() {
         case "dirty": {
           const da = dirtySet.has(a.id) ? 1 : 0;
           const db = dirtySet.has(b.id) ? 1 : 0;
-          return (db - da); // dirty rows always first regardless of dir
+          return (db - da);
         }
         case "name":
         default: return a.name.localeCompare(b.name) * dir;
       }
-    });
-    return list;
+    };
+
+    // Split into top-level rows (simples + variable parents) and a lookup of
+    // variations indexed by their parent_product_id. Sort the top-level rows
+    // by the chosen key, then re-assemble: each parent immediately followed
+    // by its own variations (kept in their original WC order).
+    const topLevel = list.filter((p) => !p.parent_product_id);
+    const variationsByParent = new Map<string, typeof list>();
+    for (const p of list) {
+      if (p.parent_product_id) {
+        const arr = variationsByParent.get(p.parent_product_id) ?? [];
+        arr.push(p);
+        variationsByParent.set(p.parent_product_id, arr);
+      }
+    }
+    topLevel.sort(cmp);
+    const ordered: typeof list = [];
+    for (const p of topLevel) {
+      ordered.push(p);
+      const vars = variationsByParent.get(p.id);
+      if (vars && vars.length) ordered.push(...vars);
+    }
+    return ordered;
   }, [siteProducts, filters, collapsed, dirtyIds]);
 
   // Reset to page 1 whenever the filter/search changes the visible set.
@@ -424,7 +452,29 @@ function WooInventory() {
     }
   };
 
-  const idsForPush = selectedIds.length ? selectedIds : dirtyIds;
+  // What we'll push: any selected rows that actually have unsaved changes,
+  // PLUS any dirty variations under a selected variable parent (so picking the
+  // parent row pushes its edited children too). If nothing is selected, fall
+  // back to all dirty rows. We never include rows that are already in sync —
+  // those just produce a confusing "No changes to push" error per row.
+  const dirtySet = useMemo(() => new Set(dirtyIds), [dirtyIds]);
+  const idsForPush = useMemo(() => {
+    if (selectedIds.length === 0) return dirtyIds;
+    const expanded = new Set<string>();
+    for (const id of selectedIds) {
+      const row = siteProducts.find((p) => p.id === id);
+      if (!row) continue;
+      if (dirtySet.has(id)) expanded.add(id);
+      // Selecting a variable parent implicitly includes any dirty variation
+      // beneath it — so the user doesn't have to expand + tick each one.
+      if (row.wc_type === "variable") {
+        for (const v of siteProducts) {
+          if (v.parent_product_id === id && dirtySet.has(v.id)) expanded.add(v.id);
+        }
+      }
+    }
+    return [...expanded];
+  }, [selectedIds, siteProducts, dirtyIds, dirtySet]);
 
   const doBackup = async () => {
     if (!siteId || idsForPush.length === 0) return false;
@@ -538,8 +588,16 @@ function WooInventory() {
         />
 
         <div className="ml-auto flex items-center gap-2">
-          <Badge variant="outline" className="font-mono text-[10px]">
-            {selectedIds.length || dirtyIds.length} pending
+          <Badge
+            variant="outline"
+            className="font-mono text-[10px]"
+            title={
+              selectedIds.length > 0 && idsForPush.length === 0
+                ? "Selected rows have no unsaved changes — edit a field first, or use ‘Copy to variations’ on the parent row."
+                : `${idsForPush.length} row${idsForPush.length === 1 ? "" : "s"} ready to push`
+            }
+          >
+            {idsForPush.length} to push
           </Badge>
           <WcBulkPanel selectedCount={selectedIds.length} onApply={applyBulk} />
           <Button variant="outline" size="sm" onClick={exportCsv} disabled={filteredProducts.length === 0}>

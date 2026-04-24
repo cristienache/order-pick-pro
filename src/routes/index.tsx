@@ -17,9 +17,23 @@ import type { DateRange } from "react-day-picker";
 import {
   Package, Truck, Store, Users, Settings, ArrowUpRight, Sparkles,
   Search, Calendar, Download, SlidersHorizontal, TrendingUp, TrendingDown,
-  ChevronRight, Boxes, ClipboardList, X,
+  ChevronRight, Boxes, ClipboardList, X, BarChart3,
   type LucideIcon,
 } from "lucide-react";
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, arrayMove, rectSortingStrategy,
+} from "@dnd-kit/sortable";
+import { SortablePanel } from "@/components/dashboard/sortable-panel";
+import { EditToolbar } from "@/components/dashboard/edit-toolbar";
+import { TodaySchedule } from "@/components/dashboard/today-schedule";
+import {
+  loadLayout, saveLayout, resetLayout, DEFAULT_LAYOUT, PANEL_LABELS,
+  type DashboardLayout, type PanelId,
+} from "@/lib/dashboard-layout";
 
 export const Route = createFileRoute("/")({
   component: () => (

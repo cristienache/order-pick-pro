@@ -19,13 +19,17 @@ export type WcSyncState = {
   errors: number;
   done: boolean;
   startedAt: number;
+  /** True when the run is using the incremental `modified_after` filter. */
+  incremental: boolean;
 };
 
 type Ctx = {
   current: WcSyncState | null;
   isRunning: boolean;
-  /** Kick off a background sync. No-ops if one is already running. */
-  startWcSync: (siteId: number, siteName: string) => Promise<void>;
+  /** Kick off a background sync. No-ops if one is already running.
+   *  By default runs INCREMENTAL — only products WC has modified since the
+   *  last successful sync. Pass `{ full: true }` to re-import everything. */
+  startWcSync: (siteId: number, siteName: string, opts?: { full?: boolean }) => Promise<void>;
   /** Soft-cancel — finishes the in-flight page then stops. */
   cancel: () => void;
 };
@@ -40,7 +44,11 @@ export function SyncProvider({ children }: { children: ReactNode }) {
 
   const cancel = useCallback(() => { cancelRef.current = true; }, []);
 
-  const startWcSync = useCallback(async (siteId: number, siteName: string) => {
+  const startWcSync = useCallback(async (
+    siteId: number,
+    siteName: string,
+    opts: { full?: boolean } = {},
+  ) => {
     if (runningRef.current) {
       toast.info("A sync is already running. It will keep going while you browse.");
       return;
@@ -51,28 +59,43 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     setCurrent({
       siteId, siteName, page: 0, totalPages: null,
       created: 0, updated: 0, errors: 0, done: false, startedAt,
+      incremental: !opts.full,
     });
 
-    const t = toast.loading(`Syncing ${siteName}…`, { duration: Infinity });
+    const t = toast.loading(
+      opts.full ? `Full re-sync of ${siteName}…` : `Syncing ${siteName} (changes only)…`,
+      { duration: Infinity },
+    );
     let page = 1;
+    let since = "";
+    let incremental = !opts.full;
     let totalCreated = 0, totalUpdated = 0, totalErrors = 0;
 
     try {
       // Hard cap: 200 pages × 50 = 10k products.
       for (let i = 0; i < 200; i++) {
         if (cancelRef.current) break;
-        const r = await wcApi.syncPage(siteId, page, 50);
+        const r = await wcApi.syncPage(siteId, page, 50, {
+          full: opts.full,
+          // Thread the cursor the server captured on page 1 across all pages.
+          since: page > 1 ? since : undefined,
+        });
+        if (page === 1) {
+          since = r.since || "";
+          incremental = r.incremental;
+        }
         totalCreated += r.created;
         totalUpdated += r.updated;
         totalErrors += r.errors.length;
         setCurrent({
           siteId, siteName, page: r.page, totalPages: r.total_pages,
           created: totalCreated, updated: totalUpdated, errors: totalErrors,
-          done: !!r.done, startedAt,
+          done: !!r.done, startedAt, incremental,
         });
         const progress = r.total_pages ? `page ${r.page}/${r.total_pages}` : `page ${r.page}`;
+        const mode = incremental ? " (changes only)" : "";
         toast.loading(
-          `Syncing ${siteName} — ${progress} • ${totalCreated + totalUpdated} products`,
+          `Syncing ${siteName}${mode} — ${progress} • ${totalCreated + totalUpdated} products`,
           { id: t, duration: Infinity },
         );
         if (r.done || r.next_page == null) break;
@@ -80,10 +103,13 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       }
       const errMsg = totalErrors ? ` • ${totalErrors} warning${totalErrors === 1 ? "" : "s"}` : "";
       const cancelled = cancelRef.current;
+      const noChanges = incremental && totalCreated === 0 && totalUpdated === 0 && !cancelled;
       toast[cancelled ? "info" : "success"](
         cancelled
           ? `Sync stopped: ${totalCreated} new, ${totalUpdated} updated`
-          : `Synced: ${totalCreated} new, ${totalUpdated} updated${errMsg}`,
+          : noChanges
+            ? `${siteName} is already up to date — no changes since last sync`
+            : `Synced: ${totalCreated} new, ${totalUpdated} updated${errMsg}`,
         { id: t, duration: 6000 },
       );
       qc.invalidateQueries({ queryKey: ["wc-sites"] });

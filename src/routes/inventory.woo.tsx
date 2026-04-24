@@ -204,7 +204,7 @@ function WooInventory() {
     const matchesNumericRanges = (p: typeof siteProducts[number]) => {
       // Variable parents have no own price/weight — defer to their variations.
       if (p.wc_type === "variable") {
-        const vars = variationsByParent.get(p.id) ?? [];
+        const vars = allVariationsByParent.get(p.id) ?? [];
         if (pMin == null && pMax == null && sMin == null && sMax == null && wMin == null && wMax == null) return true;
         return vars.some((v) =>
           inRange(v.regular_price, pMin, pMax) &&

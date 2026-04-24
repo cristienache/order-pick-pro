@@ -186,12 +186,12 @@ function WooInventory() {
 
     // Pre-index variations by parent so we can answer "does any variation of
     // this variable parent match the numeric range filters?" in O(1).
-    const variationsByParent = new Map<string, typeof siteProducts>();
+    const allVariationsByParent = new Map<string, typeof siteProducts>();
     for (const p of siteProducts) {
       if (p.wc_type === "variation" && p.parent_product_id) {
-        const arr = variationsByParent.get(p.parent_product_id) ?? [];
+        const arr = allVariationsByParent.get(p.parent_product_id) ?? [];
         arr.push(p);
-        variationsByParent.set(p.parent_product_id, arr);
+        allVariationsByParent.set(p.parent_product_id, arr);
       }
     }
     const inRange = (val: number | null | undefined, lo: number | null, hi: number | null) => {

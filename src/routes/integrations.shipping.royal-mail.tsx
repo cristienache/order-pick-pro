@@ -59,6 +59,7 @@ function RoyalMailPage() {
       />
       <CredentialsCard settings={settings} onChanged={refresh} />
       <SenderCard settings={settings} onChanged={refresh} />
+      <CustomsDefaultsCard settings={settings} onChanged={refresh} />
     </div>
   );
 }

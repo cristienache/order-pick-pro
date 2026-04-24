@@ -132,6 +132,15 @@ export const wcApi = {
       { method: "POST", body: { confirm: "DELETE" } },
     ),
 
+  /** Delete the given products (and any variations under selected variable
+   *  parents) from HeyShop ONLY. The WooCommerce store is not touched —
+   *  re-syncing will pull these products back in. */
+  deleteLocal: (site_id: number, product_ids: string[]) =>
+    api<{ ok: true; deleted: number; site_id: number }>(
+      `${BASE}/products/delete-local`,
+      { method: "POST", body: { site_id, product_ids } },
+    ),
+
   saveLocal: (site_id: number, edits: WcEditPayload[]) =>
     api<BulkResult>(`${BASE}/products/bulk`, {
       method: "PATCH", body: { site_id, edits },

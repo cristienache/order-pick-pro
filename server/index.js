@@ -2452,11 +2452,35 @@ function loadRmCreds(userId) {
   };
 }
 
-// Build the Click & Drop `contents[]` for a package from WooCommerce line items.
-// Royal Mail prints `quantity x SKU` (or name if no SKU) on the label, so we
-// surface the actual product SKUs the user is shipping. Falls back to a single
-// generic "Goods" line if there's nothing to show.
-function buildCndContents({ lineItems, fallbackName, totalWeightGrams }) {
+// Build the Click & Drop `contents[]` for a package.
+// - For domestic parcels we surface SKUs/names from WC line items so the
+//   label shows what's inside.
+// - For international parcels the caller passes a `customsItems` array which
+//   carries declared values, HS codes and origin countries — these populate
+//   the CN22/CN23 customs declaration printed alongside the label.
+function buildCndContents({ lineItems, customsItems, fallbackName, totalWeightGrams, originCountry }) {
+  // International path: caller already supplied per-item customs data.
+  if (Array.isArray(customsItems) && customsItems.length > 0) {
+    const totalUnits = customsItems.reduce(
+      (s, c) => s + Math.max(1, Number(c.quantity) || 1), 0,
+    );
+    const perUnit = totalUnits > 0 ? Math.floor((totalWeightGrams || 0) / totalUnits) : 0;
+    return customsItems.map((c) => ({
+      name: String(c.customs_description || c.name || c.sku || "Goods").slice(0, 60),
+      SKU: String(c.sku || "").slice(0, 60),
+      quantity: Math.max(1, Math.min(999, Number(c.quantity) || 1)),
+      unitValue: Math.max(0, Number(c.unit_value) || 0),
+      unitWeightInGrams: perUnit,
+      customsCode: String(c.customs_code || "").slice(0, 20),
+      // ISO-2 origin country, e.g. "GB". Royal Mail accepts ISO-2 here.
+      originCountryCode: String(
+        c.origin_country || originCountry || "GB",
+      ).toUpperCase().slice(0, 2),
+      customsDescription: String(c.customs_description || c.name || "Goods").slice(0, 120),
+    }));
+  }
+
+  // Domestic / no customs path — preserve original behaviour.
   const items = Array.isArray(lineItems)
     ? lineItems
         .map((li) => ({

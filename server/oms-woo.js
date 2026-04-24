@@ -497,10 +497,17 @@ export function mountOmsWoo(app, { requireAuth }) {
     }
 
     try {
-      // `modified_after` accepts ISO 8601 (UTC). We order by modified asc
-      // so paging stays deterministic even as new edits land mid-sync.
+      // `modified_after` defaults to the SITE's local timezone in WC REST.
+      // We always send UTC, so we MUST also set `dates_are_gmt=true` —
+      // otherwise stores east of UTC silently drop recently-created/edited
+      // products (the "since" cursor lands in their local future).
+      //
+      // We also union `modified_after` with `after` (date_created) because
+      // some WC versions / caching plugins delay updating `date_modified`
+      // on brand-new products, which would otherwise hide them from an
+      // incremental sync. Two cheap requests > one missed product.
       const orderParams = since
-        ? `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}`
+        ? `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`
         : `orderby=id&order=asc`;
       const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&${orderParams}`;
       const wcRes = await fetch(url, {

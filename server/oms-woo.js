@@ -569,7 +569,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       since = String(req.query.since || req.body?.since || "");
     } else if (!forceFull) {
       const prev = db.prepare(
-        `SELECT wc_full_sync_cursor AS ts FROM sites WHERE id = ?`,
+        `SELECT COALESCE(wc_sync_cursor, wc_full_sync_cursor) AS ts FROM sites WHERE id = ?`,
       ).get(site.id);
       if (prev?.ts) {
         since = String(prev.ts);
@@ -607,18 +607,21 @@ export function mountOmsWoo(app, { requireAuth }) {
       const nowIso = new Date().toISOString();
 
       const cursorSource = batch.reduce((latest, item) => {
-        const ts = wcProductTimestamp(item);
+        const ts = forceFull ? wcProductTimestamp(item) : wcProductCreatedTimestamp(item);
         if (!ts) return latest;
         if (!latest) return ts;
         return Date.parse(ts) > Date.parse(latest) ? ts : latest;
       }, cursor || since || "");
       const nextCursor = cursorSource || cursor || since;
+      const completedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       const done = totalPages != null ? page >= totalPages : batch.length < perPage;
 
       if (!Array.isArray(batch) || batch.length === 0) {
-        if (done && nextCursor) {
+        if (done) {
           if (forceFull) {
-            db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(nextCursor, nextCursor, site.id);
+            db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(completedAt, completedAt, site.id);
+          } else {
+            db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(completedAt, site.id);
           }
           incrementalCandidateCache.delete(`${site.id}:${since}`);
         }
@@ -691,9 +694,11 @@ export function mountOmsWoo(app, { requireAuth }) {
         }
       }
 
-      if (done && nextCursor) {
+      if (done) {
         if (forceFull) {
-          db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(nextCursor, nextCursor, site.id);
+          db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(completedAt, completedAt, site.id);
+        } else {
+          db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor || completedAt, site.id);
         }
         incrementalCandidateCache.delete(`${site.id}:${since}`);
       }

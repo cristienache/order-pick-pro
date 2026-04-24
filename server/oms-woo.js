@@ -308,7 +308,7 @@ async function listIncrementalCandidates(site, since) {
 async function fetchProductsByIds(site, ids) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const include = ids.map((id) => String(id)).join(",");
-  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}`);
+  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}&status=publish`);
   const order = new Map(ids.map((id, index) => [Number(id), index]));
   return items.sort((a, b) => (order.get(Number(a.id)) ?? 0) - (order.get(Number(b.id)) ?? 0));
 }

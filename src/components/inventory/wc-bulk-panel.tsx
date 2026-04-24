@@ -14,13 +14,16 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Wand2 } from "lucide-react";
 
+export type TextField = "name" | "description";
+export type TextMode = "find" | "prepend" | "append" | "upper" | "lower";
+
 export type BulkOp =
   | { kind: "price"; field: "regular_price" | "sale_price"; mode: "set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round" | "clear"; value: number }
   | { kind: "stock"; mode: "set" | "inc" | "dec"; value: number }
   | { kind: "status"; value: string }
   | { kind: "manage"; value: boolean }
   | { kind: "weight"; value: number }
-  | { kind: "find"; field: "name" | "description"; find: string; replace: string };
+  | { kind: "text"; field: TextField; mode: TextMode; find: string; replace: string };
 
 export function WcBulkPanel({
   selectedCount,
@@ -45,8 +48,9 @@ export function WcBulkPanel({
   const [statusValue, setStatusValue] = useState("instock");
   const [manageValue, setManageValue] = useState<"true" | "false">("true");
 
-  // Find / replace
-  const [findField, setFindField] = useState<"name" | "description">("name");
+  // Text operations (find/replace, prepend, append, upper, lower)
+  const [textField, setTextField] = useState<TextField>("name");
+  const [textMode, setTextMode] = useState<TextMode>("find");
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
 
@@ -232,31 +236,84 @@ export function WcBulkPanel({
           </TabsContent>
 
           <TabsContent value="text" className="space-y-2 pt-2">
-            <div>
-              <Label className="text-[10px]">Field</Label>
-              <Select value={findField} onValueChange={(v) => setFindField(v as typeof findField)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name">Product name</SelectItem>
-                  <SelectItem value="description">Description</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-[10px]">Find</Label>
-                <Input value={findText} onChange={(e) => setFindText(e.target.value)} className="h-8 text-xs" />
+                <Label className="text-[10px]">Field</Label>
+                <Select value={textField} onValueChange={(v) => setTextField(v as TextField)}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">Product name</SelectItem>
+                    <SelectItem value="description">Description</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label className="text-[10px]">Replace with</Label>
-                <Input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} className="h-8 text-xs" />
+                <Label className="text-[10px]">Operation</Label>
+                <Select value={textMode} onValueChange={(v) => setTextMode(v as TextMode)}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="find">Search and replace</SelectItem>
+                    <SelectItem value="prepend">Add to the beginning</SelectItem>
+                    <SelectItem value="append">Add to the end</SelectItem>
+                    <SelectItem value="upper">ALL UPPERCASE</SelectItem>
+                    <SelectItem value="lower">all lowercase</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            {textMode === "find" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px]">Find</Label>
+                  <Input value={findText} onChange={(e) => setFindText(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-[10px]">Replace with</Label>
+                  <Input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} className="h-8 text-xs" />
+                </div>
+              </div>
+            )}
+
+            {(textMode === "prepend" || textMode === "append") && (
+              <div>
+                <Label className="text-[10px]">
+                  {textMode === "prepend" ? "Text to add at the beginning" : "Text to add at the end"}
+                </Label>
+                <Input
+                  value={replaceText}
+                  onChange={(e) => setReplaceText(e.target.value)}
+                  className="h-8 text-xs"
+                  placeholder={textMode === "prepend" ? "New " : " — Sale"}
+                />
+              </div>
+            )}
+
+            {(textMode === "upper" || textMode === "lower") && (
+              <p className="text-[11px] text-muted-foreground">
+                Converts the selected field to {textMode === "upper" ? "UPPERCASE" : "lowercase"} on every selected row.
+              </p>
+            )}
+
             <Button
-              size="sm" className="w-full" disabled={!findText}
-              onClick={() => { onApply({ kind: "find", field: findField, find: findText, replace: replaceText }); close(); }}
+              size="sm"
+              className="w-full"
+              disabled={
+                (textMode === "find" && !findText) ||
+                ((textMode === "prepend" || textMode === "append") && !replaceText)
+              }
+              onClick={() => {
+                onApply({
+                  kind: "text",
+                  field: textField,
+                  mode: textMode,
+                  find: findText,
+                  replace: replaceText,
+                });
+                close();
+              }}
             >
-              Replace in {selectedCount} row{selectedCount === 1 ? "" : "s"}
+              Apply to {selectedCount} row{selectedCount === 1 ? "" : "s"}
             </Button>
           </TabsContent>
         </Tabs>

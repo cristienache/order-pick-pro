@@ -580,9 +580,19 @@ export function mountOmsWoo(app, { requireAuth }) {
 
       if (since) {
         const candidates = await listIncrementalCandidates(site, since);
-        totalProducts = candidates.length;
-        totalPages = candidates.length ? Math.ceil(candidates.length / perPage) : 0;
-        const slice = candidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
+        const unseenIds = new Set(
+          db.prepare(
+            `SELECT woo_product_id
+               FROM oms_products
+              WHERE site_id = ?
+                AND woo_product_id IS NOT NULL
+                AND COALESCE(wc_parent_id, 0) = 0`,
+          ).all(site.id).map((row) => Number(row.woo_product_id)),
+        );
+        const newCandidates = candidates.filter((item) => !unseenIds.has(Number(item.id)));
+        totalProducts = newCandidates.length;
+        totalPages = newCandidates.length ? Math.ceil(newCandidates.length / perPage) : 0;
+        const slice = newCandidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
         batch = await fetchProductsByIds(site, slice);
       } else {
         const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc`);

@@ -9,9 +9,13 @@ import { Switch } from "@/components/ui/switch";
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Truck, KeyRound, MapPin, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
+import { Loader2, Truck, KeyRound, MapPin, Globe, CheckCircle2, AlertCircle, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import type { RmCustomsContentType } from "@/lib/api";
 
 export const Route = createFileRoute("/integrations/shipping/royal-mail")({
   component: RoyalMailPage,

@@ -94,18 +94,34 @@ export const wcApi = {
     api<WcProductRow[]>(`${BASE}/products?site_id=${siteId}`),
 
 
-  /** One chunk of the sync. Call repeatedly until `done` is true. */
-  syncPage: (siteId: number, page: number, perPage = 50) =>
-    api<{
+  /** One chunk of the sync. Call repeatedly until `done` is true.
+   *  Pass `since` (returned by page 1) on subsequent pages so the whole
+   *  multi-page run uses the same incremental cursor. Pass `full=true`
+   *  to bypass the incremental filter and re-import everything. */
+  syncPage: (
+    siteId: number,
+    page: number,
+    perPage = 50,
+    opts: { since?: string; full?: boolean } = {},
+  ) => {
+    const qs = new URLSearchParams({
+      page: String(page),
+      per_page: String(perPage),
+    });
+    if (opts.full) qs.set("full", "1");
+    if (opts.since) qs.set("since", opts.since);
+    return api<{
       page: number; per_page: number; batch_size: number;
       created: number; updated: number;
       errors: Array<{ wc_id?: number; product_id?: string; error: string }>;
       done: boolean; next_page: number | null;
       total_products: number | null; total_pages: number | null;
       warehouse_id: string;
-    }>(`${BASE}/sync/${siteId}?page=${page}&per_page=${perPage}`, {
+      incremental: boolean; since: string;
+    }>(`${BASE}/sync/${siteId}?${qs.toString()}`, {
       method: "POST", body: {},
-    }),
+    });
+  },
 
   /** Destructive: deletes every imported product (and its variations + stock)
    *  for one site. Backend requires { confirm: "DELETE" } as a safety net. */

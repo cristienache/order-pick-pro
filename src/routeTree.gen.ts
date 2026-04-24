@@ -16,6 +16,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as InventoryRouteImport } from './routes/inventory'
 import { Route as IntegrationsRouteImport } from './routes/integrations'
 import { Route as ContactRouteImport } from './routes/contact'
+import { Route as AnalyticsRouteImport } from './routes/analytics'
 import { Route as AcceptInviteRouteImport } from './routes/accept-invite'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as PurchaseOrdersIndexRouteImport } from './routes/purchase-orders.index'
@@ -71,6 +72,11 @@ const IntegrationsRoute = IntegrationsRouteImport.update({
 const ContactRoute = ContactRouteImport.update({
   id: '/contact',
   path: '/contact',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AnalyticsRoute = AnalyticsRouteImport.update({
+  id: '/analytics',
+  path: '/analytics',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AcceptInviteRoute = AcceptInviteRouteImport.update({
@@ -185,6 +191,7 @@ const AdminPagesPageIdRoute = AdminPagesPageIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/analytics': typeof AnalyticsRoute
   '/contact': typeof ContactRoute
   '/integrations': typeof IntegrationsRouteWithChildren
   '/inventory': typeof InventoryRouteWithChildren
@@ -215,6 +222,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/analytics': typeof AnalyticsRoute
   '/contact': typeof ContactRoute
   '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
@@ -243,6 +251,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/accept-invite': typeof AcceptInviteRoute
+  '/analytics': typeof AnalyticsRoute
   '/contact': typeof ContactRoute
   '/integrations': typeof IntegrationsRouteWithChildren
   '/inventory': typeof InventoryRouteWithChildren
@@ -275,6 +284,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/accept-invite'
+    | '/analytics'
     | '/contact'
     | '/integrations'
     | '/inventory'
@@ -305,6 +315,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/accept-invite'
+    | '/analytics'
     | '/contact'
     | '/integrations'
     | '/login'
@@ -332,6 +343,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/accept-invite'
+    | '/analytics'
     | '/contact'
     | '/integrations'
     | '/inventory'
@@ -363,6 +375,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AcceptInviteRoute: typeof AcceptInviteRoute
+  AnalyticsRoute: typeof AnalyticsRoute
   ContactRoute: typeof ContactRoute
   IntegrationsRoute: typeof IntegrationsRouteWithChildren
   InventoryRoute: typeof InventoryRouteWithChildren
@@ -428,6 +441,13 @@ declare module '@tanstack/react-router' {
       path: '/contact'
       fullPath: '/contact'
       preLoaderRoute: typeof ContactRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/analytics': {
+      id: '/analytics'
+      path: '/analytics'
+      fullPath: '/analytics'
+      preLoaderRoute: typeof AnalyticsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/accept-invite': {
@@ -646,6 +666,7 @@ const PurchaseOrdersRouteWithChildren = PurchaseOrdersRoute._addFileChildren(
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AcceptInviteRoute: AcceptInviteRoute,
+  AnalyticsRoute: AnalyticsRoute,
   ContactRoute: ContactRoute,
   IntegrationsRoute: IntegrationsRouteWithChildren,
   InventoryRoute: InventoryRouteWithChildren,

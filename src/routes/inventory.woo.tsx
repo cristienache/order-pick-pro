@@ -640,10 +640,56 @@ function WooInventory() {
           <Button variant="outline" size="sm" onClick={() => setShowBackups(true)}>
             <History className="mr-1.5 h-3.5 w-3.5" /> Backups
           </Button>
-          <Button variant="outline" size="sm" onClick={sync} disabled={!siteId || syncing}>
-            {syncing ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
-            {syncing ? "Syncing…" : "Sync from WC"}
-          </Button>
+          <div className="inline-flex">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => sync()}
+              disabled={!siteId || syncing}
+              className="rounded-r-none border-r-0"
+              title="Pull only products WooCommerce has changed since last sync"
+            >
+              {syncing
+                ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                : <RefreshCw className="mr-1.5 h-3.5 w-3.5" />}
+              {syncing ? "Syncing…" : "Sync from WC"}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!siteId || syncing}
+                  className="rounded-l-none px-2"
+                  aria-label="Sync options"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Sync options</DropdownMenuLabel>
+                <DropdownMenuItem onClick={() => sync()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>Sync changes only</span>
+                    <span className="text-xs text-muted-foreground">
+                      Default. Pulls only products edited in WC since last sync.
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => sync({ full: true })}>
+                  <RotateCw className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>Full re-sync (all products)</span>
+                    <span className="text-xs text-muted-foreground">
+                      Re-imports the entire catalog. Use after restoring or if data looks stale.
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <Button
             variant="outline" size="sm"
             onClick={() => { setWipeText(""); setWipeOpen(true); }}

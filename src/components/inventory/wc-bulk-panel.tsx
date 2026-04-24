@@ -236,31 +236,84 @@ export function WcBulkPanel({
           </TabsContent>
 
           <TabsContent value="text" className="space-y-2 pt-2">
-            <div>
-              <Label className="text-[10px]">Field</Label>
-              <Select value={findField} onValueChange={(v) => setFindField(v as typeof findField)}>
-                <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="name">Product name</SelectItem>
-                  <SelectItem value="description">Description</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label className="text-[10px]">Find</Label>
-                <Input value={findText} onChange={(e) => setFindText(e.target.value)} className="h-8 text-xs" />
+                <Label className="text-[10px]">Field</Label>
+                <Select value={textField} onValueChange={(v) => setTextField(v as TextField)}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="name">Product name</SelectItem>
+                    <SelectItem value="description">Description</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div>
-                <Label className="text-[10px]">Replace with</Label>
-                <Input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} className="h-8 text-xs" />
+                <Label className="text-[10px]">Operation</Label>
+                <Select value={textMode} onValueChange={(v) => setTextMode(v as TextMode)}>
+                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="find">Search and replace</SelectItem>
+                    <SelectItem value="prepend">Add to the beginning</SelectItem>
+                    <SelectItem value="append">Add to the end</SelectItem>
+                    <SelectItem value="upper">ALL UPPERCASE</SelectItem>
+                    <SelectItem value="lower">all lowercase</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
+
+            {textMode === "find" && (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-[10px]">Find</Label>
+                  <Input value={findText} onChange={(e) => setFindText(e.target.value)} className="h-8 text-xs" />
+                </div>
+                <div>
+                  <Label className="text-[10px]">Replace with</Label>
+                  <Input value={replaceText} onChange={(e) => setReplaceText(e.target.value)} className="h-8 text-xs" />
+                </div>
+              </div>
+            )}
+
+            {(textMode === "prepend" || textMode === "append") && (
+              <div>
+                <Label className="text-[10px]">
+                  {textMode === "prepend" ? "Text to add at the beginning" : "Text to add at the end"}
+                </Label>
+                <Input
+                  value={replaceText}
+                  onChange={(e) => setReplaceText(e.target.value)}
+                  className="h-8 text-xs"
+                  placeholder={textMode === "prepend" ? "New " : " — Sale"}
+                />
+              </div>
+            )}
+
+            {(textMode === "upper" || textMode === "lower") && (
+              <p className="text-[11px] text-muted-foreground">
+                Converts the selected field to {textMode === "upper" ? "UPPERCASE" : "lowercase"} on every selected row.
+              </p>
+            )}
+
             <Button
-              size="sm" className="w-full" disabled={!findText}
-              onClick={() => { onApply({ kind: "find", field: findField, find: findText, replace: replaceText }); close(); }}
+              size="sm"
+              className="w-full"
+              disabled={
+                (textMode === "find" && !findText) ||
+                ((textMode === "prepend" || textMode === "append") && !replaceText)
+              }
+              onClick={() => {
+                onApply({
+                  kind: "text",
+                  field: textField,
+                  mode: textMode,
+                  find: findText,
+                  replace: replaceText,
+                });
+                close();
+              }}
             >
-              Replace in {selectedCount} row{selectedCount === 1 ? "" : "s"}
+              Apply to {selectedCount} row{selectedCount === 1 ? "" : "s"}
             </Button>
           </TabsContent>
         </Tabs>

@@ -395,7 +395,8 @@ function AnalyticsPage() {
           {/* KPI strip */}
           <section className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <KpiCard
-              label="Revenue"
+              label="Net sales"
+              hint="Gross sales − coupons − refunds. Excludes shipping & tax. Matches WooCommerce › Analytics › Revenue › Net sales."
               value={overview ? gbp(overview.totals.revenue_gbp) : "—"}
               delta={overview ? pctDelta(overview.totals.revenue_gbp, overview.previous?.revenue_gbp) : null}
               loading={overviewLoading}

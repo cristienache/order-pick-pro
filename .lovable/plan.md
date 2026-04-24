@@ -1,117 +1,60 @@
 
 
-## Goal
-Two improvements to the dashboard area:
-1. **Editable, drag-rearrangeable dashboard** with a real schedule (to-do for the day).
-2. **New Analytics module** at `/analytics` powered by WooCommerce's `wc-analytics` REST API — proper Reports & Analytics, not placeholder bars.
+## Why the numbers differ from WooCommerce
 
----
+HeyShop is currently using its **fallback "order scan"** path (the warnings on the page confirm this). That path sums each order's `total` field, which is what the customer actually paid — **including shipping and tax**. WooCommerce's native Analytics page reports **Gross sales** and **Net sales** using a different definition: line-item subtotals **excluding shipping, tax, and refunds** (Net sales also excludes coupons).
 
-## 1) Rearrangeable & editable dashboard
+That definition mismatch is the main reason your MTD reads as £5,413 in HeyShop but £2,944 / £2,848 in WooCommerce. A second contributor: the fallback also includes `on-hold` and `refunded` orders, which Woo Analytics excludes from headline revenue.
 
-**Layout system.** Replace the fixed `<section>` grid in `src/routes/index.tsx` with a sortable grid using `@dnd-kit/sortable` (already installed). Each block (KPI Promo, Connected Stores, Orders Today, Total Items, Workspace, Activity, Schedule, Stores Strip, All Tools) becomes a `Panel` with an id.
+## Plan — make HeyShop revenue match WooCommerce Analytics
 
-**Edit mode.** Add an "Edit dashboard" toggle in the header toolbar. When on:
-- Each panel shows a drag handle (top-right) and an eye/X to hide it.
-- A "+ Add panel" menu lists hidden panels so users can re-add them.
-- "Reset layout" restores defaults.
-- "Done" exits edit mode and persists.
+### 1. Use the same calculation Woo uses (in `server/wc-analytics.js`)
 
-**Persistence.** Store `{ order: string[], hidden: string[] }` per user in `localStorage` under `ultrax_dashboard_layout_v1`. (Server-side persistence is out of scope for this round — local is fast, private, and matches the per-user model.)
+Replace the current `summarizeOrders` + revenue bucketing with a Woo-Analytics-equivalent breakdown. For every order, compute these fields by walking `line_items`, `shipping_lines`, `tax_lines`, `fee_lines`, `coupon_lines`, plus the order's refunds:
 
-**Schedule panel becomes a real to-do for today.**
-- List of tasks with: title, optional time (HH:mm), tag (Orders / Shipping / Inventory / Custom), done checkbox.
-- Inline "Add task" input + time picker + tag select.
-- Edit (pencil) and delete (X) on each row.
-- Auto-sort: incomplete first by time, then completed (struck through) at the bottom.
-- "Today" header shows current date and "X of Y done" progress bar.
-- Persisted in `localStorage` under `ultrax_today_tasks_YYYY-MM-DD` (rolls over each day; previous days auto-archive client-side).
-- Seed defaults on first load (Process new orders, Generate labels, Review low-stock SKUs) — user can delete them.
-
----
-
-## 2) Analytics module (`/analytics`)
-
-**Backend — new endpoints in `server/index.js`** (per-user, scoped via `loadSiteWithKeys`):
-
-| Endpoint | Wraps WC | Returns |
+| Field | Formula | Matches Woo column |
 |---|---|---|
-| `GET /api/analytics/overview?from&to&site_ids` | `wc-analytics/reports/performance-indicators` for each site | Aggregated KPIs: revenue, orders, items sold, avg order value, returning customer rate, refunds |
-| `GET /api/analytics/revenue?from&to&interval&site_ids` | `wc-analytics/reports/revenue/stats?interval=day\|week\|month` | Time series `[{ date, revenue, orders, items }]` per site + combined |
-| `GET /api/analytics/top-products?from&to&limit&site_ids` | `wc-analytics/reports/products?orderby=items_sold` | `[{ product_id, name, items_sold, net_revenue, site_name }]` |
-| `GET /api/analytics/orders-stats?from&to&site_ids` | `wc-analytics/reports/orders/stats` | Status breakdown (processing / completed / refunded / cancelled) |
-| `GET /api/analytics/customers?from&to&site_ids` | `wc-analytics/reports/customers/stats` | New vs returning, total customers |
-| `GET /api/analytics/coupons?from&to&site_ids` | `wc-analytics/reports/coupons` | Top coupons used |
+| Gross sales | Σ `line_item.subtotal` (pre-discount, ex tax/shipping) | Gross sales |
+| Coupons | Σ `coupon_lines.discount` | Coupons |
+| Refunds | Σ refunded line-item amounts (fetch from `wc/v3/orders/{id}/refunds`) | Returns |
+| Net sales | Gross − Coupons − Refunds | Net sales |
+| Shipping | Σ `shipping_lines.total` | Shipping |
+| Taxes | Σ `tax_lines.tax_total` + `shipping_tax_total` | Taxes |
+| Total sales | Net + Shipping + Taxes + Fees | Total sales |
 
-All endpoints:
-- Convert non-base currencies into a single display currency (GBP) using existing `getFxRates()` from `server/fx.js`, while also returning the per-currency raw totals.
-- Multi-site: fan out in parallel (like `/api/stats/today`), tolerate per-site failures, return a `warnings: [{ site_id, error }]` array.
-- Cache the response in-memory for 60 seconds keyed on `(user_id, params)` to avoid hammering WC during quick re-clicks.
+Switch the displayed "Revenue" KPI to **Net sales** by default (this is what Woo's Revenue tab shows as the headline). Show Gross / Refunds / Coupons / Shipping / Taxes / Total alongside it as Woo does.
 
-**Fallback.** If a store doesn't expose `wc-analytics` (older WooCommerce or disabled), automatically fall back to the legacy `wc/v3/reports/*` namespace (sales, top_sellers, orders/totals) and flag the site as "limited analytics" in the warnings.
+### 2. Match Woo's status filter
 
-**Frontend — new route `src/routes/analytics.tsx`:**
+Restrict revenue calculation to orders in `processing` and `completed` only (Woo's `actionable_statuses` default). Drop `on-hold` and `refunded` from the revenue scan. Keep them visible in the Orders-by-status donut, but they don't count toward revenue.
 
-```text
-┌─ Analytics ──────────────────────────── [Date range ▼] [Stores ▼] [Compare ▼] [Export CSV] ─┐
-│                                                                                              │
-│  KPI strip (6 cards):  Revenue · Orders · AOV · Items sold · New customers · Refund rate    │
-│  Each card shows: value, currency, % vs previous period (green/red arrow), spark line       │
-│                                                                                              │
-│  ┌── Revenue over time (area/line chart) ─────────────┐  ┌── Orders by status (donut) ──┐   │
-│  │  Toggle: Day / Week / Month                         │  │  Processing · Completed ·    │   │
-│  │  Multi-store overlay (color per store)              │  │  Refunded · Cancelled        │   │
-│  └─────────────────────────────────────────────────────┘  └──────────────────────────────┘   │
-│                                                                                              │
-│  ┌── Top products (table, top 10) ────────────────────┐  ┌── Customers (bar) ───────────┐   │
-│  │  Product · Store · Items sold · Net revenue · Δ    │  │  New vs Returning over time  │   │
-│  └─────────────────────────────────────────────────────┘  └──────────────────────────────┘   │
-│                                                                                              │
-│  ┌── Top coupons ────────────────────┐  ┌── Sales by store (stacked bar) ───────────────┐    │
-│  └────────────────────────────────────┘  └────────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────────────────────────────────────────────┘
-```
+### 3. Fetch refunds correctly
 
-**Controls:**
-- Date range (popover with Calendar) + quick presets: Today, 7d, 30d, MTD, QTD, YTD, Custom.
-- Compare toggle: vs previous period / vs previous year.
-- Store multi-select chip filter.
-- Interval toggle (Day / Week / Month) for time-series charts.
-- "Export CSV" downloads the current view's data.
+`order.total_refund` is unreliable. Add `wc/v3/orders/{id}/refunds` lookups for orders that have `refunds.length > 0` in the listing payload, and sum those refund line-item amounts. Cached per order so re-loads are cheap.
 
-**Charts.** Use the existing `recharts` setup via `@/components/ui/chart` (`ChartContainer`, `ChartTooltip`, `ChartLegend`). Suspense skeletons while loading; per-card error states (one chart failing doesn't blank the page).
+### 4. Prefer wc-analytics' own breakdown when available
 
-**Navigation.** Add Analytics to:
-- Sidebar in `src/components/app-shell.tsx` under "Operate" group with a `BarChart3` icon.
-- Workspace tile + All Tools list on the dashboard (`TOOLS` array).
-- Tool category gets a new `"Analytics"` entry added to `ALL_CATEGORIES`.
+When `wc-analytics/reports/revenue/stats` works, read `totals.gross_sales`, `totals.net_revenue`, `totals.coupons`, `totals.refunds`, `totals.shipping`, `totals.taxes`, `totals.total_sales` directly — these already match the Woo UI exactly. Only fall through to the order scan when wc-analytics truly isn't available.
 
----
+### 5. UI updates (`src/routes/analytics.tsx`)
 
-## Files touched
+- Re-label the headline KPI **Net sales** (was "Revenue").
+- Add a **Revenue breakdown card** mirroring Woo's layout: Gross sales, Returns, Coupons, Net sales / Taxes, Shipping, Total sales — each with the period-over-period delta chip.
+- Add a small `(?)` tooltip next to each metric explaining the formula, so users can reconcile against Woo.
+- Keep the warning banner, but only show it when the breakdown actually came from the fallback path.
 
-**New**
-- `src/routes/analytics.tsx` — page + all chart cards.
-- `src/lib/analytics-api.ts` — typed client for the 6 endpoints.
-- `src/components/dashboard/sortable-panel.tsx` — drag wrapper.
-- `src/components/dashboard/edit-toolbar.tsx` — edit-mode controls.
-- `src/components/dashboard/today-schedule.tsx` — real to-do panel.
-- `src/lib/dashboard-layout.ts` — localStorage helpers + defaults.
-- `server/wc-analytics.js` — typed wrappers for `wc-analytics/reports/*` with fallback to `wc/v3/reports/*`.
+### 6. Cache invalidation
 
-**Modified**
-- `src/routes/index.tsx` — wire panels through `DndContext` + `SortableContext`, gate by edit mode, swap Schedule for `<TodaySchedule />`, add Analytics to TOOLS.
-- `src/components/app-shell.tsx` — add Analytics nav item.
-- `server/index.js` — mount the 6 analytics routes (after the existing `/api/stats/today` block) with a tiny in-memory `Map`-based 60s cache.
+Bump the in-memory cache key in `server/index.js` for the analytics endpoints (e.g. `v2:` prefix) so the existing 60-second cached `£5,413` value is dropped immediately on deploy.
 
-No DB migrations required; no new dependencies.
+### Files touched
 
----
+- `server/wc-analytics.js` — rewrite revenue calc per the table above; add refunds fetch; restrict statuses; expose breakdown fields.
+- `server/index.js` — extend `/api/analytics/overview` response shape with the breakdown; bump cache key.
+- `src/lib/analytics-api.ts` — add the new breakdown fields to the `Overview` type.
+- `src/routes/analytics.tsx` — rename KPI, add breakdown card, add tooltips, gate the warning banner.
 
-## Risks & mitigations
+### Result
 
-- **`wc-analytics` namespace missing** on older WC installs → automatic fallback to `wc/v3/reports/*` per-site, surfaced as a warning chip in the UI.
-- **Currency mixing** across stores → display in GBP (using cached FX) with a tooltip showing the original currency totals.
-- **Slow WC requests** with many stores → per-site parallel fan-out + 60s server-side cache + optimistic skeleton UI.
-- **Layout drift across browsers** → localStorage is per-device; "Reset layout" button always available.
+With these changes, HeyShop's MTD Net sales for the same store should read **£2,848.87** (matching Woo's Net sales) and Gross sales should read **£2,944.66**, with Returns / Coupons / Shipping / Taxes / Total sales all matching the WooCommerce Revenue report row-for-row.
 

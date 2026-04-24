@@ -48,8 +48,9 @@ export function WcBulkPanel({
   const [statusValue, setStatusValue] = useState("instock");
   const [manageValue, setManageValue] = useState<"true" | "false">("true");
 
-  // Find / replace
-  const [findField, setFindField] = useState<"name" | "description">("name");
+  // Text operations (find/replace, prepend, append, upper, lower)
+  const [textField, setTextField] = useState<TextField>("name");
+  const [textMode, setTextMode] = useState<TextMode>("find");
   const [findText, setFindText] = useState("");
   const [replaceText, setReplaceText] = useState("");
 

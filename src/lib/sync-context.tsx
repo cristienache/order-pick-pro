@@ -19,16 +19,16 @@ export type WcSyncState = {
   errors: number;
   done: boolean;
   startedAt: number;
-  /** True when the run is using the incremental `modified_after` filter. */
+  /** True when the run is only checking for newly created WC products. */
   incremental: boolean;
 };
 
 type Ctx = {
   current: WcSyncState | null;
   isRunning: boolean;
-  /** Kick off a background sync. No-ops if one is already running.
-   *  By default runs INCREMENTAL — only products WC has modified since the
-   *  last successful sync. Pass `{ full: true }` to re-import everything. */
+   /** Kick off a background sync. No-ops if one is already running.
+    *  By default runs INCREMENTAL — only products newly created in WC since
+    *  the last successful sync baseline. Pass `{ full: true }` to re-import everything. */
   startWcSync: (siteId: number, siteName: string, opts?: { full?: boolean }) => Promise<void>;
   /** Soft-cancel — finishes the in-flight page then stops. */
   cancel: () => void;
@@ -63,7 +63,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
     });
 
     const t = toast.loading(
-      opts.full ? `Full re-sync of ${siteName}…` : `Syncing ${siteName} (changes only)…`,
+      opts.full ? `Full re-sync of ${siteName}…` : `Syncing ${siteName} (new products only)…`,
       { duration: Infinity },
     );
     let page = 1;
@@ -96,7 +96,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
           done: !!r.done, startedAt, incremental,
         });
         const progress = r.total_pages ? `page ${r.page}/${r.total_pages}` : `page ${r.page}`;
-        const mode = incremental ? " (changes only)" : "";
+        const mode = incremental ? " (new products only)" : "";
         toast.loading(
           `Syncing ${siteName}${mode} — ${progress} • ${totalCreated + totalUpdated} products`,
           { id: t, duration: Infinity },
@@ -111,7 +111,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         cancelled
           ? `Sync stopped: ${totalCreated} new, ${totalUpdated} updated`
           : noChanges
-            ? `${siteName} is already up to date — no changes since last sync`
+            ? `${siteName} has no new products since the last sync`
             : `Synced: ${totalCreated} new, ${totalUpdated} updated${errMsg}`,
         { id: t, duration: 6000 },
       );

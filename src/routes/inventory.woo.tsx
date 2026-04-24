@@ -647,7 +647,7 @@ function WooInventory() {
               onClick={() => sync()}
               disabled={!siteId || syncing}
               className="rounded-r-none border-r-0"
-              title="Pull only products WooCommerce has changed since last sync"
+              title="Pull only products newly added in WooCommerce since the last full sync"
             >
               {syncing
                 ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
@@ -671,9 +671,9 @@ function WooInventory() {
                 <DropdownMenuItem onClick={() => sync()}>
                   <RefreshCw className="mr-2 h-4 w-4" />
                   <div className="flex flex-col">
-                    <span>Sync changes only</span>
+                      <span>Sync new products only</span>
                     <span className="text-xs text-muted-foreground">
-                      Default. Pulls only products edited in WC since last sync.
+                        Default. Pulls only products added in WC since the last full sync.
                     </span>
                   </div>
                 </DropdownMenuItem>

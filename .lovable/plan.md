@@ -1,60 +1,52 @@
+## How to remove a Sale Price (today, and how to make it easier)
 
+### Current behaviour
 
-## Why the numbers differ from WooCommerce
+Removing a sale price is already wired end-to-end — it just isn't discoverable:
 
-HeyShop is currently using its **fallback "order scan"** path (the warnings on the page confirm this). That path sums each order's `total` field, which is what the customer actually paid — **including shipping and tax**. WooCommerce's native Analytics page reports **Gross sales** and **Net sales** using a different definition: line-item subtotals **excluding shipping, tax, and refunds** (Net sales also excludes coupons).
+- **Per row**: clear the **Sale price** input cell on the product row, then click **Save locally**, then **Push to WooCommerce**. The empty cell is sent to WC as `sale_price: ""`, which is the WC REST convention for "no sale price". WC also clears `date_on_sale_from/to` automatically.
+- **Variable products**: clearing the parent's sale_price field cascades into every variation via the existing "Copy to variations" flow. You then push the parent (variations come along automatically because they're now dirty).
 
-That definition mismatch is the main reason your MTD reads as £5,413 in HeyShop but £2,944 / £2,848 in WooCommerce. A second contributor: the fallback also includes `on-hold` and `refunded` orders, which Woo Analytics excludes from headline revenue.
+But the **Bulk edit** popover only has Set / +% / −% / +amt / −amt / Round — there's no "Clear" mode. So there's no one-click way to remove sale prices across many selected rows. That's the gap.
 
-## Plan — make HeyShop revenue match WooCommerce Analytics
+### Plan
 
-### 1. Use the same calculation Woo uses (in `server/wc-analytics.js`)
+#### 1. Add a "Clear sale price" bulk operation
 
-Replace the current `summarizeOrders` + revenue bucketing with a Woo-Analytics-equivalent breakdown. For every order, compute these fields by walking `line_items`, `shipping_lines`, `tax_lines`, `fee_lines`, `coupon_lines`, plus the order's refunds:
+In `src/components/inventory/wc-bulk-panel.tsx`:
 
-| Field | Formula | Matches Woo column |
-|---|---|---|
-| Gross sales | Σ `line_item.subtotal` (pre-discount, ex tax/shipping) | Gross sales |
-| Coupons | Σ `coupon_lines.discount` | Coupons |
-| Refunds | Σ refunded line-item amounts (fetch from `wc/v3/orders/{id}/refunds`) | Returns |
-| Net sales | Gross − Coupons − Refunds | Net sales |
-| Shipping | Σ `shipping_lines.total` | Shipping |
-| Taxes | Σ `tax_lines.tax_total` + `shipping_tax_total` | Taxes |
-| Total sales | Net + Shipping + Taxes + Fees | Total sales |
+- Add a new mode `"clear"` to the price tab's Operation dropdown, labelled **Clear sale price** (only selectable when Field = Sale price; auto-switches Field to `sale_price` if user picked it while on Regular price, or hide the option for Regular price since clearing a regular price isn't valid in WC).
+- When `mode === "clear"`, hide the Value input and change the Apply button to **Clear sale price on N rows**.
+- Emit `{ kind: "price", field: "sale_price", mode: "clear", value: 0 }`.
 
-Switch the displayed "Revenue" KPI to **Net sales** by default (this is what Woo's Revenue tab shows as the headline). Show Gross / Refunds / Coupons / Shipping / Taxes / Total alongside it as Woo does.
+In `src/routes/inventory.woo.tsx`, extend the bulk apply switch to handle `mode === "clear"` by setting the draft's `sale_price` to `""` (the existing diff logic already turns `""` into `null` → WC `""`).
 
-### 2. Match Woo's status filter
+#### 2. Add a small inline "×" clear affordance on the per-row Sale price cell
 
-Restrict revenue calculation to orders in `processing` and `completed` only (Woo's `actionable_statuses` default). Drop `on-hold` and `refunded` from the revenue scan. Keep them visible in the Orders-by-status donut, but they don't count toward revenue.
+In the inventory grid (`inventory.woo.tsx`, row Sale price cell ~line 812), when the cell has a non-empty value, render a tiny ✕ button inside the input that one-clicks the field back to `""`. Keeps the row workflow obvious without touching the rest of the editor.
 
-### 3. Fetch refunds correctly
+#### 3. Tooltip / helper text
 
-`order.total_refund` is unreliable. Add `wc/v3/orders/{id}/refunds` lookups for orders that have `refunds.length > 0` in the listing payload, and sum those refund line-item amounts. Cached per order so re-loads are cheap.
+Add a short helper under the Sale price column header (or a tooltip on the new ✕): "Empty = no sale price. Save locally then Push to WooCommerce to remove the sale on WC."
 
-### 4. Prefer wc-analytics' own breakdown when available
+#### 4. No backend changes needed
 
-When `wc-analytics/reports/revenue/stats` works, read `totals.gross_sales`, `totals.net_revenue`, `totals.coupons`, `totals.refunds`, `totals.shipping`, `totals.taxes`, `totals.total_sales` directly — these already match the Woo UI exactly. Only fall through to the order scan when wc-analytics truly isn't available.
+`server/oms-woo.js` already:
+- Stores `null` when an empty sale_price is saved locally (PATCH `/products/bulk`).
+- On push, sends `sale_price: ""` to WC when the local value is `null`, which is exactly what WC expects to clear a sale.
+- Includes `sale_price` in `dirty_fields`, so the row will actually push (no "already in sync" error).
 
-### 5. UI updates (`src/routes/analytics.tsx`)
-
-- Re-label the headline KPI **Net sales** (was "Revenue").
-- Add a **Revenue breakdown card** mirroring Woo's layout: Gross sales, Returns, Coupons, Net sales / Taxes, Shipping, Total sales — each with the period-over-period delta chip.
-- Add a small `(?)` tooltip next to each metric explaining the formula, so users can reconcile against Woo.
-- Keep the warning banner, but only show it when the breakdown actually came from the fallback path.
-
-### 6. Cache invalidation
-
-Bump the in-memory cache key in `server/index.js` for the analytics endpoints (e.g. `v2:` prefix) so the existing 60-second cached `£5,413` value is dropped immediately on deploy.
+So the entire fix is UI-only.
 
 ### Files touched
 
-- `server/wc-analytics.js` — rewrite revenue calc per the table above; add refunds fetch; restrict statuses; expose breakdown fields.
-- `server/index.js` — extend `/api/analytics/overview` response shape with the breakdown; bump cache key.
-- `src/lib/analytics-api.ts` — add the new breakdown fields to the `Overview` type.
-- `src/routes/analytics.tsx` — rename KPI, add breakdown card, add tooltips, gate the warning banner.
+- `src/components/inventory/wc-bulk-panel.tsx` — add `clear` mode, conditional UI, restrict to sale_price field.
+- `src/routes/inventory.woo.tsx` — handle `mode === "clear"` in the bulk apply reducer; add inline ✕ on the per-row Sale price input.
 
 ### Result
 
-With these changes, HeyShop's MTD Net sales for the same store should read **£2,848.87** (matching Woo's Net sales) and Gross sales should read **£2,944.66**, with Returns / Coupons / Shipping / Taxes / Total sales all matching the WooCommerce Revenue report row-for-row.
+Three ways to remove a sale price, in order of speed:
 
+1. **One row** — click the ✕ inside the Sale price cell → Save locally → Push.
+2. **Many rows** — select rows → Bulk edit → Price tab → Field: Sale price → Operation: **Clear sale price** → Apply → Save locally → Push.
+3. **All variations of a product** — clear the variable parent's Sale price field → use Copy to variations → Save locally → Push the parent (children come along).

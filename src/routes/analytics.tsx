@@ -116,7 +116,8 @@ function AnalyticsPage() {
   const [sitesLoading, setSitesLoading] = useState(true);
   const [selectedSiteId, setSelectedSiteId] = useState<number | null>(null);
   const [preset, setPreset] = useState<Preset>("30d");
-  const [range, setRange] = useState<DateRange>(() => presetRange("30d"));
+  // Initialize range on the client only to avoid SSR hydration drift from new Date().
+  const [range, setRange] = useState<DateRange | undefined>(undefined);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [compare, setCompare] = useState<Compare>("previous_period");
   const [intervalChoice, setIntervalChoice] = useState<Interval>("day");

@@ -281,9 +281,17 @@ function HomePage() {
             </PopoverContent>
           </Popover>
 
-          <Button size="sm" className="h-10 rounded-xl gap-2" onClick={handleExport}>
+          <Button size="sm" variant="outline" className="h-10 rounded-xl gap-2" onClick={handleExport}>
             <Download className="h-4 w-4" /> Export
           </Button>
+
+          <EditToolbar
+            editing={editing}
+            hidden={layout.hidden}
+            onToggle={() => setEditing((e) => !e)}
+            onAdd={showPanel}
+            onReset={doResetLayout}
+          />
 
           <Popover open={filterOpen} onOpenChange={setFilterOpen}>
             <PopoverTrigger asChild>

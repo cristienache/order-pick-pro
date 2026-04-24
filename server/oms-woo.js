@@ -276,7 +276,7 @@ async function listIncrementalCandidates(site, since) {
   const merged = new Map();
   const summaryFields = encodeURIComponent("id,date_created,date_created_gmt,date_modified,date_modified_gmt");
   const sources = [
-    `orderby=date&order=asc&after=${encodeURIComponent(since)}&dates_are_gmt=true`,
+    `status=publish&orderby=date&order=asc&after=${encodeURIComponent(since)}&dates_are_gmt=true`,
   ];
 
   for (const source of sources) {
@@ -308,7 +308,7 @@ async function listIncrementalCandidates(site, since) {
 async function fetchProductsByIds(site, ids) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   const include = ids.map((id) => String(id)).join(",");
-  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}`);
+  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}&status=publish`);
   const order = new Map(ids.map((id, index) => [Number(id), index]));
   return items.sort((a, b) => (order.get(Number(a.id)) ?? 0) - (order.get(Number(b.id)) ?? 0));
 }
@@ -599,11 +599,13 @@ export function mountOmsWoo(app, { requireAuth }) {
         const slice = newCandidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
         batch = await fetchProductsByIds(site, slice);
       } else {
-        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc`);
+        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc&status=publish`);
         batch = full.items;
         totalProducts = full.total || null;
         totalPages = full.totalPages || null;
       }
+      // Defensive: only import products with status === "publish".
+      batch = (batch || []).filter((p) => (p?.status || "publish") === "publish");
       const nowIso = new Date().toISOString();
 
       const cursorSource = batch.reduce((latest, item) => {
@@ -658,7 +660,8 @@ export function mountOmsWoo(app, { requireAuth }) {
         const slice = variableParents.slice(i, i + CONCURRENCY);
         const results = await Promise.all(slice.map(async (parent) => {
           try {
-            const variations = await fetchAllVariations(site, parent.wcId);
+            const allVariations = await fetchAllVariations(site, parent.wcId);
+            const variations = allVariations.filter((v) => (v?.status || "publish") === "publish");
             return { parent, variations, error: null };
           } catch (e) {
             return { parent, variations: [], error: e.message };

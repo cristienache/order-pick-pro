@@ -647,7 +647,7 @@ function WooInventory() {
               onClick={() => sync()}
               disabled={!siteId || syncing}
               className="rounded-r-none border-r-0"
-              title="Pull only products WooCommerce has changed since last sync"
+              title="Pull only products newly added in WooCommerce since the last full sync"
             >
               {syncing
                 ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />

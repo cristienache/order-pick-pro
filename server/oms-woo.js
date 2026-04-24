@@ -599,6 +599,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         total_products: totalProducts,
         total_pages: totalPages,
         warehouse_id: warehouseId,
+        incremental: !!since, since,
       });
     } catch (e) {
       console.error("[oms-woo] sync failed:", e);

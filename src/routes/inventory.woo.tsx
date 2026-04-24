@@ -124,6 +124,9 @@ function WooInventory() {
   const [wipeOpen, setWipeOpen] = useState(false);
   const [wipeText, setWipeText] = useState("");
   const [wiping, setWiping] = useState(false);
+  // Delete-from-HeyShop-only confirmation dialog (does not touch WC).
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // Re-seed drafts whenever the products list arrives or a fresh sync lands.
   // Drafts are seeded with the REAL WC values (regular_price, sale_price,

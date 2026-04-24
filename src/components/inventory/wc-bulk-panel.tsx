@@ -14,13 +14,16 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Wand2 } from "lucide-react";
 
+export type TextField = "name" | "description";
+export type TextMode = "find" | "prepend" | "append" | "upper" | "lower";
+
 export type BulkOp =
   | { kind: "price"; field: "regular_price" | "sale_price"; mode: "set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round" | "clear"; value: number }
   | { kind: "stock"; mode: "set" | "inc" | "dec"; value: number }
   | { kind: "status"; value: string }
   | { kind: "manage"; value: boolean }
   | { kind: "weight"; value: number }
-  | { kind: "find"; field: "name" | "description"; find: string; replace: string };
+  | { kind: "text"; field: TextField; mode: TextMode; find: string; replace: string };
 
 export function WcBulkPanel({
   selectedCount,

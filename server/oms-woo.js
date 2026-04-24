@@ -258,12 +258,6 @@ function wcProductCreatedTimestamp(wc) {
   return wc?.date_created_gmt || wc?.date_created || wcProductTimestamp(wc);
 }
 
-function cursorWithOverlap(ts, minutes = 2) {
-  const parsed = Date.parse(ts || "");
-  if (!Number.isFinite(parsed)) return new Date(Date.now() - minutes * 60 * 1000).toISOString();
-  return new Date(parsed - minutes * 60 * 1000).toISOString();
-}
-
 function wcProductSortValue(wc) {
   const ts = Date.parse(wcProductTimestamp(wc) || "");
   return Number.isFinite(ts) ? ts : 0;

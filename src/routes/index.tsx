@@ -91,6 +91,41 @@ function HomePage() {
   );
   const [filterOpen, setFilterOpen] = useState(false);
 
+  // Editable layout state
+  const [layout, setLayout] = useState<DashboardLayout>(DEFAULT_LAYOUT);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setLayout(loadLayout()); }, []);
+  useEffect(() => { saveLayout(layout); }, [layout]);
+
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
+
+  function handleDragEnd(e: DragEndEvent) {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    setLayout((prev) => {
+      const oldIdx = prev.order.indexOf(active.id as PanelId);
+      const newIdx = prev.order.indexOf(over.id as PanelId);
+      if (oldIdx === -1 || newIdx === -1) return prev;
+      return { ...prev, order: arrayMove(prev.order, oldIdx, newIdx) };
+    });
+  }
+
+  function hidePanel(id: PanelId) {
+    setLayout((prev) => ({
+      order: prev.order.filter((p) => p !== id),
+      hidden: [...prev.hidden, id],
+    }));
+  }
+
+  function showPanel(id: PanelId) {
+    setLayout((prev) => ({
+      order: [...prev.order, id],
+      hidden: prev.hidden.filter((p) => p !== id),
+    }));
+  }
+
+  function doResetLayout() { setLayout(resetLayout()); }
+
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
       .then((r) => setSites(r.sites))

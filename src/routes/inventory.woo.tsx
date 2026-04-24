@@ -409,9 +409,9 @@ function WooInventory() {
   // and the topbar pill keeps showing live progress.
   const { startWcSync, current: syncState } = useSync();
   const syncing = !!syncState && !syncState.done && syncState.siteId === siteId;
-  const sync = async () => {
+  const sync = async (opts: { full?: boolean } = {}) => {
     if (!siteId || !site) return;
-    await startWcSync(siteId, site.name);
+    await startWcSync(siteId, site.name, opts);
   };
 
   /** Wipe every imported product for the active site, then immediately

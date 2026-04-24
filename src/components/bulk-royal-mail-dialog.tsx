@@ -22,7 +22,7 @@ import { Separator } from "@/components/ui/separator";
 import { Loader2, Printer, Truck, AlertCircle, CheckCircle2, Globe } from "lucide-react";
 import { toast } from "sonner";
 import {
-  api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant,
+  api, apiBlob, RM_SERVICES, rmSignedVariant,
   markShipmentsPrinted,
   type RmShipment, type RmCustomsContentType, type RmSettings,
 } from "@/lib/api";

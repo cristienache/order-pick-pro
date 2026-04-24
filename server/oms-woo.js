@@ -604,6 +604,8 @@ export function mountOmsWoo(app, { requireAuth }) {
         totalProducts = full.total || null;
         totalPages = full.totalPages || null;
       }
+      // Defensive: only import products with status === "publish".
+      batch = (batch || []).filter((p) => (p?.status || "publish") === "publish");
       const nowIso = new Date().toISOString();
 
       const cursorSource = batch.reduce((latest, item) => {

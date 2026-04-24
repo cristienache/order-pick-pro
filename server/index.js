@@ -2532,6 +2532,13 @@ async function loadOrderLineItemsForLabel(site, orderId) {
 }
 
 function rmShipmentToPublic(s) {
+  // Deep link into Click & Drop's order list filtered to this order. Useful
+  // when the label PDF couldn't be retrieved from the API (e.g. non-OBA
+  // accounts, manual customs confirmation required) — the user can finish
+  // the workflow inside Click & Drop.
+  const cndUrl = s.royal_mail_shipment_id
+    ? `https://business.parcel.royalmail.com/orders/?orderIdentifier=${encodeURIComponent(s.royal_mail_shipment_id)}`
+    : null;
   return {
     id: s.id,
     woocommerce_order_id: s.woocommerce_order_id,
@@ -2548,6 +2555,7 @@ function rmShipmentToPublic(s) {
     carrier: s.carrier || "royal_mail",
     packeta_packet_id: s.packeta_packet_id || null,
     packeta_barcode: s.packeta_barcode || null,
+    click_and_drop_url: cndUrl,
   };
 }
 

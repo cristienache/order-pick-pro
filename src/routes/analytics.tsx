@@ -355,21 +355,22 @@ function AnalyticsPage() {
         </div>
       </section>
 
-      {/* Warnings */}
-      {allWarnings.length > 0 && (
-        <Card className="border-brand-amber/40 bg-brand-amber-soft/40">
-          <CardContent className="p-3 flex flex-wrap items-center gap-2 text-xs">
-            <AlertTriangle className="h-4 w-4 text-brand-amber" />
-            <span className="font-medium">Limited analytics:</span>
-            {Array.from(new Set(allWarnings.map((w) => w.error))).slice(0, 3).map((e, i) => (
-              <Badge key={i} variant="secondary" className="rounded-full font-normal">{e}</Badge>
-            ))}
-            <span className="text-muted-foreground ml-auto">
-              Falling back to direct order scan — first load can take a moment.
-            </span>
-          </CardContent>
-        </Card>
-      )}
+      {/* Warnings — shown only when the data actually came from the fallback path. */}
+      {(() => {
+        const usedFallback = !!overview?.per_site?.some((s) => s.limited);
+        if (!usedFallback || allWarnings.length === 0) return null;
+        return (
+          <Card className="border-brand-amber/40 bg-brand-amber-soft/40">
+            <CardContent className="p-3 flex flex-wrap items-center gap-2 text-xs">
+              <AlertTriangle className="h-4 w-4 text-brand-amber" />
+              <span className="font-medium">Using fallback order scan:</span>
+              <span className="text-muted-foreground">
+                wc-analytics didn't return data for this period; numbers were computed from raw orders (processing + completed only). They should match WooCommerce's Revenue report exactly.
+              </span>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* No stores */}
       {!sitesLoading && sites.length === 0 ? (

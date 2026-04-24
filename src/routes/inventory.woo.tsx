@@ -718,6 +718,16 @@ function WooInventory() {
           </div>
           <Button
             variant="outline" size="sm"
+            onClick={() => setDeleteOpen(true)}
+            disabled={!siteId || selectedIds.length === 0 || deleting}
+            className="text-destructive hover:text-destructive"
+            title="Remove the selected products from HeyShop only — your WooCommerce store is not touched"
+          >
+            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+            Delete from HeyShop{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
+          <Button
+            variant="outline" size="sm"
             onClick={() => { setWipeText(""); setWipeOpen(true); }}
             disabled={!siteId || syncing || siteProducts.length === 0}
             className="text-destructive hover:text-destructive"

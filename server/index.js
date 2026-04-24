@@ -629,7 +629,7 @@ const BrandingUpdateSchema = z.object({
   colors: z.record(z.string(), z.string().max(80)).optional(),
 });
 
-app.put("/api/branding", requireAuth, requireAdmin, (req, res) => {
+app.put("/api/branding", requireAuth, requireMasterAdmin, (req, res) => {
   const parsed = BrandingUpdateSchema.safeParse(req.body || {});
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0]?.message || "Invalid input" });

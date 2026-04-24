@@ -2721,7 +2721,56 @@ app.get("/api/royal-mail/shipments/:id/label.pdf", requireAuth, (req, res) => {
   res.send(buf);
 });
 
-// Core: create one Click & Drop shipment for an already-validated payload.
+// Retry fetching the label PDF from Click & Drop. Useful for international
+// shipments where the user may need to confirm customs in C&D before the
+// PDF becomes available, or for non-OBA accounts where labels are generated
+// in C&D after order creation.
+app.post("/api/royal-mail/shipments/:id/refetch-label", requireAuth, async (req, res) => {
+  const row = db.prepare(
+    "SELECT * FROM shipments WHERE id = ? AND user_id = ? AND voided = 0"
+  ).get(Number(req.params.id), req.user.id);
+  if (!row) return res.status(404).json({ error: "Shipment not found" });
+  if (!row.royal_mail_shipment_id) {
+    return res.status(400).json({ error: "Shipment has no Click & Drop order ID." });
+  }
+  const creds = loadRmCreds(req.user.id);
+  if (!creds) return res.status(400).json({ error: "Royal Mail credentials are not configured." });
+
+  // Look up the original order's recipient country to know whether the CN22
+  // declaration should be requested.
+  const site = loadSiteWithKeys(row.site_id, req.user.id);
+  let isInternational = false;
+  if (site) {
+    try {
+      const order = await fetchOrderById(site, row.woocommerce_order_id);
+      const cc = (order?.shipping?.country || order?.billing?.country || "GB").toUpperCase();
+      isInternational = cc !== "GB";
+    } catch { /* fall back to domestic — no harm */ }
+  }
+
+  try {
+    const lab = await getCndLabel({
+      apiKey: creds.apiKey,
+      useSandbox: creds.useSandbox,
+      orderIdentifier: row.royal_mail_shipment_id,
+      includeCN: isInternational,
+    });
+    if (lab.ok && lab.buffer) {
+      const b64 = lab.buffer.toString("base64");
+      db.prepare("UPDATE shipments SET label_pdf_base64 = ? WHERE id = ?").run(b64, row.id);
+      const updated = db.prepare("SELECT * FROM shipments WHERE id = ?").get(row.id);
+      return res.json({ ok: true, shipment: rmShipmentToPublic(updated) });
+    }
+    return res.status(422).json({
+      ok: false,
+      error: lab.body?.message || `Royal Mail returned ${lab.status} for the label.`,
+      detail: lab.body,
+    });
+  } catch (e) {
+    return res.status(502).json({ ok: false, error: `Label refetch failed: ${e.message}` });
+  }
+});
+
 // Returns { status, body } where body is what we'd JSON-respond with. Used by
 // both the single-order and bulk endpoints so behaviour stays in lock-step
 // (duplicate guard, line-item enrichment, WC note, persistence).

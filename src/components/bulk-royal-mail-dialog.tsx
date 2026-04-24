@@ -201,6 +201,14 @@ export function BulkRoyalMailDialog({
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
 
+  const isInternational = destination === "international";
+  const customsValid =
+    !isInternational ||
+    (customsCode.trim().length >= 2 &&
+      customsOrigin.trim().length === 2 &&
+      customsDescription.trim().length > 0 &&
+      customsCurrency.trim().length === 3);
+
   // ---------- Create flow ----------
   const runCreate = async () => {
     if (!Number.isInteger(weightNum) || weightNum < 1) {
@@ -209,6 +217,10 @@ export function BulkRoyalMailDialog({
     }
     if (overweight) {
       toast.error(`Weight exceeds the ${service.maxWeight}g limit for ${service.label}.`);
+      return;
+    }
+    if (isInternational && !customsValid) {
+      toast.error("Fill in customs HS code, origin country, currency and description.");
       return;
     }
     setBusy(true);
@@ -226,6 +238,15 @@ export function BulkRoyalMailDialog({
         body.length_mm = Number(length);
         body.width_mm = Number(width);
         body.height_mm = Number(height);
+      }
+      if (isInternational) {
+        body.bulk_customs = {
+          content_type: customsContentType,
+          currency_code: customsCurrency.toUpperCase(),
+          customs_code: customsCode.trim(),
+          origin_country: customsOrigin.trim().toUpperCase(),
+          customs_description: customsDescription.trim(),
+        };
       }
       const res = await api<{ succeeded: number; failed: number; results: BulkResultRow[] }>(
         "/api/royal-mail/shipments/bulk",

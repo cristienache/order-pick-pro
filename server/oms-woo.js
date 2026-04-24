@@ -228,6 +228,88 @@ async function fetchAllVariations(site, parentId) {
   return all;
 }
 
+const incrementalCandidateCache = new Map();
+
+async function fetchWcProducts(site, query) {
+  const url = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products?${query}`;
+  const res = await fetch(url, {
+    headers: {
+      Authorization: authHeader(site.consumer_key, site.consumer_secret),
+      Accept: "application/json",
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`WC ${res.status}: ${text.slice(0, 300)}`);
+  }
+  const items = await res.json();
+  return {
+    items: Array.isArray(items) ? items : [],
+    total: Number(res.headers.get("x-wp-total")) || 0,
+    totalPages: Number(res.headers.get("x-wp-totalpages")) || 0,
+  };
+}
+
+function wcProductTimestamp(wc) {
+  return wc?.date_modified_gmt || wc?.date_modified || wc?.date_created_gmt || wc?.date_created || null;
+}
+
+function wcProductSortValue(wc) {
+  const ts = Date.parse(wcProductTimestamp(wc) || "");
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+async function listIncrementalCandidates(site, since) {
+  const now = Date.now();
+  for (const [key, value] of incrementalCandidateCache) {
+    if (!value || value.expiresAt <= now) incrementalCandidateCache.delete(key);
+  }
+
+  const cacheKey = `${site.id}:${since}`;
+  const cached = incrementalCandidateCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) return cached.items;
+
+  const merged = new Map();
+  const summaryFields = encodeURIComponent("id,date_created,date_created_gmt,date_modified,date_modified_gmt");
+  const sources = [
+    `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`,
+    `orderby=date&order=asc&after=${encodeURIComponent(since)}&dates_are_gmt=true`,
+  ];
+
+  for (const source of sources) {
+    for (let page = 1; page <= 200; page += 1) {
+      const { items } = await fetchWcProducts(
+        site,
+        `per_page=100&page=${page}&_fields=${summaryFields}&${source}`,
+      );
+      if (items.length === 0) break;
+      for (const item of items) {
+        const id = Number(item?.id);
+        if (!Number.isFinite(id)) continue;
+        const sortTs = wcProductSortValue(item);
+        const prev = merged.get(id);
+        if (!prev || sortTs >= prev.sortTs) merged.set(id, { id, sortTs });
+      }
+      if (items.length < 100) break;
+    }
+  }
+
+  const ordered = [...merged.values()].sort((a, b) => a.sortTs - b.sortTs || a.id - b.id);
+  incrementalCandidateCache.set(cacheKey, {
+    expiresAt: now + 10 * 60 * 1000,
+    items: ordered,
+  });
+  return ordered;
+}
+
+async function fetchProductsByIds(site, ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const include = ids.map((id) => String(id)).join(",");
+  const { items } = await fetchWcProducts(site, `include=${include}&per_page=${ids.length}`);
+  const order = new Map(ids.map((id, index) => [Number(id), index]));
+  return items.sort((a, b) => (order.get(Number(a.id)) ?? 0) - (order.get(Number(b.id)) ?? 0));
+}
+
 /** Pull a small thumbnail URL out of a WC product/variation. */
 function pickThumb(wc) {
   if (Array.isArray(wc.images) && wc.images.length > 0) {
@@ -395,7 +477,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       const code = `WC-${s.id}`;
       const wh = db.prepare("SELECT id FROM oms_warehouses WHERE code = ?").get(code);
       const lastSync = db.prepare(
-        `SELECT MAX(last_synced_at) AS ts FROM oms_products WHERE site_id = ?`,
+        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(s.id);
       const dirty = db.prepare(
         `SELECT COUNT(*) AS c FROM oms_products WHERE site_id = ? AND dirty = 1`,
@@ -486,7 +568,7 @@ export function mountOmsWoo(app, { requireAuth }) {
       since = String(req.query.since || req.body?.since || "");
     } else if (!forceFull) {
       const prev = db.prepare(
-        `SELECT MAX(last_synced_at) AS ts FROM oms_products WHERE site_id = ?`,
+        `SELECT wc_sync_cursor AS ts FROM sites WHERE id = ?`,
       ).get(site.id);
       if (prev?.ts) {
         const t = new Date(prev.ts).getTime();
@@ -497,35 +579,31 @@ export function mountOmsWoo(app, { requireAuth }) {
     }
 
     try {
-      // `modified_after` defaults to the SITE's local timezone in WC REST.
-      // We always send UTC, so we MUST also set `dates_are_gmt=true` —
-      // otherwise stores east of UTC silently drop recently-created/edited
-      // products (the "since" cursor lands in their local future).
-      //
-      // We also union `modified_after` with `after` (date_created) because
-      // some WC versions / caching plugins delay updating `date_modified`
-      // on brand-new products, which would otherwise hide them from an
-      // incremental sync. Two cheap requests > one missed product.
-      const orderParams = since
-        ? `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`
-        : `orderby=id&order=asc`;
-      const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&${orderParams}`;
-      const wcRes = await fetch(url, {
-        headers: {
-          Authorization: authHeader(site.consumer_key, site.consumer_secret),
-          Accept: "application/json",
-        },
-      });
-      if (!wcRes.ok) {
-        const text = await wcRes.text().catch(() => "");
-        throw new Error(`WC ${wcRes.status}: ${text.slice(0, 300)}`);
+      let batch = [];
+      let totalProducts = null;
+      let totalPages = null;
+
+      if (since) {
+        const candidates = await listIncrementalCandidates(site, since);
+        totalProducts = candidates.length;
+        totalPages = candidates.length ? Math.ceil(candidates.length / perPage) : 0;
+        const slice = candidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
+        batch = await fetchProductsByIds(site, slice);
+      } else {
+        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc`);
+        batch = full.items;
+        totalProducts = full.total || null;
+        totalPages = full.totalPages || null;
       }
-      const batch = await wcRes.json();
       const nowIso = new Date().toISOString();
 
-      // Total products header from WC — useful so the client can show progress.
-      const totalProducts = Number(wcRes.headers.get("x-wp-total")) || null;
-      const totalPages = Number(wcRes.headers.get("x-wp-totalpages")) || null;
+      const cursorSource = batch.reduce((latest, item) => {
+        const ts = wcProductTimestamp(item);
+        if (!ts) return latest;
+        if (!latest) return ts;
+        return Date.parse(ts) > Date.parse(latest) ? ts : latest;
+      }, since || "");
+      const nextSince = cursorSource || since;
 
       if (!Array.isArray(batch) || batch.length === 0) {
         return res.json({
@@ -534,7 +612,7 @@ export function mountOmsWoo(app, { requireAuth }) {
           done: true, next_page: null,
           total_products: totalProducts, total_pages: totalPages,
           warehouse_id: warehouseId,
-          incremental: !!since, since,
+          incremental: !!since, since: nextSince,
         });
       }
 
@@ -598,6 +676,10 @@ export function mountOmsWoo(app, { requireAuth }) {
       }
 
       const done = batch.length < perPage;
+      if (done && nextSince) {
+        db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextSince, site.id);
+        incrementalCandidateCache.delete(`${site.id}:${since}`);
+      }
       res.json({
         page, per_page: perPage, batch_size: batch.length,
         created, updated, errors,
@@ -606,7 +688,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         total_products: totalProducts,
         total_pages: totalPages,
         warehouse_id: warehouseId,
-        incremental: !!since, since,
+        incremental: !!since, since: nextSince,
       });
     } catch (e) {
       console.error("[oms-woo] sync failed:", e);

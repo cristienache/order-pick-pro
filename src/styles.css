@@ -78,63 +78,62 @@
 :root {
   --radius: 1rem;
 
-  /* Soft mint app background, white card surfaces. */
-  --background: oklch(0.97 0.02 155);
-  --foreground: oklch(0.22 0.04 160);
+  /* Sugarpanel-inspired: cool light-blue canvas, pure white cards. */
+  --background: oklch(0.96 0.015 245);
+  --foreground: oklch(0.18 0.03 250);
 
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.04 160);
+  --card-foreground: oklch(0.18 0.03 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.04 160);
+  --popover-foreground: oklch(0.18 0.03 250);
 
-  /* Signature deep-forest green — the dominant brand colour. */
-  --primary: oklch(0.32 0.06 158);
-  --primary-foreground: oklch(0.97 0.02 155);
+  /* Signature blue — Sugarpanel-style primary. */
+  --primary: oklch(0.6 0.18 250);
+  --primary-foreground: oklch(0.99 0.005 245);
 
-  --secondary: oklch(0.93 0.05 152);
-  --secondary-foreground: oklch(0.28 0.06 158);
+  --secondary: oklch(0.95 0.02 245);
+  --secondary-foreground: oklch(0.25 0.05 250);
 
-  --muted: oklch(0.95 0.025 155);
-  --muted-foreground: oklch(0.5 0.04 160);
+  --muted: oklch(0.96 0.012 245);
+  --muted-foreground: oklch(0.55 0.025 250);
 
-  /* Bright lime accent — the highlight green from the chart bars. */
-  --accent: oklch(0.88 0.18 145);
-  --accent-foreground: oklch(0.25 0.07 158);
+  /* Soft sky accent for highlights. */
+  --accent: oklch(0.93 0.05 245);
+  --accent-foreground: oklch(0.3 0.1 250);
 
-  --destructive: oklch(0.6 0.23 27);
+  --destructive: oklch(0.62 0.22 22);
   --destructive-foreground: oklch(0.99 0.003 0);
 
-  --border: oklch(0.9 0.02 150);
-  --input: oklch(0.92 0.02 150);
-  --ring: oklch(0.55 0.15 150);
+  --border: oklch(0.92 0.012 245);
+  --input: oklch(0.94 0.012 245);
+  --ring: oklch(0.6 0.18 250);
 
-  --chart-1: oklch(0.32 0.06 158);   /* deep forest */
-  --chart-2: oklch(0.82 0.18 145);   /* lime accent */
-  --chart-3: oklch(0.7 0.13 155);    /* sage */
-  --chart-4: oklch(0.5 0.1 165);     /* teal-green */
-  --chart-5: oklch(0.85 0.07 152);   /* mint */
+  --chart-1: oklch(0.6 0.18 250);
+  --chart-2: oklch(0.78 0.12 235);
+  --chart-3: oklch(0.85 0.06 240);
+  --chart-4: oklch(0.5 0.16 260);
+  --chart-5: oklch(0.92 0.03 245);
 
-  /* Sidebar — pale mint, near the background but slightly cooler. */
-  --sidebar: oklch(0.95 0.04 152);
-  --sidebar-foreground: oklch(0.25 0.06 158);
-  --sidebar-primary: oklch(0.32 0.06 158);
-  --sidebar-primary-foreground: oklch(0.97 0.02 155);
-  --sidebar-accent: oklch(0.88 0.06 152);
-  --sidebar-accent-foreground: oklch(0.25 0.06 158);
-  --sidebar-border: oklch(0.88 0.04 152);
-  --sidebar-ring: oklch(0.55 0.15 150);
+  /* Sidebar — same pale tint as the canvas, slightly cooler. */
+  --sidebar: oklch(0.97 0.012 245);
+  --sidebar-foreground: oklch(0.22 0.04 250);
+  --sidebar-primary: oklch(0.6 0.18 250);
+  --sidebar-primary-foreground: oklch(0.99 0.005 245);
+  --sidebar-accent: oklch(0.93 0.04 245);
+  --sidebar-accent-foreground: oklch(0.25 0.06 250);
+  --sidebar-border: oklch(0.92 0.012 245);
+  --sidebar-ring: oklch(0.6 0.18 250);
 
-  /* Brand accent palette — re-mapped to greens but keeping the names so
-     existing component styling (badges, chips) stays readable. */
-  --brand-violet: oklch(0.32 0.06 158);
-  --brand-violet-soft: oklch(0.92 0.05 152);
-  --brand-emerald: oklch(0.55 0.15 150);
-  --brand-emerald-soft: oklch(0.93 0.07 150);
-  --brand-amber: oklch(0.78 0.15 90);
-  --brand-amber-soft: oklch(0.96 0.06 90);
-  --brand-sky: oklch(0.62 0.12 200);
-  --brand-sky-soft: oklch(0.95 0.04 200);
-  --brand-rose: oklch(0.62 0.22 18);
+  /* Brand accent palette — kept for legacy components. */
+  --brand-violet: oklch(0.6 0.18 250);
+  --brand-violet-soft: oklch(0.94 0.04 250);
+  --brand-emerald: oklch(0.65 0.15 160);
+  --brand-emerald-soft: oklch(0.94 0.06 160);
+  --brand-amber: oklch(0.78 0.15 65);
+  --brand-amber-soft: oklch(0.96 0.06 70);
+  --brand-sky: oklch(0.7 0.13 230);
+  --brand-sky-soft: oklch(0.95 0.04 230);
+  --brand-rose: oklch(0.65 0.22 18);
   --brand-rose-soft: oklch(0.96 0.04 18);
 }
 

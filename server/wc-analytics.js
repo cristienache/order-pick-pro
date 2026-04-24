@@ -483,7 +483,7 @@ export async function getTopProducts(site, { from, to, limit = 10 }) {
     try {
       const orders = await scanOrders(site, {
         from, to,
-        statuses: ["processing", "completed", "on-hold"],
+        statuses: REVENUE_STATUSES,
       });
       const byProduct = new Map();
       for (const o of orders) {
@@ -590,7 +590,7 @@ export async function getCustomersStats(site, { from, to }) {
     try {
       const orders = await scanOrders(site, {
         from, to,
-        statuses: ["processing", "completed", "on-hold"],
+        statuses: REVENUE_STATUSES,
       });
       const ids = new Set();
       const guests = new Set();
@@ -647,7 +647,7 @@ export async function getTopCoupons(site, { from, to, limit = 10 }) {
     try {
       const orders = await scanOrders(site, {
         from, to,
-        statuses: ["processing", "completed", "on-hold"],
+        statuses: REVENUE_STATUSES,
       });
       const byCode = new Map();
       for (const o of orders) {

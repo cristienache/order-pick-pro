@@ -272,7 +272,6 @@ async function listIncrementalCandidates(site, since) {
   const merged = new Map();
   const summaryFields = encodeURIComponent("id,date_created,date_created_gmt,date_modified,date_modified_gmt");
   const sources = [
-    `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`,
     `orderby=date&order=asc&after=${encodeURIComponent(since)}&dates_are_gmt=true`,
   ];
 

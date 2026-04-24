@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Wand2 } from "lucide-react";
 
 export type BulkOp =
-  | { kind: "price"; field: "regular_price" | "sale_price"; mode: "set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round"; value: number }
+  | { kind: "price"; field: "regular_price" | "sale_price"; mode: "set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round" | "clear"; value: number }
   | { kind: "stock"; mode: "set" | "inc" | "dec"; value: number }
   | { kind: "status"; value: string }
   | { kind: "manage"; value: boolean }
@@ -34,7 +34,7 @@ export function WcBulkPanel({
 
   // Price tab
   const [priceField, setPriceField] = useState<"regular_price" | "sale_price">("regular_price");
-  const [priceMode, setPriceMode] = useState<"set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round">("set");
+  const [priceMode, setPriceMode] = useState<"set" | "incPct" | "decPct" | "incAmt" | "decAmt" | "round" | "clear">("set");
   const [priceValue, setPriceValue] = useState("");
 
   // Stock tab
@@ -81,7 +81,15 @@ export function WcBulkPanel({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <Label className="text-[10px]">Field</Label>
-                <Select value={priceField} onValueChange={(v) => setPriceField(v as typeof priceField)}>
+                <Select
+                  value={priceField}
+                  onValueChange={(v) => {
+                    const f = v as typeof priceField;
+                    setPriceField(f);
+                    // "clear" only makes sense for sale_price — reset mode if user switches away.
+                    if (f === "regular_price" && priceMode === "clear") setPriceMode("set");
+                  }}
+                >
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="regular_price">Regular price</SelectItem>
@@ -100,11 +108,14 @@ export function WcBulkPanel({
                     <SelectItem value="incAmt">Increase by amount</SelectItem>
                     <SelectItem value="decAmt">Decrease by amount</SelectItem>
                     <SelectItem value="round">Round to .99</SelectItem>
+                    {priceField === "sale_price" && (
+                      <SelectItem value="clear">Clear sale price</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            {priceMode !== "round" && (
+            {priceMode !== "round" && priceMode !== "clear" && (
               <div>
                 <Label className="text-[10px]">Value</Label>
                 <Input
@@ -116,19 +127,26 @@ export function WcBulkPanel({
                 />
               </div>
             )}
+            {priceMode === "clear" && (
+              <p className="text-[11px] text-muted-foreground">
+                Removes the sale price on the selected rows. Save locally, then push to WooCommerce to apply.
+              </p>
+            )}
             <Button
               size="sm" className="w-full"
               onClick={() => {
                 onApply({
                   kind: "price",
-                  field: priceField,
+                  field: priceMode === "clear" ? "sale_price" : priceField,
                   mode: priceMode,
                   value: Number(priceValue) || 0,
                 });
                 close();
               }}
             >
-              Apply to {selectedCount} row{selectedCount === 1 ? "" : "s"}
+              {priceMode === "clear"
+                ? `Clear sale price on ${selectedCount} row${selectedCount === 1 ? "" : "s"}`
+                : `Apply to ${selectedCount} row${selectedCount === 1 ? "" : "s"}`}
             </Button>
           </TabsContent>
 

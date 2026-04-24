@@ -162,25 +162,81 @@ export type PacketaCountryRoute = {
 };
 
 // Royal Mail Click & Drop services. `formats` restricts the dropdown so the
-// user can't pick e.g. a Letter service for a Parcel:
-//   Letter        -> STL1, STL2
-//   Large Letter  -> CRL24, CRL48
-//   Parcel        -> CRL24, CRL48
+// user can't pick e.g. a Letter service for a Parcel. `scope` controls
+// whether a service shows for UK destinations or international ones:
+//   - "domestic":      GB only
+//   - "international": non-GB, non-EU (EU ships via Packeta)
+// `signed` marks the service as having a signature on delivery, used for the
+// "Signature required" toggle on domestic services.
 export type RmFormat = "L" | "F" | "P";
+export type RmScope = "domestic" | "international";
 export type RmServiceDef = {
-  code: string; label: string; maxWeight: number; formats: RmFormat[];
+  code: string;
+  label: string;
+  maxWeight: number;
+  formats: RmFormat[];
+  scope: RmScope;
+  signed?: boolean;
 };
 export const RM_SERVICES: RmServiceDef[] = [
+  // ---- Domestic UK ----
   // Letter
-  { code: "STL1",  label: "1st Class",   maxWeight: 750,    formats: ["L"] },
-  { code: "STL2",  label: "2nd Class",   maxWeight: 750,    formats: ["L"] },
-  // Large Letter + Parcel
-  { code: "CRL24", label: "Tracked 24",  maxWeight: 20000,  formats: ["F", "P"] },
-  { code: "CRL48", label: "Tracked 48",  maxWeight: 20000,  formats: ["F", "P"] },
+  { code: "STL1",  label: "1st Class",                 maxWeight: 750,   formats: ["L"],          scope: "domestic" },
+  { code: "STL2",  label: "2nd Class",                 maxWeight: 750,   formats: ["L"],          scope: "domestic" },
+  // Letter / Large Letter / Parcel — signed (no tracking)
+  { code: "STL1U", label: "1st Class Signed For",      maxWeight: 2000,  formats: ["L", "F", "P"], scope: "domestic", signed: true },
+  { code: "STL2U", label: "2nd Class Signed For",      maxWeight: 2000,  formats: ["L", "F", "P"], scope: "domestic", signed: true },
+  // Large Letter + Parcel — tracked
+  { code: "CRL24", label: "Tracked 24",                maxWeight: 20000, formats: ["F", "P"],     scope: "domestic" },
+  { code: "CRL48", label: "Tracked 48",                maxWeight: 20000, formats: ["F", "P"],     scope: "domestic" },
+
+  // ---- International (non-EU) ----
+  // Letter
+  { code: "OLA",   label: "Int'l Standard",            maxWeight: 100,   formats: ["L", "F"],     scope: "international" },
+  { code: "OTC",   label: "Int'l Tracked & Signed",    maxWeight: 2000,  formats: ["L", "F"],     scope: "international", signed: true },
+  // Large Letter
+  { code: "OTA",   label: "Int'l Tracked",             maxWeight: 2000,  formats: ["F"],          scope: "international" },
 ];
 
-export function rmServicesForFormat(format: RmFormat): RmServiceDef[] {
-  return RM_SERVICES.filter((s) => s.formats.includes(format));
+// EU country codes (ISO 3166-1 alpha-2). Orders to these are shipped via
+// Packeta, so Royal Mail international services are hidden for them.
+const EU_COUNTRIES = new Set([
+  "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE","GR","HU","IE","IT",
+  "LV","LT","LU","MT","NL","PL","PT","RO","SK","SI","ES","SE",
+]);
+
+export function rmDestinationScope(countryCode: string | undefined | null): RmScope | "eu" | "unknown" {
+  const cc = (countryCode || "").trim().toUpperCase();
+  if (!cc) return "unknown";
+  if (cc === "GB" || cc === "UK") return "domestic";
+  if (EU_COUNTRIES.has(cc)) return "eu";
+  return "international";
+}
+
+export function rmServicesForFormat(
+  format: RmFormat,
+  opts?: { country?: string | null },
+): RmServiceDef[] {
+  const scope = rmDestinationScope(opts?.country);
+  return RM_SERVICES.filter((s) => {
+    if (!s.formats.includes(format)) return false;
+    if (scope === "domestic") return s.scope === "domestic";
+    if (scope === "international") return s.scope === "international";
+    if (scope === "eu") return false; // Packeta handles these
+    return true; // unknown — show everything
+  });
+}
+
+// Map a base domestic service code to its signed variant. Returns null if no
+// signed equivalent exists (i.e. the user must pick a signed service manually).
+export function rmSignedVariant(code: string): string | null {
+  switch (code.toUpperCase()) {
+    case "STL1": return "STL1U";
+    case "STL2": return "STL2U";
+    case "CRL24": return "STL1U"; // tracked 24 -> signed for (no tracking, user choice)
+    case "CRL48": return "STL2U";
+    default: return null;
+  }
 }
 
 /** Tell the server these labels were just printed; auto-completes WC orders. */

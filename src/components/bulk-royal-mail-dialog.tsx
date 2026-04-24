@@ -21,7 +21,8 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Printer, Truck, AlertCircle, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
 import { printPdfBlob } from "@/lib/print-pdf";
 
 export type BulkSelection = { site_id: number; order_ids: number[] };
@@ -60,6 +61,7 @@ export function BulkRoyalMailDialog({
   );
 
   // Shared create-form state
+  const [destination, setDestination] = useState<"domestic" | "international">("domestic");
   const [serviceMode, setServiceMode] = useState<string>("auto");
   const [customServiceCode, setCustomServiceCode] = useState<string>("");
   const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
@@ -68,6 +70,7 @@ export function BulkRoyalMailDialog({
   const [width, setWidth] = useState<string>("");
   const [height, setHeight] = useState<string>("");
   const [safePlace, setSafePlace] = useState<string>("");
+  const [requireSignature, setRequireSignature] = useState(false);
 
   // Run state
   const [busy, setBusy] = useState(false);
@@ -115,7 +118,44 @@ export function BulkRoyalMailDialog({
     }
   }, [open, mode, selections]);
 
-  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+  const availableServices = useMemo(
+    () => RM_SERVICES.filter(
+      (s) => s.formats.includes(packageFormat) && s.scope === destination,
+    ),
+    [packageFormat, destination],
+  );
+
+  // Reset selection when destination/format makes it invalid.
+  useEffect(() => {
+    if (serviceMode === "auto" || serviceMode === "custom") return;
+    if (!availableServices.some((s) => s.code === serviceMode)) {
+      setServiceMode("auto");
+      setRequireSignature(false);
+    }
+  }, [availableServices, serviceMode]);
+
+  const baseServiceDef = useMemo(
+    () => RM_SERVICES.find((s) => s.code === serviceMode),
+    [serviceMode],
+  );
+  const canToggleSignature =
+    destination === "domestic" &&
+    serviceMode !== "auto" &&
+    serviceMode !== "custom" &&
+    !!baseServiceDef &&
+    !baseServiceDef.signed &&
+    !!rmSignedVariant(serviceMode);
+
+  const resolvedServiceCode = useMemo(() => {
+    if (serviceMode === "custom") return customServiceCode.trim().toUpperCase();
+    if (serviceMode === "auto") return "auto";
+    if (requireSignature && destination === "domestic") {
+      return rmSignedVariant(serviceMode) ?? serviceMode;
+    }
+    return serviceMode;
+  }, [serviceMode, customServiceCode, requireSignature, destination]);
+
+  const serviceCode = resolvedServiceCode;
   const service = useMemo(() => {
     const code = serviceCode.trim().toUpperCase();
     return (
@@ -276,6 +316,20 @@ export function BulkRoyalMailDialog({
 
         {mode === "create" && !results && (
           <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-destination">Destination</Label>
+              <Select value={destination} onValueChange={(v) => setDestination(v as "domestic" | "international")}>
+                <SelectTrigger id="bulk-destination"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="domestic">UK domestic</SelectItem>
+                  <SelectItem value="international">International (non-EU)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                EU orders ship via Packeta and are not handled here.
+              </p>
+            </div>
+
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="bulk-format">Package format</Label>
@@ -295,7 +349,7 @@ export function BulkRoyalMailDialog({
                   <SelectTrigger id="bulk-service"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                    {rmServicesForFormat(packageFormat).map((s) => (
+                    {availableServices.map((s) => (
                       <SelectItem key={s.code} value={s.code}>
                         {s.label} ({s.code})
                       </SelectItem>
@@ -310,6 +364,15 @@ export function BulkRoyalMailDialog({
                     placeholder="Enter code"
                     maxLength={10}
                   />
+                )}
+                {canToggleSignature && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pt-1">
+                    <Checkbox
+                      checked={requireSignature}
+                      onCheckedChange={(v) => setRequireSignature(v === true)}
+                    />
+                    Signature required ({rmSignedVariant(serviceMode)})
+                  </label>
                 )}
               </div>
 

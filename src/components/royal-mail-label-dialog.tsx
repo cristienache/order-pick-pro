@@ -25,7 +25,8 @@ import {
   Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, rmDestinationScope, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import { Checkbox } from "@/components/ui/checkbox";
 
 // Just enough of the WooCommerce order shape to prefill the recipient.
 type WCAddress = {
@@ -156,12 +157,38 @@ function LabelForm({
   const [height, setHeight] = useState<string>("");
   const [safePlace, setSafePlace] = useState<string>("");
   const [reference, setReference] = useState<string>(order.number);
+  const [requireSignature, setRequireSignature] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
-  const serviceCode = serviceMode === "custom" ? customServiceCode.trim().toUpperCase() : serviceMode;
+  const destScope = rmDestinationScope(recipient.country_code);
+  const availableServices = useMemo(
+    () => rmServicesForFormat(packageFormat, { country: recipient.country_code }),
+    [packageFormat, recipient.country_code],
+  );
+
+  // If destination changes and current selection is no longer available, reset.
+  useEffect(() => {
+    if (serviceMode === "auto" || serviceMode === "custom") return;
+    if (!availableServices.some((s) => s.code === serviceMode)) {
+      setServiceMode("auto");
+      setRequireSignature(false);
+    }
+  }, [availableServices, serviceMode]);
+
+  // Resolve the final service code, applying signature mapping for domestic.
+  const resolvedServiceCode = useMemo(() => {
+    if (serviceMode === "custom") return customServiceCode.trim().toUpperCase();
+    if (serviceMode === "auto") return "auto";
+    if (requireSignature && destScope === "domestic") {
+      return rmSignedVariant(serviceMode) ?? serviceMode;
+    }
+    return serviceMode;
+  }, [serviceMode, customServiceCode, requireSignature, destScope]);
+
+  const serviceCode = resolvedServiceCode;
 
   // Look up suggestion metadata if the selected/typed code matches one we know about.
   // Falls back to a generic 20kg cap so unknown codes still pass weight checks.
@@ -175,6 +202,20 @@ function LabelForm({
       }
     );
   }, [serviceCode]);
+
+  // Whether the "Signature required" checkbox should be offered for the
+  // currently-selected base service. Only domestic, non-signed picks qualify.
+  const baseServiceDef = useMemo(
+    () => RM_SERVICES.find((s) => s.code === serviceMode),
+    [serviceMode],
+  );
+  const canToggleSignature =
+    destScope === "domestic" &&
+    serviceMode !== "auto" &&
+    serviceMode !== "custom" &&
+    !!baseServiceDef &&
+    !baseServiceDef.signed &&
+    !!rmSignedVariant(serviceMode);
 
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
@@ -288,7 +329,7 @@ function LabelForm({
               <SelectTrigger id="service"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                {rmServicesForFormat(packageFormat).map((s) => (
+                {availableServices.map((s) => (
                   <SelectItem key={s.code} value={s.code}>
                     {s.label} ({s.code})
                   </SelectItem>
@@ -306,6 +347,20 @@ function LabelForm({
                 autoComplete="off"
                 required
               />
+            )}
+            {canToggleSignature && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pt-1">
+                <Checkbox
+                  checked={requireSignature}
+                  onCheckedChange={(v) => setRequireSignature(v === true)}
+                />
+                Signature required (uses {rmSignedVariant(serviceMode)})
+              </label>
+            )}
+            {destScope === "eu" && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                EU destination — ship via Packeta instead of Royal Mail.
+              </p>
             )}
             <p className="text-xs text-muted-foreground">
               Choose Auto if a code is rejected; otherwise use a service enabled on your account.

@@ -133,6 +133,63 @@ export type RmShipment = {
   carrier?: string;
   packeta_packet_id?: string | null;
   packeta_barcode?: string | null;
+  /** Deep link into Click & Drop's UI for this order — used as a fallback
+   *  when the label PDF couldn't be retrieved (e.g. customs needs manual
+   *  confirmation, non-OBA accounts). */
+  click_and_drop_url?: string | null;
+};
+
+// CN22/CN23 customs declaration item. Required for international shipments.
+// `unit_value` is the declared value of one unit in the parent block's
+// currency; `customs_code` is the HS / commodity code; `origin_country` is
+// the ISO-2 country of manufacture.
+export type RmCustomsItem = {
+  sku?: string;
+  name: string;
+  quantity: number;
+  unit_value: number;
+  customs_code: string;
+  origin_country: string;
+  customs_description?: string | null;
+};
+export type RmCustomsContentType =
+  | "saleOfGoods"
+  | "gift"
+  | "documents"
+  | "commercialSample"
+  | "returnedGoods"
+  | "mixedContent"
+  | "other";
+export type RmCustomsBlock = {
+  content_type: RmCustomsContentType;
+  currency_code: string;
+  items: RmCustomsItem[];
+};
+
+// Settings returned by GET /api/royal-mail/settings.
+export type RmSettings = {
+  has_api_key: boolean;
+  use_sandbox: boolean;
+  sender_name: string | null;
+  sender_company: string | null;
+  sender_address_line1: string | null;
+  sender_address_line2: string | null;
+  sender_city: string | null;
+  sender_postcode: string | null;
+  sender_country: string;
+  sender_phone: string | null;
+  sender_email: string | null;
+  /** ISO-2 country of manufacture used when creating CN22/CN23 declarations. */
+  default_origin_country: string;
+  /** Optional EORI number — attached to international shipments when present. */
+  eori_number: string | null;
+  /** Optional IOSS number — attached to international shipments when present. */
+  ioss_number: string | null;
+  /** Default content type for international shipments. */
+  default_content_type: RmCustomsContentType;
+  last_tested_at: string | null;
+  last_test_ok: boolean | null;
+  last_test_message: string | null;
 };
 
 // Packeta carrier from the synced catalog.

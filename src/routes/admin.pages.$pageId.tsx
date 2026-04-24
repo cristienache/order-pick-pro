@@ -69,8 +69,15 @@ const EMPTY_DRAFT: Draft = {
 function PageEditor() {
   const { pageId } = Route.useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const isNew = pageId === "new";
   const numericId = isNew ? null : Number(pageId);
+
+  // Title and slug edits on existing pages are master-admin-only.
+  // New pages can be created by any admin (they choose the initial title/slug
+  // at creation time; from then on only the master admin can rename them).
+  const isMaster = !!user?.master_admin;
+  const canEditIdentity = isNew || isMaster;
 
   const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [original, setOriginal] = useState<Draft>(EMPTY_DRAFT);

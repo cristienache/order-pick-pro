@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as PurchaseOrdersRouteImport } from './routes/purchase-orders'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as OrdersRouteImport } from './routes/orders'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as InventoryRouteImport } from './routes/inventory'
@@ -47,6 +48,11 @@ const SignupRoute = SignupRouteImport.update({
 const PurchaseOrdersRoute = PurchaseOrdersRouteImport.update({
   id: '/purchase-orders',
   path: '/purchase-orders',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OrdersRoute = OrdersRouteImport.update({
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/profile': typeof ProfileRoute
   '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
   '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/integrations': typeof IntegrationsRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/profile': typeof ProfileRoute
   '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
   '/admin/invites': typeof AdminInvitesRoute
@@ -257,6 +265,7 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRouteWithChildren
   '/login': typeof LoginRoute
   '/orders': typeof OrdersRoute
+  '/profile': typeof ProfileRoute
   '/purchase-orders': typeof PurchaseOrdersRouteWithChildren
   '/signup': typeof SignupRoute
   '/admin/branding': typeof AdminBrandingRoute
@@ -290,6 +299,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/orders'
+    | '/profile'
     | '/purchase-orders'
     | '/signup'
     | '/admin/branding'
@@ -320,6 +330,7 @@ export interface FileRouteTypes {
     | '/integrations'
     | '/login'
     | '/orders'
+    | '/profile'
     | '/signup'
     | '/admin/branding'
     | '/admin/invites'
@@ -349,6 +360,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/login'
     | '/orders'
+    | '/profile'
     | '/purchase-orders'
     | '/signup'
     | '/admin/branding'
@@ -381,6 +393,7 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRouteWithChildren
   LoginRoute: typeof LoginRoute
   OrdersRoute: typeof OrdersRoute
+  ProfileRoute: typeof ProfileRoute
   PurchaseOrdersRoute: typeof PurchaseOrdersRouteWithChildren
   SignupRoute: typeof SignupRoute
   AdminBrandingRoute: typeof AdminBrandingRoute
@@ -406,6 +419,13 @@ declare module '@tanstack/react-router' {
       path: '/purchase-orders'
       fullPath: '/purchase-orders'
       preLoaderRoute: typeof PurchaseOrdersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/orders': {
@@ -672,6 +692,7 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRouteWithChildren,
   LoginRoute: LoginRoute,
   OrdersRoute: OrdersRoute,
+  ProfileRoute: ProfileRoute,
   PurchaseOrdersRoute: PurchaseOrdersRouteWithChildren,
   SignupRoute: SignupRoute,
   AdminBrandingRoute: AdminBrandingRoute,

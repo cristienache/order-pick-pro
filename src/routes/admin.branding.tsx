@@ -24,7 +24,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/admin/branding")({
   component: () => (
-    <RequireAuth adminOnly>
+    <RequireAuth masterAdminOnly>
       <AppShell>
         <BrandingPage />
       </AppShell>
@@ -32,8 +32,8 @@ export const Route = createFileRoute("/admin/branding")({
   ),
   head: () => ({
     meta: [
-      { title: "Branding | Ultrax" },
-      { name: "description", content: "Customise the app name, logo and colour palette." },
+      { title: "Style & Branding | Ultrax" },
+      { name: "description", content: "Master-admin styling: colours, logos, navigation labels and identity." },
     ],
   }),
 });

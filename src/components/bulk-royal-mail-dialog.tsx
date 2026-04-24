@@ -316,6 +316,20 @@ export function BulkRoyalMailDialog({
 
         {mode === "create" && !results && (
           <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <Label htmlFor="bulk-destination">Destination</Label>
+              <Select value={destination} onValueChange={(v) => setDestination(v as "domestic" | "international")}>
+                <SelectTrigger id="bulk-destination"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="domestic">UK domestic</SelectItem>
+                  <SelectItem value="international">International (non-EU)</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                EU orders ship via Packeta and are not handled here.
+              </p>
+            </div>
+
             <div className="grid sm:grid-cols-3 gap-3">
               <div className="space-y-2">
                 <Label htmlFor="bulk-format">Package format</Label>
@@ -335,7 +349,7 @@ export function BulkRoyalMailDialog({
                   <SelectTrigger id="bulk-service"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto / Click &amp; Drop rules</SelectItem>
-                    {rmServicesForFormat(packageFormat).map((s) => (
+                    {availableServices.map((s) => (
                       <SelectItem key={s.code} value={s.code}>
                         {s.label} ({s.code})
                       </SelectItem>
@@ -350,6 +364,15 @@ export function BulkRoyalMailDialog({
                     placeholder="Enter code"
                     maxLength={10}
                   />
+                )}
+                {canToggleSignature && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer pt-1">
+                    <Checkbox
+                      checked={requireSignature}
+                      onCheckedChange={(v) => setRequireSignature(v === true)}
+                    />
+                    Signature required ({rmSignedVariant(serviceMode)})
+                  </label>
                 )}
               </div>
 

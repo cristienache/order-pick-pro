@@ -61,6 +61,7 @@ export function BulkRoyalMailDialog({
   );
 
   // Shared create-form state
+  const [destination, setDestination] = useState<"domestic" | "international">("domestic");
   const [serviceMode, setServiceMode] = useState<string>("auto");
   const [customServiceCode, setCustomServiceCode] = useState<string>("");
   const [packageFormat, setPackageFormat] = useState<"L" | "F" | "P">("P");
@@ -69,6 +70,7 @@ export function BulkRoyalMailDialog({
   const [width, setWidth] = useState<string>("");
   const [height, setHeight] = useState<string>("");
   const [safePlace, setSafePlace] = useState<string>("");
+  const [requireSignature, setRequireSignature] = useState(false);
 
   // Run state
   const [busy, setBusy] = useState(false);

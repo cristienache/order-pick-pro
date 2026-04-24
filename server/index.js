@@ -1401,23 +1401,31 @@ app.put("/api/royal-mail/sender", requireAuth, (req, res) => {
       UPDATE royal_mail_credentials
       SET sender_name = ?, sender_company = ?, sender_address_line1 = ?, sender_address_line2 = ?,
           sender_city = ?, sender_postcode = ?, sender_country = ?, sender_phone = ?, sender_email = ?,
+          default_origin_country = ?, eori_number = ?, ioss_number = ?, default_content_type = ?,
           updated_at = datetime('now')
       WHERE user_id = ?
     `).run(
       d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+      d.default_origin_country || "GB",
+      d.eori_number, d.ioss_number,
+      d.default_content_type || "saleOfGoods",
       req.user.id,
     );
   } else {
     db.prepare(`
       INSERT INTO royal_mail_credentials (
         user_id, sender_name, sender_company, sender_address_line1, sender_address_line2,
-        sender_city, sender_postcode, sender_country, sender_phone, sender_email
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        sender_city, sender_postcode, sender_country, sender_phone, sender_email,
+        default_origin_country, eori_number, ioss_number, default_content_type
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       req.user.id,
       d.sender_name, d.sender_company, d.sender_address_line1, d.sender_address_line2,
       d.sender_city, d.sender_postcode, d.sender_country || "GB", d.sender_phone, d.sender_email,
+      d.default_origin_country || "GB",
+      d.eori_number, d.ioss_number,
+      d.default_content_type || "saleOfGoods",
     );
   }
   const row = db.prepare("SELECT * FROM royal_mail_credentials WHERE user_id = ?").get(req.user.id);

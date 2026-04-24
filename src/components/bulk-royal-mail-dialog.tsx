@@ -76,6 +76,33 @@ export function BulkRoyalMailDialog({
   const [safePlace, setSafePlace] = useState<string>("");
   const [requireSignature, setRequireSignature] = useState(false);
 
+  // Royal Mail settings — used to seed sender defaults (origin country,
+  // content type, currency reminder) for the bulk customs panel.
+  const [rmSettings, setRmSettings] = useState<RmSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ settings: RmSettings }>("/api/royal-mail/settings")
+      .then((r) => { if (!cancelled) setRmSettings(r.settings); })
+      .catch(() => { /* non-fatal */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const defaultOrigin = (rmSettings?.default_origin_country || "GB").toUpperCase();
+  const defaultContentType: RmCustomsContentType = rmSettings?.default_content_type || "saleOfGoods";
+
+  // Shared customs (only used when destination = international).
+  const [customsContentType, setCustomsContentType] =
+    useState<RmCustomsContentType>(defaultContentType);
+  const [customsCurrency, setCustomsCurrency] = useState<string>("GBP");
+  const [customsCode, setCustomsCode] = useState<string>("");
+  const [customsOrigin, setCustomsOrigin] = useState<string>(defaultOrigin);
+  const [customsDescription, setCustomsDescription] = useState<string>("");
+  // Re-seed when settings load so the form shows the user's saved defaults.
+  useEffect(() => {
+    setCustomsContentType(defaultContentType);
+    setCustomsOrigin(defaultOrigin);
+  }, [defaultContentType, defaultOrigin]);
+
   // Run state
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<BulkResultRow[] | null>(null);

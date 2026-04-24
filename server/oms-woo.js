@@ -564,6 +564,7 @@ export function mountOmsWoo(app, { requireAuth }) {
     //  - Page 1 + prior sync exists: use MAX(last_synced_at) minus 5min buffer
     //    (clock skew + WC eventual consistency on `date_modified`).
     let since = "";
+    let cursor = String(req.query.cursor || req.body?.cursor || "");
     if (page > 1) {
       since = String(req.query.since || req.body?.since || "");
     } else if (!forceFull) {
@@ -576,6 +577,7 @@ export function mountOmsWoo(app, { requireAuth }) {
           since = new Date(t - 5 * 60 * 1000).toISOString();
         }
       }
+      cursor = prev?.ts ? String(prev.ts) : "";
     }
 
     try {
@@ -602,17 +604,22 @@ export function mountOmsWoo(app, { requireAuth }) {
         if (!ts) return latest;
         if (!latest) return ts;
         return Date.parse(ts) > Date.parse(latest) ? ts : latest;
-      }, since || "");
-      const nextSince = cursorSource || since;
+      }, cursor || since || "");
+      const nextCursor = cursorSource || cursor || since;
+      const done = totalPages != null ? page >= totalPages : batch.length < perPage;
 
       if (!Array.isArray(batch) || batch.length === 0) {
+        if (done && nextCursor) {
+          db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor, site.id);
+          incrementalCandidateCache.delete(`${site.id}:${since}`);
+        }
         return res.json({
           page, per_page: perPage, batch_size: 0,
           created, updated, errors,
-          done: true, next_page: null,
+          done, next_page: done ? null : page + 1,
           total_products: totalProducts, total_pages: totalPages,
           warehouse_id: warehouseId,
-          incremental: !!since, since: nextSince,
+          incremental: !!since, since, cursor: nextCursor,
         });
       }
 
@@ -675,9 +682,8 @@ export function mountOmsWoo(app, { requireAuth }) {
         }
       }
 
-      const done = batch.length < perPage;
-      if (done && nextSince) {
-        db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextSince, site.id);
+      if (done && nextCursor) {
+        db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor, site.id);
         incrementalCandidateCache.delete(`${site.id}:${since}`);
       }
       res.json({
@@ -688,7 +694,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         total_products: totalProducts,
         total_pages: totalPages,
         warehouse_id: warehouseId,
-        incremental: !!since, since: nextSince,
+        incremental: !!since, since, cursor: nextCursor,
       });
     } catch (e) {
       console.error("[oms-woo] sync failed:", e);

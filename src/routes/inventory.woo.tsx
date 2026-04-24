@@ -810,13 +810,25 @@ function WooInventory() {
                         />
                       </td>
                       <td className="h-9 border-b p-0 align-middle">
-                        <Input
-                          value={d.sale_price}
-                          onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
-                          inputMode="decimal"
-                          placeholder={isVariableParent ? "→ all" : ""}
-                          className="h-9 w-full rounded-none border-0 bg-transparent px-2 text-right font-mono text-xs focus-visible:ring-1"
-                        />
+                        <div className="relative h-9">
+                          <Input
+                            value={d.sale_price}
+                            onChange={(e) => updateDraft(p.id, { sale_price: e.target.value })}
+                            inputMode="decimal"
+                            placeholder={isVariableParent ? "→ all" : ""}
+                            className="h-9 w-full rounded-none border-0 bg-transparent pl-2 pr-6 text-right font-mono text-xs focus-visible:ring-1"
+                          />
+                          {d.sale_price !== "" && (
+                            <button
+                              type="button"
+                              onClick={() => updateDraft(p.id, { sale_price: "" })}
+                              title="Clear sale price (will remove the sale on WooCommerce after Save + Push)"
+                              className="absolute right-1 top-1/2 -translate-y-1/2 grid h-5 w-5 place-items-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                            >
+                              <span className="text-xs leading-none">×</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="h-9 border-b p-0 align-middle">
                         <Input

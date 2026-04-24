@@ -444,6 +444,29 @@ function WooInventory() {
     }
   };
 
+  /** Delete the currently selected products from HeyShop only. The
+   *  WooCommerce store is untouched — re-syncing will re-import them. */
+  const deleteSelectedLocal = async () => {
+    if (!siteId || !site || selectedIds.length === 0) return;
+    setDeleting(true);
+    try {
+      const r = await wcApi.deleteLocal(siteId, selectedIds);
+      toast.success(
+        `Removed ${r.deleted} product${r.deleted === 1 ? "" : "s"} from HeyShop. WooCommerce store was not touched.`,
+      );
+      setSelected(new Set());
+      setDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ["wc-products", siteId] });
+      qc.invalidateQueries({ queryKey: ["wc-sites"] });
+      qc.invalidateQueries({ queryKey: ["oms-products"] });
+      qc.invalidateQueries({ queryKey: ["oms-inventory"] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Delete failed");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const buildEditsForIds = (ids: string[]): WcEditPayload[] => {
     return ids.map((pid) => {
       const d = drafts[pid]; const o = originals[pid];

@@ -579,35 +579,31 @@ export function mountOmsWoo(app, { requireAuth }) {
     }
 
     try {
-      // `modified_after` defaults to the SITE's local timezone in WC REST.
-      // We always send UTC, so we MUST also set `dates_are_gmt=true` —
-      // otherwise stores east of UTC silently drop recently-created/edited
-      // products (the "since" cursor lands in their local future).
-      //
-      // We also union `modified_after` with `after` (date_created) because
-      // some WC versions / caching plugins delay updating `date_modified`
-      // on brand-new products, which would otherwise hide them from an
-      // incremental sync. Two cheap requests > one missed product.
-      const orderParams = since
-        ? `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}&dates_are_gmt=true`
-        : `orderby=id&order=asc`;
-      const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&${orderParams}`;
-      const wcRes = await fetch(url, {
-        headers: {
-          Authorization: authHeader(site.consumer_key, site.consumer_secret),
-          Accept: "application/json",
-        },
-      });
-      if (!wcRes.ok) {
-        const text = await wcRes.text().catch(() => "");
-        throw new Error(`WC ${wcRes.status}: ${text.slice(0, 300)}`);
+      let batch = [];
+      let totalProducts = null;
+      let totalPages = null;
+
+      if (since) {
+        const candidates = await listIncrementalCandidates(site, since);
+        totalProducts = candidates.length;
+        totalPages = candidates.length ? Math.ceil(candidates.length / perPage) : 0;
+        const slice = candidates.slice((page - 1) * perPage, page * perPage).map((item) => item.id);
+        batch = await fetchProductsByIds(site, slice);
+      } else {
+        const full = await fetchWcProducts(site, `per_page=${perPage}&page=${page}&orderby=id&order=asc`);
+        batch = full.items;
+        totalProducts = full.total || null;
+        totalPages = full.totalPages || null;
       }
-      const batch = await wcRes.json();
       const nowIso = new Date().toISOString();
 
-      // Total products header from WC — useful so the client can show progress.
-      const totalProducts = Number(wcRes.headers.get("x-wp-total")) || null;
-      const totalPages = Number(wcRes.headers.get("x-wp-totalpages")) || null;
+      const cursorSource = batch.reduce((latest, item) => {
+        const ts = wcProductTimestamp(item);
+        if (!ts) return latest;
+        if (!latest) return ts;
+        return Date.parse(ts) > Date.parse(latest) ? ts : latest;
+      }, since || "");
+      const nextSince = cursorSource || since;
 
       if (!Array.isArray(batch) || batch.length === 0) {
         return res.json({
@@ -616,7 +612,7 @@ export function mountOmsWoo(app, { requireAuth }) {
           done: true, next_page: null,
           total_products: totalProducts, total_pages: totalPages,
           warehouse_id: warehouseId,
-          incremental: !!since, since,
+          incremental: !!since, since: nextSince,
         });
       }
 
@@ -688,7 +684,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         total_products: totalProducts,
         total_pages: totalPages,
         warehouse_id: warehouseId,
-        incremental: !!since, since,
+        incremental: !!since, since: nextSince,
       });
     } catch (e) {
       console.error("[oms-woo] sync failed:", e);

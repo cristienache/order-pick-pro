@@ -184,6 +184,41 @@ function WooInventory() {
     const wMin = filters.weightMin ? Number(filters.weightMin) : null;
     const wMax = filters.weightMax ? Number(filters.weightMax) : null;
 
+    // Pre-index variations by parent so we can answer "does any variation of
+    // this variable parent match the numeric range filters?" in O(1).
+    const allVariationsByParent = new Map<string, typeof siteProducts>();
+    for (const p of siteProducts) {
+      if (p.wc_type === "variation" && p.parent_product_id) {
+        const arr = allVariationsByParent.get(p.parent_product_id) ?? [];
+        arr.push(p);
+        allVariationsByParent.set(p.parent_product_id, arr);
+      }
+    }
+    const inRange = (val: number | null | undefined, lo: number | null, hi: number | null) => {
+      if (lo == null && hi == null) return true;
+      if (val == null) return false;
+      if (lo != null && val < lo) return false;
+      if (hi != null && val > hi) return false;
+      return true;
+    };
+    const matchesNumericRanges = (p: typeof siteProducts[number]) => {
+      // Variable parents have no own price/weight — defer to their variations.
+      if (p.wc_type === "variable") {
+        const vars = allVariationsByParent.get(p.id) ?? [];
+        if (pMin == null && pMax == null && sMin == null && sMax == null && wMin == null && wMax == null) return true;
+        return vars.some((v) =>
+          inRange(v.regular_price, pMin, pMax) &&
+          inRange(v.sale_price, sMin, sMax) &&
+          inRange(v.weight, wMin, wMax),
+        );
+      }
+      return (
+        inRange(p.regular_price, pMin, pMax) &&
+        inRange(p.sale_price, sMin, sMax) &&
+        inRange(p.weight, wMin, wMax)
+      );
+    };
+
     const list = siteProducts.filter((p) => {
       if (term && !p.sku.toLowerCase().includes(term) && !p.name.toLowerCase().includes(term)) return false;
       if (p.parent_product_id && collapsed.has(p.parent_product_id)) return false;
@@ -203,12 +238,7 @@ function WooInventory() {
         if (filters.stockState === "low" && (q <= 0 || q > 5)) return false;
         if (filters.stockState === "over" && q <= 100) return false;
       }
-      if (pMin != null && (p.regular_price ?? 0) < pMin) return false;
-      if (pMax != null && (p.regular_price ?? 0) > pMax) return false;
-      if (sMin != null && (p.sale_price ?? 0) < sMin) return false;
-      if (sMax != null && (p.sale_price ?? 0) > sMax) return false;
-      if (wMin != null && (p.weight ?? 0) < wMin) return false;
-      if (wMax != null && (p.weight ?? 0) > wMax) return false;
+      if (!matchesNumericRanges(p)) return false;
       return true;
     });
 

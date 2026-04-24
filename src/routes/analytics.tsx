@@ -549,18 +549,32 @@ function AnalyticsPage() {
 /* ---------------- Sub-components ---------------- */
 
 function KpiCard({
-  label, value, delta, loading, invertDelta,
+  label, value, delta, loading, invertDelta, hint,
 }: {
   label: string; value: string;
   delta: { v: number; positive: boolean } | null;
-  loading: boolean; invertDelta?: boolean;
+  loading: boolean; invertDelta?: boolean; hint?: string;
 }) {
   const showPositive = delta ? (invertDelta ? !delta.positive : delta.positive) : true;
+  const labelEl = hint ? (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors">
+            {label} <HelpCircle className="h-3 w-3 opacity-60" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-[260px] text-xs">{hint}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  ) : (
+    <div className="text-xs text-muted-foreground">{label}</div>
+  );
   return (
     <Card className="border border-border/70">
       <CardContent className="p-4">
         <div className="flex items-start justify-between">
-          <div className="text-xs text-muted-foreground">{label}</div>
+          {labelEl}
           {delta && (
             <Badge
               variant="secondary"

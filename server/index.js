@@ -2754,6 +2754,27 @@ async function createShipmentForUser({ userId, data: input, creds }) {
     if (fetched && fetched.length > 0) d.line_items = fetched;
   }
 
+  // International shipments require a customs block. We hard-fail here rather
+  // than silently send a domestic-shaped payload that Royal Mail would later
+  // reject — or worse, accept and produce a label without the CN22/CN23.
+  const isInternational =
+    String(d.recipient.country_code || "GB").toUpperCase() !== "GB";
+  if (isInternational && (!d.customs || !d.customs.items?.length)) {
+    return {
+      status: 400,
+      body: { error: "Customs declaration is required for international shipments." },
+    };
+  }
+
+  // Aggregate declared values for the order-level totals. C&D wants subtotal
+  // and total to roughly match the sum of contents[].unitValue * quantity.
+  const customsTotal = d.customs
+    ? d.customs.items.reduce(
+        (s, c) => s + (Number(c.unit_value) || 0) * (Number(c.quantity) || 1), 0,
+      )
+    : 0;
+  const orderCurrency = d.customs?.currency_code || "GBP";
+
   const cndOrder = {
     orderReference: d.customer_reference,
     isRecipientABusiness: false,
@@ -2787,6 +2808,10 @@ async function createShipmentForUser({ userId, data: input, creds }) {
         postcode: rm.sender_postcode,
         countryCode: rm.sender_country || "GB",
       },
+      // EORI/IOSS only meaningful on international shipments. Royal Mail
+      // ignores the fields when the recipient is GB.
+      ...(isInternational && rm.eori_number ? { eoriNumber: rm.eori_number } : {}),
+      ...(isInternational && rm.ioss_number ? { iossNumber: rm.ioss_number } : {}),
     },
     packages: [
       {
@@ -2799,18 +2824,28 @@ async function createShipmentForUser({ userId, data: input, creds }) {
             depthInMms: d.length_mm,
           },
         } : {}),
+        // C&D expects contentType on each package for international parcels.
+        ...(isInternational ? {
+          packageOccurrence: {
+            contentType: d.customs?.content_type
+              || rm.default_content_type
+              || "saleOfGoods",
+          },
+        } : {}),
         contents: buildCndContents({
           lineItems: d.line_items,
+          customsItems: isInternational ? d.customs.items : null,
           fallbackName: d.description_of_goods,
           totalWeightGrams: d.weight_grams,
+          originCountry: rm.default_origin_country || "GB",
         }),
       },
     ],
     orderDate: new Date().toISOString(),
-    subtotal: 0,
+    subtotal: customsTotal,
     shippingCostCharged: 0,
-    total: 0,
-    currencyCode: "GBP",
+    total: customsTotal,
+    currencyCode: orderCurrency,
     ...(d.service_code ? {
       postageDetails: {
         serviceCode: d.service_code,
@@ -2821,7 +2856,8 @@ async function createShipmentForUser({ userId, data: input, creds }) {
     } : {}),
     label: {
       includeLabelInResponse: false,
-      includeCN: false,
+      // Customs declaration prints alongside the label for international.
+      includeCN: isInternational,
       includeReturnsLabel: false,
     },
   };

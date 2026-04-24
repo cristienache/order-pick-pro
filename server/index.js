@@ -3557,7 +3557,7 @@ app.get("/api/analytics/revenue", requireAuth, async (req, res) => {
   if (p.error) return res.status(400).json({ error: p.error });
   const interval = ["day", "week", "month"].includes(req.query.interval) ? req.query.interval : "day";
 
-  const cacheKey = `revenue:${req.user.id}:${p.fromDay}:${p.toDay}:${interval}:${p.siteIds.join(",")}`;
+  const cacheKey = `revenue:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${interval}:${p.siteIds.join(",")}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -3620,7 +3620,7 @@ app.get("/api/analytics/top-products", requireAuth, async (req, res) => {
   if (p.error) return res.status(400).json({ error: p.error });
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
 
-  const cacheKey = `top-products:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
+  const cacheKey = `top-products:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -3666,7 +3666,7 @@ app.get("/api/analytics/orders-stats", requireAuth, async (req, res) => {
   const p = parseAnalyticsParams(req);
   if (p.error) return res.status(400).json({ error: p.error });
 
-  const cacheKey = `orders-stats:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
+  const cacheKey = `orders-stats:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -3702,7 +3702,7 @@ app.get("/api/analytics/customers", requireAuth, async (req, res) => {
   const p = parseAnalyticsParams(req);
   if (p.error) return res.status(400).json({ error: p.error });
 
-  const cacheKey = `customers:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
+  const cacheKey = `customers:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -3743,7 +3743,7 @@ app.get("/api/analytics/coupons", requireAuth, async (req, res) => {
   if (p.error) return res.status(400).json({ error: p.error });
   const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 10));
 
-  const cacheKey = `coupons:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
+  const cacheKey = `coupons:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${limit}:${p.siteIds.join(",")}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 

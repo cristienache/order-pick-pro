@@ -156,7 +156,7 @@ function AnalyticsPage() {
   }, []);
 
   const params = useMemo(() => {
-    if (!range.from || !selectedSiteId) return null;
+    if (!range?.from || !selectedSiteId) return null;
     return {
       from: fmtDay(range.from),
       to: fmtDay(range.to || range.from),
@@ -238,14 +238,14 @@ function AnalyticsPage() {
   }
 
   const dateLabel = useMemo(() => {
-    if (!range.from) return "Pick a range";
+    if (!range?.from) return "Pick a range";
     if (range.to && range.to.getTime() !== range.from.getTime()) {
       return `${format(range.from, "MMM d")} – ${format(range.to, "MMM d, yyyy")}`;
     }
     return format(range.from, "MMM d, yyyy");
   }, [range]);
 
-  const days = range.from && range.to ? differenceInDays(range.to, range.from) + 1 : 1;
+  const days = range?.from && range?.to ? differenceInDays(range.to, range.from) + 1 : 1;
 
   const allWarnings: AnalyticsWarning[] = useMemo(() => {
     const out: AnalyticsWarning[] = [];

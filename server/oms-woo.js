@@ -450,11 +450,18 @@ export function mountOmsWoo(app, { requireAuth }) {
   });
 
   // ----- Sync a site's WC catalog into oms_products -----
-  // Chunked sync: each call processes ONE page of products (default 50) +
-  // their variations, then returns `next_page` so the client can loop.
-  // This keeps every individual request under the 30s edge timeout that
-  // was causing 504s on big stores. The client (inventory.woo.tsx) drives
-  // the loop and shows live progress.
+  // INCREMENTAL by default: only fetches products WC has modified since the
+  // last successful sync (`modified_after` query). On a store with 5000
+  // products and 10 recent edits, this pulls 1 page of ~10 rows instead of
+  // 100 pages of 50. WC bumps `date_modified` on a parent whenever any of
+  // its variations change, so variation edits are picked up automatically.
+  //
+  // Force a full re-import with `?full=1` (used after a wipe, or for
+  // recovery if the local mirror is suspected stale).
+  //
+  // The "since" cursor is captured on page 1 and threaded through the
+  // multi-page client loop via `?since=<iso>` so all pages of one logical
+  // sync see the same window — even if products are modified mid-sync.
   app.post(`${r}/sync/:siteId`, requireAuth, async (req, res) => {
     let site;
     try { site = getSiteForUser(req.user.id, req.params.siteId); }
@@ -464,11 +471,38 @@ export function mountOmsWoo(app, { requireAuth }) {
     const base = normalizeUrl(site.store_url);
     const page = Math.max(1, Number(req.query.page) || Number(req.body?.page) || 1);
     const perPage = Math.min(100, Math.max(10, Number(req.query.per_page) || 50));
+    const forceFull = req.query.full === "1" || req.body?.full === true;
     let created = 0, updated = 0;
     const errors = [];
 
+    // Resolve the "modified_after" cursor.
+    //  - Page > 1: trust the `since` the client carried over (or empty for full).
+    //  - Page 1 + forceFull: empty → full sync.
+    //  - Page 1 + no prior sync ever: empty → full first-time import.
+    //  - Page 1 + prior sync exists: use MAX(last_synced_at) minus 5min buffer
+    //    (clock skew + WC eventual consistency on `date_modified`).
+    let since = "";
+    if (page > 1) {
+      since = String(req.query.since || req.body?.since || "");
+    } else if (!forceFull) {
+      const prev = db.prepare(
+        `SELECT MAX(last_synced_at) AS ts FROM oms_products WHERE site_id = ?`,
+      ).get(site.id);
+      if (prev?.ts) {
+        const t = new Date(prev.ts).getTime();
+        if (Number.isFinite(t)) {
+          since = new Date(t - 5 * 60 * 1000).toISOString();
+        }
+      }
+    }
+
     try {
-      const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&orderby=id&order=asc`;
+      // `modified_after` accepts ISO 8601 (UTC). We order by modified asc
+      // so paging stays deterministic even as new edits land mid-sync.
+      const orderParams = since
+        ? `orderby=modified&order=asc&modified_after=${encodeURIComponent(since)}`
+        : `orderby=id&order=asc`;
+      const url = `${base}/wp-json/wc/v3/products?per_page=${perPage}&page=${page}&${orderParams}`;
       const wcRes = await fetch(url, {
         headers: {
           Authorization: authHeader(site.consumer_key, site.consumer_secret),

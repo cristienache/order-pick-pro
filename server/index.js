@@ -1296,6 +1296,15 @@ const rmSenderSchema = z.object({
   sender_country: z.string().trim().min(2).max(3).optional().default("GB"),
   sender_phone: optAddrField(40),
   sender_email: z.string().trim().email().max(200).optional().or(z.literal("")).transform((v) => v || null),
+  // International customs defaults — all optional. When set they're attached
+  // to every international order payload so the customs declaration prints.
+  default_origin_country: z.string().trim().length(2).optional().or(z.literal("")).transform((v) => (v ? v.toUpperCase() : null)),
+  eori_number: optAddrField(40),
+  ioss_number: optAddrField(40),
+  default_content_type: z.enum([
+    "saleOfGoods", "gift", "documents", "commercialSample",
+    "returnedGoods", "mixedContent", "other",
+  ]).optional().or(z.literal("")).transform((v) => v || null),
 });
 
 // Public-safe view: never returns the encrypted credential blob, only a flag
@@ -1309,6 +1318,9 @@ function rmRowToPublic(row) {
       sender_address_line1: null, sender_address_line2: null,
       sender_city: null, sender_postcode: null,
       sender_country: "GB", sender_phone: null, sender_email: null,
+      default_origin_country: "GB",
+      eori_number: null, ioss_number: null,
+      default_content_type: "saleOfGoods",
       last_tested_at: null, last_test_ok: null, last_test_message: null,
     };
   }
@@ -1324,6 +1336,10 @@ function rmRowToPublic(row) {
     sender_country: row.sender_country || "GB",
     sender_phone: row.sender_phone,
     sender_email: row.sender_email,
+    default_origin_country: row.default_origin_country || "GB",
+    eori_number: row.eori_number || null,
+    ioss_number: row.ioss_number || null,
+    default_content_type: row.default_content_type || "saleOfGoods",
     last_tested_at: row.last_tested_at,
     last_test_ok: row.last_test_ok === null ? null : Boolean(row.last_test_ok),
     last_test_message: row.last_test_message,

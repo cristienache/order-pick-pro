@@ -19,13 +19,17 @@ export type WcSyncState = {
   errors: number;
   done: boolean;
   startedAt: number;
+  /** True when the run is using the incremental `modified_after` filter. */
+  incremental: boolean;
 };
 
 type Ctx = {
   current: WcSyncState | null;
   isRunning: boolean;
-  /** Kick off a background sync. No-ops if one is already running. */
-  startWcSync: (siteId: number, siteName: string) => Promise<void>;
+  /** Kick off a background sync. No-ops if one is already running.
+   *  By default runs INCREMENTAL — only products WC has modified since the
+   *  last successful sync. Pass `{ full: true }` to re-import everything. */
+  startWcSync: (siteId: number, siteName: string, opts?: { full?: boolean }) => Promise<void>;
   /** Soft-cancel — finishes the in-flight page then stops. */
   cancel: () => void;
 };

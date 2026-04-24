@@ -834,6 +834,60 @@ export function mountOmsWoo(app, { requireAuth }) {
     res.json({ ok: true, ...result, site_id: site.id });
   });
 
+  // ----- Delete selected products from HeyShop only (WC untouched) -----
+  // Removes the given oms_products rows for the active site, plus their
+  // oms_inventory + oms_audit rows. If a deleted row is a variable parent,
+  // its variations are deleted too (otherwise they'd become orphans).
+  // The product still lives on the WooCommerce store — re-syncing will pull
+  // it back in.
+  // Body: { site_id: number, product_ids: string[] }
+  app.post(`${r}/products/delete-local`, requireAuth, (req, res) => {
+    const { site_id, product_ids } = req.body || {};
+    if (!Number.isInteger(site_id) || !Array.isArray(product_ids) || product_ids.length === 0) {
+      return res.status(422).json({ error: "site_id + product_ids[] required" });
+    }
+    let site;
+    try { site = getSiteForUser(req.user.id, site_id); }
+    catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
+
+    const tx = db.transaction(() => {
+      const placeholders = product_ids.map(() => "?").join(",");
+      const rows = db.prepare(
+        `SELECT id, wc_type FROM oms_products
+          WHERE site_id = ? AND id IN (${placeholders})`,
+      ).all(site.id, ...product_ids);
+      if (rows.length === 0) return { deleted: 0 };
+
+      // Expand variable parents → include their variations so we don't orphan them.
+      const targetIds = new Set(rows.map((row) => row.id));
+      const parentIds = rows.filter((row) => row.wc_type === "variable").map((row) => row.id);
+      if (parentIds.length > 0) {
+        const ph = parentIds.map(() => "?").join(",");
+        const children = db.prepare(
+          `SELECT id FROM oms_products
+            WHERE site_id = ? AND parent_product_id IN (${ph})`,
+        ).all(site.id, ...parentIds);
+        for (const c of children) targetIds.add(c.id);
+      }
+
+      const ids = [...targetIds];
+      const ph = ids.map(() => "?").join(",");
+      db.prepare(`DELETE FROM oms_inventory WHERE product_id IN (${ph})`).run(...ids);
+      try { db.prepare(`DELETE FROM oms_audit WHERE product_id IN (${ph})`).run(...ids); }
+      catch { /* audit table may not exist on older installs */ }
+      // Detach any remaining child links to dodge FK checks.
+      db.prepare(
+        `UPDATE oms_products SET parent_product_id = NULL
+          WHERE site_id = ? AND parent_product_id IN (${ph})`,
+      ).run(site.id, ...ids);
+      const result = db.prepare(
+        `DELETE FROM oms_products WHERE site_id = ? AND id IN (${ph})`,
+      ).run(site.id, ...ids);
+      return { deleted: result.changes };
+    });
+    const out = tx();
+    res.json({ ok: true, ...out, site_id: site.id });
+  });
 
   // Body: { site_id, product_ids: string[] (oms ids), label?: string }
   app.post(`${r}/backups`, requireAuth, async (req, res) => {

@@ -3418,7 +3418,7 @@ app.get("/api/analytics/overview", requireAuth, async (req, res) => {
   const compare = req.query.compare === "previous_year" ? "previous_year"
     : req.query.compare === "previous_period" ? "previous_period" : null;
 
-  const cacheKey = `overview:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}:${compare || ""}`;
+  const cacheKey = `overview:v2:${req.user.id}:${p.fromDay}:${p.toDay}:${p.siteIds.join(",")}:${compare || ""}`;
   const cached = cacheGet(cacheKey);
   if (cached) return res.json(cached);
 
@@ -3436,20 +3436,34 @@ app.get("/api/analytics/overview", requireAuth, async (req, res) => {
             wcaPerf(site, { from, to }),
             wcaCurrency(site),
           ]);
-          if (perf.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "wc-analytics unavailable, using legacy reports" });
+          if (perf.limited) warnings.push({ site_id: s.id, site_name: s.name, error: "wc-analytics unavailable, using order scan" });
+          const bd = perf.breakdown || null;
+          const toGbp = (v) => toGbpAmount(v || 0, currency, fx.rates);
           return {
             site_id: s.id,
             site_name: s.name,
             currency,
+            limited: !!perf.limited,
             revenue: perf.revenue,
-            revenue_gbp: toGbpAmount(perf.revenue, currency, fx.rates),
+            revenue_gbp: toGbp(perf.revenue),
             orders: perf.orders,
             avg_order_value: perf.avg_order_value,
-            avg_order_value_gbp: toGbpAmount(perf.avg_order_value, currency, fx.rates),
+            avg_order_value_gbp: toGbp(perf.avg_order_value),
             items_sold: perf.items_sold,
             customers: perf.customers,
             refunds: perf.refunds,
-            refunds_gbp: toGbpAmount(perf.refunds, currency, fx.rates),
+            refunds_gbp: toGbp(perf.refunds),
+            // Per-site breakdown (in store currency + GBP)
+            breakdown: bd ? {
+              gross_sales: bd.gross_sales, gross_sales_gbp: toGbp(bd.gross_sales),
+              coupons: bd.coupons, coupons_gbp: toGbp(bd.coupons),
+              refunds: bd.refunds, refunds_gbp: toGbp(bd.refunds),
+              net_sales: bd.net_sales, net_sales_gbp: toGbp(bd.net_sales),
+              shipping: bd.shipping, shipping_gbp: toGbp(bd.shipping),
+              taxes: bd.taxes, taxes_gbp: toGbp(bd.taxes),
+              fees: bd.fees, fees_gbp: toGbp(bd.fees),
+              total_sales: bd.total_sales, total_sales_gbp: toGbp(bd.total_sales),
+            } : null,
           };
         } catch (e) {
           warnings.push({ site_id: s.id, site_name: s.name, error: String(e.message || e).slice(0, 200) });
@@ -3463,8 +3477,27 @@ app.get("/api/analytics/overview", requireAuth, async (req, res) => {
         acc.items_sold += x.items_sold;
         acc.refunds_gbp += x.refunds_gbp;
         acc.customers += x.customers;
+        // Breakdown rollup
+        if (x.breakdown) {
+          acc.bd.gross_sales_gbp += x.breakdown.gross_sales_gbp;
+          acc.bd.coupons_gbp += x.breakdown.coupons_gbp;
+          acc.bd.refunds_gbp += x.breakdown.refunds_gbp;
+          acc.bd.net_sales_gbp += x.breakdown.net_sales_gbp;
+          acc.bd.shipping_gbp += x.breakdown.shipping_gbp;
+          acc.bd.taxes_gbp += x.breakdown.taxes_gbp;
+          acc.bd.fees_gbp += x.breakdown.fees_gbp;
+          acc.bd.total_sales_gbp += x.breakdown.total_sales_gbp;
+          acc.hasBreakdown = true;
+        }
         return acc;
-      }, { revenue_gbp: 0, orders: 0, items_sold: 0, refunds_gbp: 0, customers: 0 });
+      }, {
+        revenue_gbp: 0, orders: 0, items_sold: 0, refunds_gbp: 0, customers: 0,
+        hasBreakdown: false,
+        bd: {
+          gross_sales_gbp: 0, coupons_gbp: 0, refunds_gbp: 0, net_sales_gbp: 0,
+          shipping_gbp: 0, taxes_gbp: 0, fees_gbp: 0, total_sales_gbp: 0,
+        },
+      });
       return { perSite: valid, totals };
     }
 
@@ -3495,6 +3528,7 @@ app.get("/api/analytics/overview", requireAuth, async (req, res) => {
         refunds_gbp: tot.refunds_gbp,
         refund_count: 0,
       },
+      breakdown_gbp: tot.hasBreakdown ? tot.bd : null,
       previous: previousTotals ? {
         revenue_gbp: previousTotals.revenue_gbp,
         orders: previousTotals.orders,
@@ -3505,6 +3539,7 @@ app.get("/api/analytics/overview", requireAuth, async (req, res) => {
         refunds_gbp: previousTotals.refunds_gbp,
         refund_count: 0,
       } : undefined,
+      previous_breakdown_gbp: previousTotals && previousTotals.hasBreakdown ? previousTotals.bd : null,
       per_site: current.perSite,
       warnings,
       fx_source: fx.source || "fallback",

@@ -619,6 +619,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         return Date.parse(ts) > Date.parse(latest) ? ts : latest;
       }, cursor || since || "");
       const nextCursor = cursorSource || cursor || since;
+      const nextCursorWithOverlap = cursorWithOverlap(nextCursor || since || "");
       const completedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
       const done = totalPages != null ? page >= totalPages : batch.length < perPage;
 
@@ -627,7 +628,7 @@ export function mountOmsWoo(app, { requireAuth }) {
           if (forceFull) {
             db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(completedAt, completedAt, site.id);
           } else {
-            db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(completedAt, site.id);
+            db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursorWithOverlap || completedAt, site.id);
           }
           incrementalCandidateCache.delete(`${site.id}:${since}`);
         }
@@ -704,7 +705,7 @@ export function mountOmsWoo(app, { requireAuth }) {
         if (forceFull) {
           db.prepare(`UPDATE sites SET wc_sync_cursor = ?, wc_full_sync_cursor = ? WHERE id = ?`).run(completedAt, completedAt, site.id);
         } else {
-          db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursor || completedAt, site.id);
+          db.prepare(`UPDATE sites SET wc_sync_cursor = ? WHERE id = ?`).run(nextCursorWithOverlap || completedAt, site.id);
         }
         incrementalCandidateCache.delete(`${site.id}:${since}`);
       }

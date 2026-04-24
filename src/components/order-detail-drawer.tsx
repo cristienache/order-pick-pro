@@ -504,8 +504,17 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
           order={{
             id: order.id,
             number: order.number,
+            currency: order.currency,
             shipping: order.shipping,
             billing: order.billing,
+            line_items: order.line_items.map((li) => ({
+              id: li.id,
+              name: li.name,
+              sku: li.sku,
+              quantity: li.quantity,
+              subtotal: li.subtotal,
+              total: li.total,
+            })),
           }}
           initialShipment={rm?.shipment ?? null}
           onCreated={(s) => setRm((prev) => prev ? { ...prev, shipment: s } : prev)}

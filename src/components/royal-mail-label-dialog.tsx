@@ -23,23 +23,38 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
+  ExternalLink, RefreshCw, Globe,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, rmDestinationScope, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import {
+  api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant,
+  rmDestinationScope, markShipmentsPrinted,
+  type RmShipment, type RmCustomsContentType, type RmCustomsItem, type RmSettings,
+} from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// Just enough of the WooCommerce order shape to prefill the recipient.
+// Just enough of the WooCommerce order shape to prefill the recipient + customs.
 type WCAddress = {
   first_name?: string; last_name?: string; company?: string;
   address_1?: string; address_2?: string;
   city?: string; state?: string; postcode?: string; country?: string;
   email?: string; phone?: string;
 };
+type WCLineItemLite = {
+  id: number;
+  name: string;
+  sku?: string;
+  quantity: number;
+  subtotal?: string;
+  total?: string;
+};
 type Order = {
   id: number;
   number: string;
+  currency?: string;
   shipping?: WCAddress;
   billing?: WCAddress;
+  line_items?: WCLineItemLite[];
 };
 
 type Props = {
@@ -88,6 +103,46 @@ function recipientFromOrder(order: Order): RecipientForm {
     email: order.billing?.email ?? "",
   };
 }
+
+// Per-line customs form state. We seed one row per WC line item with declared
+// value = subtotal / quantity (matches what was approved in planning).
+type CustomsRow = {
+  key: string;          // local id for React keys
+  sku: string;
+  name: string;
+  quantity: number;
+  unit_value: string;   // string for input control
+  customs_code: string;
+  origin_country: string;
+  customs_description: string;
+};
+
+function customsRowsFromOrder(order: Order, defaultOrigin: string): CustomsRow[] {
+  const items = order.line_items || [];
+  if (items.length === 0) {
+    return [{
+      key: "row-0",
+      sku: "", name: "Goods", quantity: 1, unit_value: "0",
+      customs_code: "", origin_country: defaultOrigin, customs_description: "Goods",
+    }];
+  }
+  return items.map((li, i) => {
+    const qty = Math.max(1, Number(li.quantity) || 1);
+    const subtotal = Number(li.subtotal ?? li.total ?? 0);
+    const unit = subtotal > 0 ? subtotal / qty : 0;
+    return {
+      key: `row-${li.id ?? i}`,
+      sku: li.sku || "",
+      name: li.name || "Goods",
+      quantity: qty,
+      unit_value: unit.toFixed(2),
+      customs_code: "",
+      origin_country: defaultOrigin,
+      customs_description: (li.name || "Goods").slice(0, 120),
+    };
+  });
+}
+
 
 export function RoyalMailLabelDialog({
   open, onOpenChange, siteId, order, initialShipment, onCreated, onVoided,
@@ -160,10 +215,39 @@ function LabelForm({
   const [requireSignature, setRequireSignature] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Royal Mail settings — used to seed sender defaults (origin country) for
+  // the customs panel. Loaded once on mount; falls back to "GB" while loading.
+  const [rmSettings, setRmSettings] = useState<RmSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ settings: RmSettings }>("/api/royal-mail/settings")
+      .then((r) => { if (!cancelled) setRmSettings(r.settings); })
+      .catch(() => { /* non-fatal — defaults still work */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const defaultOrigin = (rmSettings?.default_origin_country || "GB").toUpperCase();
+  const defaultContentType: RmCustomsContentType = rmSettings?.default_content_type || "saleOfGoods";
+  const orderCurrency = (order.currency || "GBP").toUpperCase();
+
+  // Customs state — only used for international destinations.
+  const [contentType, setContentType] = useState<RmCustomsContentType>(defaultContentType);
+  const [currencyCode, setCurrencyCode] = useState<string>(orderCurrency);
+  const [customsRows, setCustomsRows] = useState<CustomsRow[]>(
+    () => customsRowsFromOrder(order, defaultOrigin),
+  );
+  // Re-seed customs rows whenever the order or sender defaults change.
+  useEffect(() => {
+    setCustomsRows(customsRowsFromOrder(order, defaultOrigin));
+    setCurrencyCode(orderCurrency);
+    setContentType(defaultContentType);
+  }, [order.id, defaultOrigin, orderCurrency, defaultContentType]);
+
   const setField = (k: keyof RecipientForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setRecipient((r) => ({ ...r, [k]: e.target.value }));
 
   const destScope = rmDestinationScope(recipient.country_code);
+  const isInternational = destScope === "international";
   const availableServices = useMemo(
     () => rmServicesForFormat(packageFormat, { country: recipient.country_code }),
     [packageFormat, recipient.country_code],
@@ -220,6 +304,37 @@ function LabelForm({
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
 
+  // Customs validation — only enforced when shipping internationally.
+  const customsErrors = useMemo(() => {
+    if (!isInternational) return [];
+    const errs: string[] = [];
+    if (customsRows.length === 0) errs.push("At least one customs item is required.");
+    customsRows.forEach((row, i) => {
+      if (!row.customs_code.trim()) errs.push(`Line ${i + 1}: HS / commodity code is required.`);
+      if (!row.origin_country.trim() || row.origin_country.length !== 2) {
+        errs.push(`Line ${i + 1}: Origin country must be a 2-letter ISO code.`);
+      }
+      const v = Number(row.unit_value);
+      if (!Number.isFinite(v) || v < 0) errs.push(`Line ${i + 1}: Unit value must be a positive number.`);
+      if (!row.customs_description.trim()) errs.push(`Line ${i + 1}: Description is required.`);
+      if (!Number.isInteger(row.quantity) || row.quantity < 1) {
+        errs.push(`Line ${i + 1}: Quantity must be a whole number ≥ 1.`);
+      }
+    });
+    return errs;
+  }, [isInternational, customsRows]);
+
+  const updateCustomsRow = (idx: number, patch: Partial<CustomsRow>) =>
+    setCustomsRows((rows) => rows.map((r, i) => (i === idx ? { ...r, ...patch } : r)));
+  const addCustomsRow = () =>
+    setCustomsRows((rows) => [...rows, {
+      key: `row-new-${Date.now()}`,
+      sku: "", name: "", quantity: 1, unit_value: "0",
+      customs_code: "", origin_country: defaultOrigin, customs_description: "",
+    }]);
+  const removeCustomsRow = (idx: number) =>
+    setCustomsRows((rows) => rows.filter((_, i) => i !== idx));
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!Number.isInteger(weightNum) || weightNum < 1) {
@@ -228,6 +343,10 @@ function LabelForm({
     }
     if (overweight) {
       toast.error(`Weight exceeds the ${service.maxWeight}g limit for ${service.label}.`);
+      return;
+    }
+    if (isInternational && customsErrors.length > 0) {
+      toast.error(customsErrors[0]);
       return;
     }
     setSubmitting(true);
@@ -240,6 +359,24 @@ function LabelForm({
               height_mm: Number(height),
             }
           : {};
+
+      // Build the customs block only for international shipments.
+      const customs = isInternational
+        ? {
+            content_type: contentType,
+            currency_code: currencyCode.toUpperCase(),
+            items: customsRows.map<RmCustomsItem>((r) => ({
+              sku: r.sku || undefined,
+              name: r.name || r.customs_description || "Goods",
+              quantity: r.quantity,
+              unit_value: Number(r.unit_value),
+              customs_code: r.customs_code.trim(),
+              origin_country: r.origin_country.trim().toUpperCase(),
+              customs_description: r.customs_description.trim(),
+            })),
+          }
+        : undefined;
+
       const res = await api<{ shipment: RmShipment }>("/api/royal-mail/shipments", {
         method: "POST",
         body: {
@@ -264,6 +401,7 @@ function LabelForm({
             phone: recipient.phone || undefined,
             email: recipient.email || undefined,
           },
+          ...(customs ? { customs } : {}),
         },
       });
       toast.success("Label created");
@@ -421,8 +559,130 @@ function LabelForm({
         </div>
       </section>
 
+      {isInternational && (
+        <>
+          <Separator />
+          <section className="space-y-3">
+            <div className="flex items-center gap-2">
+              <Globe className="h-4 w-4 text-muted-foreground" />
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                Customs declaration (CN22 / CN23)
+              </h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Required for international shipments. Declared values are pre-filled
+              from each WooCommerce line subtotal — review before submitting.
+              {rmSettings?.eori_number && (
+                <> Your EORI <span className="font-mono">{rmSettings.eori_number}</span> will be attached.</>
+              )}
+              {rmSettings?.ioss_number && (
+                <> IOSS <span className="font-mono">{rmSettings.ioss_number}</span> included.</>
+              )}
+            </p>
+
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="content-type">Content type</Label>
+                <Select value={contentType} onValueChange={(v) => setContentType(v as RmCustomsContentType)}>
+                  <SelectTrigger id="content-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="saleOfGoods">Sale of goods</SelectItem>
+                    <SelectItem value="gift">Gift</SelectItem>
+                    <SelectItem value="commercialSample">Commercial sample</SelectItem>
+                    <SelectItem value="documents">Documents</SelectItem>
+                    <SelectItem value="returnedGoods">Returned goods</SelectItem>
+                    <SelectItem value="mixedContent">Mixed content</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="currency">Currency</Label>
+                <Input
+                  id="currency"
+                  value={currencyCode}
+                  onChange={(e) => setCurrencyCode(e.target.value.toUpperCase().slice(0, 3))}
+                  maxLength={3}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {customsRows.map((row, idx) => (
+                <div key={row.key} className="rounded-md border bg-muted/20 p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-xs font-medium text-foreground truncate">
+                      {idx + 1}. {row.name || "Item"}{row.sku ? ` · ${row.sku}` : ""}
+                    </div>
+                    {customsRows.length > 1 && (
+                      <Button
+                        type="button" variant="ghost" size="sm"
+                        className="h-7 px-2 text-destructive hover:text-destructive"
+                        onClick={() => removeCustomsRow(idx)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Qty</Label>
+                      <Input
+                        type="number" min={1} value={row.quantity}
+                        onChange={(e) => updateCustomsRow(idx, { quantity: Math.max(1, Number(e.target.value) || 1) })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Unit value ({currencyCode})</Label>
+                      <Input
+                        type="number" min={0} step="0.01" value={row.unit_value}
+                        onChange={(e) => updateCustomsRow(idx, { unit_value: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">HS code</Label>
+                      <Input
+                        value={row.customs_code} placeholder="e.g. 6109.10"
+                        onChange={(e) => updateCustomsRow(idx, { customs_code: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Origin</Label>
+                      <Input
+                        value={row.origin_country} maxLength={2}
+                        onChange={(e) => updateCustomsRow(idx, { origin_country: e.target.value.toUpperCase().slice(0, 2) })}
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Description (printed on the customs form)</Label>
+                    <Input
+                      value={row.customs_description} maxLength={120}
+                      onChange={(e) => updateCustomsRow(idx, { customs_description: e.target.value })}
+                    />
+                  </div>
+                </div>
+              ))}
+              <Button type="button" variant="outline" size="sm" onClick={addCustomsRow}>
+                Add line
+              </Button>
+            </div>
+
+            {customsErrors.length > 0 && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/5 p-2 text-xs text-destructive flex items-start gap-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <div>{customsErrors[0]}</div>
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
       <div className="flex justify-end gap-2 pt-2">
-        <Button type="submit" disabled={submitting || overweight}>
+        <Button
+          type="submit"
+          disabled={submitting || overweight || (isInternational && customsErrors.length > 0)}
+        >
           {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
           Create label
         </Button>
@@ -449,15 +709,22 @@ function FormRow({
 // ---------------- Viewer ----------------
 
 function LabelViewer({
-  shipment, onClose, onVoided,
+  shipment: initialShipment, onClose, onVoided,
 }: {
   shipment: RmShipment;
   onClose: () => void;
   onVoided: () => void;
 }) {
+  // Local copy so the retry-fetch button can update has_label / click_and_drop_url
+  // without forcing the parent to refetch.
+  const [shipment, setShipment] = useState<RmShipment>(initialShipment);
+  useEffect(() => { setShipment(initialShipment); }, [initialShipment]);
+
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [voiding, setVoiding] = useState(false);
+  const [refetching, setRefetching] = useState(false);
+  const [pdfError, setPdfError] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
   // Cancel = delete the Click & Drop order (when still cancellable) and
@@ -488,14 +755,39 @@ function LabelViewer({
     }
   };
 
+  // Ask the server to re-poll Click & Drop for the label PDF — useful when the
+  // user has just confirmed customs or paid for postage in the C&D dashboard.
+  const refetchLabel = async () => {
+    setRefetching(true);
+    try {
+      const res = await api<{ shipment: RmShipment }>(
+        `/api/royal-mail/shipments/${shipment.id}/refetch-label`,
+        { method: "POST" },
+      );
+      setShipment(res.shipment);
+      if (res.shipment.has_label) {
+        toast.success("Label is ready");
+      } else {
+        toast.warning("Royal Mail still has no PDF for this order. Try again after confirming in Click & Drop.");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Refetch failed");
+    } finally {
+      setRefetching(false);
+    }
+  };
+
   useEffect(() => {
     if (!shipment.has_label) {
       setPdfUrl(null);
+      setPdfError(null);
       setLoading(false);
       return;
     }
     let url: string | null = null;
     let cancelled = false;
+    setLoading(true);
+    setPdfError(null);
     apiBlob(`/api/royal-mail/shipments/${shipment.id}/label.pdf`)
       .then((blob) => {
         if (cancelled) return;
@@ -508,7 +800,7 @@ function LabelViewer({
       .catch((e) => {
         if (!cancelled) {
           setPdfUrl(null);
-          toast.error(e instanceof Error ? e.message : "Could not load label");
+          setPdfError(e instanceof Error ? e.message : "Could not load label");
         }
       })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -615,19 +907,38 @@ function LabelViewer({
             onLoad={handleIframeLoaded}
           />
         ) : (
-          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-2">
+          <div className="text-sm text-muted-foreground p-6 text-center max-w-md space-y-3">
             <p>
               No printable PDF was returned by Royal Mail for this shipment.
             </p>
             <p>
-              The order was created in Click &amp; Drop, but PDF retrieval is only available for some account/service combinations. Open Click &amp; Drop to buy/generate the label there.
+              The order was created in Click &amp; Drop, but PDF retrieval is
+              only available for some account/service combinations.
+              International orders sometimes need a manual customs confirmation
+              before the label is generated.
             </p>
+            {pdfError && (
+              <p className="text-destructive text-xs">{pdfError}</p>
+            )}
             {shipment.royal_mail_shipment_id && (
               <p>Click &amp; Drop order ID: <span className="font-mono">{shipment.royal_mail_shipment_id}</span></p>
             )}
             {shipment.tracking_number && (
               <p>Tracking: <span className="font-mono">{shipment.tracking_number}</span></p>
             )}
+            <div className="flex flex-wrap justify-center gap-2 pt-1">
+              {shipment.click_and_drop_url && (
+                <Button asChild variant="outline" size="sm">
+                  <a href={shipment.click_and_drop_url} target="_blank" rel="noreferrer">
+                    <ExternalLink className="h-3.5 w-3.5" /> Open in Click &amp; Drop
+                  </a>
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={refetchLabel} disabled={refetching}>
+                {refetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Retry label fetch
+              </Button>
+            </div>
           </div>
         )}
       </div>

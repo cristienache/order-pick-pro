@@ -19,9 +19,13 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Printer, Truck, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, Printer, Truck, AlertCircle, CheckCircle2, Globe } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import {
+  api, apiBlob, RM_SERVICES, rmSignedVariant,
+  markShipmentsPrinted,
+  type RmShipment, type RmCustomsContentType, type RmSettings,
+} from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 import { printPdfBlob } from "@/lib/print-pdf";
 
@@ -71,6 +75,33 @@ export function BulkRoyalMailDialog({
   const [height, setHeight] = useState<string>("");
   const [safePlace, setSafePlace] = useState<string>("");
   const [requireSignature, setRequireSignature] = useState(false);
+
+  // Royal Mail settings — used to seed sender defaults (origin country,
+  // content type, currency reminder) for the bulk customs panel.
+  const [rmSettings, setRmSettings] = useState<RmSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    api<{ settings: RmSettings }>("/api/royal-mail/settings")
+      .then((r) => { if (!cancelled) setRmSettings(r.settings); })
+      .catch(() => { /* non-fatal */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  const defaultOrigin = (rmSettings?.default_origin_country || "GB").toUpperCase();
+  const defaultContentType: RmCustomsContentType = rmSettings?.default_content_type || "saleOfGoods";
+
+  // Shared customs (only used when destination = international).
+  const [customsContentType, setCustomsContentType] =
+    useState<RmCustomsContentType>(defaultContentType);
+  const [customsCurrency, setCustomsCurrency] = useState<string>("GBP");
+  const [customsCode, setCustomsCode] = useState<string>("");
+  const [customsOrigin, setCustomsOrigin] = useState<string>(defaultOrigin);
+  const [customsDescription, setCustomsDescription] = useState<string>("");
+  // Re-seed when settings load so the form shows the user's saved defaults.
+  useEffect(() => {
+    setCustomsContentType(defaultContentType);
+    setCustomsOrigin(defaultOrigin);
+  }, [defaultContentType, defaultOrigin]);
 
   // Run state
   const [busy, setBusy] = useState(false);
@@ -170,6 +201,14 @@ export function BulkRoyalMailDialog({
   const weightNum = Number(weightGrams);
   const overweight = Number.isFinite(weightNum) && weightNum > service.maxWeight;
 
+  const isInternational = destination === "international";
+  const customsValid =
+    !isInternational ||
+    (customsCode.trim().length >= 2 &&
+      customsOrigin.trim().length === 2 &&
+      customsDescription.trim().length > 0 &&
+      customsCurrency.trim().length === 3);
+
   // ---------- Create flow ----------
   const runCreate = async () => {
     if (!Number.isInteger(weightNum) || weightNum < 1) {
@@ -178,6 +217,10 @@ export function BulkRoyalMailDialog({
     }
     if (overweight) {
       toast.error(`Weight exceeds the ${service.maxWeight}g limit for ${service.label}.`);
+      return;
+    }
+    if (isInternational && !customsValid) {
+      toast.error("Fill in customs HS code, origin country, currency and description.");
       return;
     }
     setBusy(true);
@@ -195,6 +238,15 @@ export function BulkRoyalMailDialog({
         body.length_mm = Number(length);
         body.width_mm = Number(width);
         body.height_mm = Number(height);
+      }
+      if (isInternational) {
+        body.bulk_customs = {
+          content_type: customsContentType,
+          currency_code: customsCurrency.toUpperCase(),
+          customs_code: customsCode.trim(),
+          origin_country: customsOrigin.trim().toUpperCase(),
+          customs_description: customsDescription.trim(),
+        };
       }
       const res = await api<{ succeeded: number; failed: number; results: BulkResultRow[] }>(
         "/api/royal-mail/shipments/bulk",
@@ -417,6 +469,89 @@ export function BulkRoyalMailDialog({
               />
             </div>
 
+            {isInternational && (
+              <div className="space-y-3 rounded-md border p-3 bg-muted/20">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-4 w-4 text-muted-foreground" />
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Shared customs declaration
+                  </h4>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Applied to every selected international order. Per-item declared
+                  values are taken from each order's WooCommerce line subtotals.
+                  {rmSettings?.eori_number && (
+                    <> EORI <span className="font-mono">{rmSettings.eori_number}</span> attached.</>
+                  )}
+                  {rmSettings?.ioss_number && (
+                    <> IOSS <span className="font-mono">{rmSettings.ioss_number}</span> included.</>
+                  )}
+                </p>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-content-type">Content type</Label>
+                    <Select
+                      value={customsContentType}
+                      onValueChange={(v) => setCustomsContentType(v as RmCustomsContentType)}
+                    >
+                      <SelectTrigger id="bulk-content-type"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="saleOfGoods">Sale of goods</SelectItem>
+                        <SelectItem value="gift">Gift</SelectItem>
+                        <SelectItem value="commercialSample">Commercial sample</SelectItem>
+                        <SelectItem value="documents">Documents</SelectItem>
+                        <SelectItem value="returnedGoods">Returned goods</SelectItem>
+                        <SelectItem value="mixedContent">Mixed content</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-currency">Currency</Label>
+                    <Input
+                      id="bulk-currency"
+                      value={customsCurrency}
+                      onChange={(e) => setCustomsCurrency(e.target.value.toUpperCase().slice(0, 3))}
+                      maxLength={3}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-hs">HS / commodity code</Label>
+                    <Input
+                      id="bulk-hs"
+                      value={customsCode}
+                      onChange={(e) => setCustomsCode(e.target.value)}
+                      placeholder="e.g. 6109.10"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="bulk-origin">Origin country (ISO-2)</Label>
+                    <Input
+                      id="bulk-origin"
+                      value={customsOrigin}
+                      onChange={(e) => setCustomsOrigin(e.target.value.toUpperCase().slice(0, 2))}
+                      maxLength={2}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="bulk-cdesc">Description (printed on the customs form)</Label>
+                  <Input
+                    id="bulk-cdesc"
+                    value={customsDescription}
+                    onChange={(e) => setCustomsDescription(e.target.value)}
+                    placeholder="e.g. Cotton t-shirts"
+                    maxLength={120}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="rounded-md border bg-muted/30 p-3 text-xs text-muted-foreground">
               Will create labels for <span className="font-semibold text-foreground">{totalOrders}</span> order
               {totalOrders === 1 ? "" : "s"} across {selections.length} site
@@ -475,7 +610,7 @@ export function BulkRoyalMailDialog({
               <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
                 Cancel
               </Button>
-              <Button onClick={runCreate} disabled={busy || overweight}>
+              <Button onClick={runCreate} disabled={busy || overweight || (isInternational && !customsValid)}>
                 {busy && <Loader2 className="h-4 w-4 animate-spin" />}
                 Create {totalOrders} label{totalOrders === 1 ? "" : "s"}
               </Button>

@@ -23,23 +23,38 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2, Printer, Download, Truck, AlertCircle, CheckCircle2, Trash2,
+  ExternalLink, RefreshCw, Globe,
 } from "lucide-react";
 import { toast } from "sonner";
-import { api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant, rmDestinationScope, markShipmentsPrinted, type RmShipment } from "@/lib/api";
+import {
+  api, apiBlob, RM_SERVICES, rmServicesForFormat, rmSignedVariant,
+  rmDestinationScope, markShipmentsPrinted,
+  type RmShipment, type RmCustomsContentType, type RmCustomsItem, type RmSettings,
+} from "@/lib/api";
 import { Checkbox } from "@/components/ui/checkbox";
 
-// Just enough of the WooCommerce order shape to prefill the recipient.
+// Just enough of the WooCommerce order shape to prefill the recipient + customs.
 type WCAddress = {
   first_name?: string; last_name?: string; company?: string;
   address_1?: string; address_2?: string;
   city?: string; state?: string; postcode?: string; country?: string;
   email?: string; phone?: string;
 };
+type WCLineItemLite = {
+  id: number;
+  name: string;
+  sku?: string;
+  quantity: number;
+  subtotal?: string;
+  total?: string;
+};
 type Order = {
   id: number;
   number: string;
+  currency?: string;
   shipping?: WCAddress;
   billing?: WCAddress;
+  line_items?: WCLineItemLite[];
 };
 
 type Props = {
@@ -88,6 +103,46 @@ function recipientFromOrder(order: Order): RecipientForm {
     email: order.billing?.email ?? "",
   };
 }
+
+// Per-line customs form state. We seed one row per WC line item with declared
+// value = subtotal / quantity (matches what was approved in planning).
+type CustomsRow = {
+  key: string;          // local id for React keys
+  sku: string;
+  name: string;
+  quantity: number;
+  unit_value: string;   // string for input control
+  customs_code: string;
+  origin_country: string;
+  customs_description: string;
+};
+
+function customsRowsFromOrder(order: Order, defaultOrigin: string): CustomsRow[] {
+  const items = order.line_items || [];
+  if (items.length === 0) {
+    return [{
+      key: "row-0",
+      sku: "", name: "Goods", quantity: 1, unit_value: "0",
+      customs_code: "", origin_country: defaultOrigin, customs_description: "Goods",
+    }];
+  }
+  return items.map((li, i) => {
+    const qty = Math.max(1, Number(li.quantity) || 1);
+    const subtotal = Number(li.subtotal ?? li.total ?? 0);
+    const unit = subtotal > 0 ? subtotal / qty : 0;
+    return {
+      key: `row-${li.id ?? i}`,
+      sku: li.sku || "",
+      name: li.name || "Goods",
+      quantity: qty,
+      unit_value: unit.toFixed(2),
+      customs_code: "",
+      origin_country: defaultOrigin,
+      customs_description: (li.name || "Goods").slice(0, 120),
+    };
+  });
+}
+
 
 export function RoyalMailLabelDialog({
   open, onOpenChange, siteId, order, initialShipment, onCreated, onVoided,

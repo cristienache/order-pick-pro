@@ -68,7 +68,7 @@ export async function apiBlob(path: string, opts: Options = {}): Promise<Blob> {
   return res.blob();
 }
 
-export type User = { id: number; email: string; role: "user" | "admin" };
+export type User = { id: number; email: string; role: "user" | "admin"; master_admin?: boolean };
 export type Site = {
   id: number;
   name: string;

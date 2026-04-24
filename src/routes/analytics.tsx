@@ -83,6 +83,11 @@ function gbp(v: number) {
   return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", maximumFractionDigits: 0 }).format(v);
 }
 
+function gbpExact(v: number) {
+  if (!Number.isFinite(v)) return "—";
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+}
+
 function num(v: number) {
   if (!Number.isFinite(v)) return "—";
   return new Intl.NumberFormat("en-GB").format(v);

@@ -3061,6 +3061,36 @@ app.post("/api/royal-mail/shipments/bulk", requireAuth, async (req, res) => {
         quantity: Math.max(1, Number(li.quantity) || 1),
       }));
 
+      const recipient = recipientFromWcOrder(order);
+      const isInternational =
+        String(recipient.country_code || "GB").toUpperCase() !== "GB";
+
+      // Build a per-order customs block from the shared bulk_customs settings
+      // plus each WC line's subtotal (declared value = subtotal / quantity).
+      let customsForOrder;
+      if (isInternational && d.bulk_customs) {
+        const items = (order.line_items || []).map((li) => {
+          const qty = Math.max(1, Number(li.quantity) || 1);
+          const sub = Number(li.subtotal ?? li.total ?? 0) || 0;
+          return {
+            sku: String(li.sku || ""),
+            name: String(li.name || "Goods"),
+            quantity: qty,
+            unit_value: qty > 0 ? Number((sub / qty).toFixed(2)) : 0,
+            customs_code: d.bulk_customs.customs_code,
+            origin_country: d.bulk_customs.origin_country,
+            customs_description: d.bulk_customs.customs_description,
+          };
+        });
+        if (items.length > 0) {
+          customsForOrder = {
+            content_type: d.bulk_customs.content_type,
+            currency_code: (order.currency || d.bulk_customs.currency_code).toUpperCase(),
+            items,
+          };
+        }
+      }
+
       const data = {
         site_id: sel.site_id,
         woocommerce_order_id: orderId,
@@ -3074,7 +3104,8 @@ app.post("/api/royal-mail/shipments/bulk", requireAuth, async (req, res) => {
         safe_place: d.safe_place,
         description_of_goods: d.description_of_goods,
         line_items: lineItems,
-        recipient: recipientFromWcOrder(order),
+        ...(customsForOrder ? { customs: customsForOrder } : {}),
+        recipient,
       };
 
       try {

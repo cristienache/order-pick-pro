@@ -2533,18 +2533,50 @@ function loadRmCreds(userId) {
 //   carries declared values, HS codes and origin countries — these populate
 //   the CN22/CN23 customs declaration printed alongside the label.
 function buildCndContents({ lineItems, customsItems, fallbackName, totalWeightGrams, originCountry }) {
+  // Royal Mail Click & Drop requires SKU values within a single package to be
+  // unique. WooCommerce orders can legitimately have two line items with the
+  // same SKU (e.g. the same product added twice, or two variations sharing
+  // the parent SKU) — merge those rows here so we don't get
+  // "Property SKU must be unique" 400s back from C&D.
+  function dedupeBySku(rows, weightTotal) {
+    const seen = new Map();
+    const order = [];
+    let blankIdx = 0;
+    for (const r of rows) {
+      // Empty SKUs aren't subject to uniqueness; keep them as separate rows.
+      const key = r.SKU && r.SKU.trim() ? r.SKU.trim().toUpperCase() : `__blank_${blankIdx++}`;
+      if (!seen.has(key)) {
+        seen.set(key, { ...r });
+        order.push(key);
+      } else {
+        const cur = seen.get(key);
+        const newQty = cur.quantity + r.quantity;
+        // Weighted-average unit value so the package subtotal is preserved.
+        const totalValue = (cur.unitValue * cur.quantity) + (r.unitValue * r.quantity);
+        cur.unitValue = newQty > 0 ? Number((totalValue / newQty).toFixed(2)) : 0;
+        cur.quantity = Math.min(999, newQty);
+        // Prefer a populated description / customs code over a blank one.
+        if (!cur.customsCode && r.customsCode) cur.customsCode = r.customsCode;
+        if (!cur.customsDescription && r.customsDescription) cur.customsDescription = r.customsDescription;
+        if (!cur.originCountryCode && r.originCountryCode) cur.originCountryCode = r.originCountryCode;
+      }
+    }
+    const out = order.map((k) => seen.get(k));
+    // Re-distribute total weight evenly across all units.
+    const totalUnits = out.reduce((s, c) => s + c.quantity, 0);
+    const perUnit = totalUnits > 0 ? Math.floor((weightTotal || 0) / totalUnits) : 0;
+    for (const c of out) c.unitWeightInGrams = perUnit;
+    return out;
+  }
+
   // International path: caller already supplied per-item customs data.
   if (Array.isArray(customsItems) && customsItems.length > 0) {
-    const totalUnits = customsItems.reduce(
-      (s, c) => s + Math.max(1, Number(c.quantity) || 1), 0,
-    );
-    const perUnit = totalUnits > 0 ? Math.floor((totalWeightGrams || 0) / totalUnits) : 0;
-    return customsItems.map((c) => ({
+    const rows = customsItems.map((c) => ({
       name: String(c.customs_description || c.name || c.sku || "Goods").slice(0, 60),
       SKU: String(c.sku || "").slice(0, 60),
       quantity: Math.max(1, Math.min(999, Number(c.quantity) || 1)),
       unitValue: Math.max(0, Number(c.unit_value) || 0),
-      unitWeightInGrams: perUnit,
+      unitWeightInGrams: 0,
       customsCode: String(c.customs_code || "").slice(0, 20),
       // ISO-2 origin country, e.g. "GB". Royal Mail accepts ISO-2 here.
       originCountryCode: String(
@@ -2552,9 +2584,10 @@ function buildCndContents({ lineItems, customsItems, fallbackName, totalWeightGr
       ).toUpperCase().slice(0, 2),
       customsDescription: String(c.customs_description || c.name || "Goods").slice(0, 120),
     }));
+    return dedupeBySku(rows, totalWeightGrams);
   }
 
-  // Domestic / no customs path — preserve original behaviour.
+  // Domestic / no customs path — preserve original behaviour, just dedupe.
   const items = Array.isArray(lineItems)
     ? lineItems
         .map((li) => ({
@@ -2579,13 +2612,7 @@ function buildCndContents({ lineItems, customsItems, fallbackName, totalWeightGr
     }];
   }
 
-  // Distribute the parcel weight across the first item — Click & Drop only
-  // needs the package weight to match its total, but unitWeightInGrams must
-  // sum to something sensible.
-  const totalUnits = items.reduce((s, c) => s + c.quantity, 0);
-  const perUnit = totalUnits > 0 ? Math.floor((totalWeightGrams || 0) / totalUnits) : 0;
-  for (const c of items) c.unitWeightInGrams = perUnit;
-  return items;
+  return dedupeBySku(items, totalWeightGrams);
 }
 
 // Fetch the WooCommerce order's line items and reduce them to the small shape

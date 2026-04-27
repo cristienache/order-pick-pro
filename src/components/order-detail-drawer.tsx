@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { RoyalMailLabelDialog } from "@/components/royal-mail-label-dialog";
 import { EditAddressDialog } from "@/components/edit-address-dialog";
+import { openPacketaPicker } from "@/lib/packeta-widget";
 
 // Subset of WooCommerce order shape we render.
 type WCAddress = {

@@ -1123,6 +1123,9 @@ export function mountOmsWoo(app, { requireAuth }) {
       } catch (e) {
         failed.push({ product_id: row.id, error: e.message });
       }
+      // Tiny breather between PUTs — many shared WP hosts throttle bursts of
+      // /wp-json calls and the loop becomes much more reliable with a pause.
+      await new Promise((r) => setTimeout(r, 50));
     }
     res.json({ ok, failed });
   });

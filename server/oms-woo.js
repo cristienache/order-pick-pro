@@ -159,15 +159,33 @@ function snapshotShape(p) {
 async function pushOneToWc(site, wcId, body, parentId = null) {
   const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
   const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: authHeader(site.consumer_key, site.consumer_secret),
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // WC under load can keep a connection open indefinitely. Without a timeout
+  // a single slow product PUT can stall the whole bulk loop and the Express
+  // request eventually exceeds the upstream proxy's 60s window — the client
+  // sees the app "crash" mid-push. Cap each call at 30s and let the loop
+  // continue with the next product on timeout.
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 30_000);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: authHeader(site.consumer_key, site.consumer_secret),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(to);
+    if (e && e.name === "AbortError") {
+      throw new Error("WC timeout: store did not respond within 30s");
+    }
+    throw new Error(`WC network error: ${e.message || e}`);
+  }
+  clearTimeout(to);
   const text = await res.text().catch(() => "");
   if (!res.ok) {
     // WC errors look like {"code":"product_invalid_sku","message":"...","data":{...}}.

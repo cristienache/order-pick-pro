@@ -2368,6 +2368,68 @@ app.get("/api/packeta/shipments/by-order/:siteId/:orderId", requireAuth, (req, r
   res.json({ shipment: row ? rmShipmentToPublic(row) : null });
 });
 
+// Returns the user's Packeta Widget API key (decrypted) so the browser can
+// open the official Packeta pickup-point picker (widget.packeta.com/v6).
+// The widget key is a public-by-design credential — Packeta serves the
+// widget directly to the customer's browser at checkout — so exposing it to
+// the authenticated HeyShop user (who already owns the credential) is safe.
+app.get("/api/packeta/widget-key", requireAuth, (req, res) => {
+  const row = db.prepare(
+    "SELECT widget_api_key_enc FROM packeta_credentials WHERE user_id = ?",
+  ).get(req.user.id);
+  if (!row || !row.widget_api_key_enc) {
+    return res.status(404).json({ error: "Widget API key not configured" });
+  }
+  let key;
+  try { key = decrypt(row.widget_api_key_enc); }
+  catch { return res.status(500).json({ error: "Stored widget key could not be decrypted" }); }
+  res.json({ api_key: key });
+});
+
+// Persist a pickup-point selection back to the WooCommerce order's meta.
+// Called after the operator picks a point in the Packeta widget on behalf of
+// a customer who didn't pick one at checkout. We write the same meta keys
+// the WC Packeta plugin uses so the rest of the label flow (which already
+// reads `packetery_point_id` / `packetery_carrier_id`) just works.
+const orderPickupSchema = z.object({
+  point_id: z.string().trim().min(1).max(40),
+  carrier_id: z.string().trim().min(1).max(40).optional(),
+  point_name: z.string().trim().max(200).optional(),
+});
+app.put("/api/sites/:id/orders/:orderId/pickup-point", requireAuth, async (req, res) => {
+  const site = loadSiteWithKeys(Number(req.params.id), req.user.id);
+  if (!site) return res.status(404).json({ error: "Not found" });
+  const orderId = Number(req.params.orderId);
+  if (!Number.isInteger(orderId) || orderId <= 0) {
+    return res.status(400).json({ error: "Invalid order id" });
+  }
+  const parsed = orderPickupSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid input", details: parsed.error.flatten() });
+  }
+  const { point_id, carrier_id, point_name } = parsed.data;
+  // Build the meta_data array WooCommerce expects on PUT /wc/v3/orders/:id.
+  // Sending the same key twice removes the first entry, so we send each
+  // exactly once with the latest value.
+  const meta = [
+    { key: "packetery_point_id", value: point_id },
+    { key: "_packetery_point_id", value: point_id },
+  ];
+  if (carrier_id) {
+    meta.push({ key: "packetery_carrier_id", value: carrier_id });
+    meta.push({ key: "_packetery_carrier_id", value: carrier_id });
+  }
+  if (point_name) {
+    meta.push({ key: "packetery_point_name", value: point_name });
+  }
+  try {
+    await updateOrder(site, orderId, { meta_data: meta });
+    res.json({ ok: true, point_id, carrier_id: carrier_id || null });
+  } catch (e) {
+    res.status(502).json({ error: e.message || "Failed to update order in WooCommerce" });
+  }
+});
+
 // ---------- Royal Mail shipments / labels (Click & Drop) ----------
 // Click & Drop accepts many service codes and the valid set depends on the
 // customer's account (OBA contracts vs OLP "pay as you go", returns, etc.).

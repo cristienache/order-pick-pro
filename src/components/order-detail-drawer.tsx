@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Link } from "@tanstack/react-router";
 import { RoyalMailLabelDialog } from "@/components/royal-mail-label-dialog";
 import { EditAddressDialog } from "@/components/edit-address-dialog";
+import { openPacketaPicker } from "@/lib/packeta-widget";
 
 // Subset of WooCommerce order shape we render.
 type WCAddress = {
@@ -189,15 +190,65 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
     }
   };
 
+  // Open the official Packeta pickup-point picker, then persist the chosen
+  // point to the WC order's meta so the rest of the label flow can read it.
+  // Returns true if a point was selected and saved, false if the user
+  // cancelled, and throws on a real error.
+  const pickAndSavePickupPoint = async (): Promise<boolean> => {
+    if (siteId == null || orderId == null) return false;
+    let key: string;
+    try {
+      const r = await api<{ api_key: string }>("/api/packeta/widget-key");
+      key = r.api_key;
+    } catch {
+      toast.error(
+        "Add your Packeta Widget API key on the Packeta integration page first.",
+      );
+      return false;
+    }
+    const country = (data?.order?.shipping?.country || data?.order?.billing?.country || "")
+      .toString().toUpperCase().slice(0, 2) || undefined;
+    const point = await openPacketaPicker(key, { country });
+    if (!point) return false;
+    await api(`/api/sites/${siteId}/orders/${orderId}/pickup-point`, {
+      method: "PUT",
+      body: {
+        point_id: point.id,
+        carrier_id: point.carrierId || "zpoint",
+        point_name: point.name || undefined,
+      },
+    });
+    toast.success(`Pickup point set: ${point.name || point.id}`);
+    return true;
+  };
+
   // Create (or reuse) a Packeta label for this order, then open the PDF.
+  // If the backend reports the order needs a pickup point ID, transparently
+  // open the Packeta widget, save the chosen point to the order, and retry.
   const createPacketaLabel = async () => {
     if (siteId == null || orderId == null) return;
     setPkBusy(true);
     try {
-      const r = await api<{ shipment: RmShipment; label_warning?: string | null }>(
-        `/api/packeta/orders/${siteId}/${orderId}/label`,
-        { method: "POST" },
-      );
+      const attempt = async () =>
+        api<{ shipment: RmShipment; label_warning?: string | null }>(
+          `/api/packeta/orders/${siteId}/${orderId}/label`,
+          { method: "POST" },
+        );
+      let r: { shipment: RmShipment; label_warning?: string | null };
+      try {
+        r = await attempt();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        const needsPoint = /pickup[- ]point/i.test(msg) && /no.*(pickup point id|point id|found)/i.test(msg);
+        if (!needsPoint) throw e;
+        toast.message("This order has no pickup point — choose one now.");
+        const picked = await pickAndSavePickupPoint();
+        if (!picked) {
+          setPkBusy(false);
+          return;
+        }
+        r = await attempt();
+      }
       setPk((prev) => prev ? { ...prev, shipment: r.shipment } : prev);
       if (r.label_warning) toast.warning(r.label_warning);
       else toast.success("Packeta label created");
@@ -466,17 +517,32 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
                     Reprint Packeta label · {pk.shipment.packeta_barcode || pk.shipment.tracking_number || "created"}
                   </Button>
                 ) : (
-                  <Button
-                    onClick={createPacketaLabel}
-                    size="sm"
-                    className="w-full"
-                    disabled={pkBusy}
-                  >
-                    {pkBusy
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Package className="h-3.5 w-3.5" />}
-                    Create Packeta label (4×6")
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={createPacketaLabel}
+                      size="sm"
+                      className="w-full"
+                      disabled={pkBusy}
+                    >
+                      {pkBusy
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Package className="h-3.5 w-3.5" />}
+                      Create Packeta label (4×6")
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setPkBusy(true);
+                        try { await pickAndSavePickupPoint(); }
+                        catch (e) { toast.error(e instanceof Error ? e.message : "Could not save pickup point"); }
+                        finally { setPkBusy(false); }
+                      }}
+                      disabled={pkBusy}
+                      className="w-full text-xs text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1.5"
+                    >
+                      <MapPin className="h-3 w-3" /> Choose pickup point manually
+                    </button>
+                  </div>
                 )}
               </>
             )}

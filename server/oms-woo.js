@@ -159,15 +159,33 @@ function snapshotShape(p) {
 async function pushOneToWc(site, wcId, body, parentId = null) {
   const base = `${normalizeUrl(site.store_url)}/wp-json/wc/v3/products`;
   const url = parentId ? `${base}/${parentId}/variations/${wcId}` : `${base}/${wcId}`;
-  const res = await fetch(url, {
-    method: "PUT",
-    headers: {
-      Authorization: authHeader(site.consumer_key, site.consumer_secret),
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  // WC under load can keep a connection open indefinitely. Without a timeout
+  // a single slow product PUT can stall the whole bulk loop and the Express
+  // request eventually exceeds the upstream proxy's 60s window — the client
+  // sees the app "crash" mid-push. Cap each call at 30s and let the loop
+  // continue with the next product on timeout.
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 30_000);
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "PUT",
+      headers: {
+        Authorization: authHeader(site.consumer_key, site.consumer_secret),
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(to);
+    if (e && e.name === "AbortError") {
+      throw new Error("WC timeout: store did not respond within 30s");
+    }
+    throw new Error(`WC network error: ${e.message || e}`);
+  }
+  clearTimeout(to);
   const text = await res.text().catch(() => "");
   if (!res.ok) {
     // WC errors look like {"code":"product_invalid_sku","message":"...","data":{...}}.
@@ -1007,6 +1025,15 @@ export function mountOmsWoo(app, { requireAuth }) {
     if (!Number.isInteger(site_id) || !Array.isArray(product_ids) || product_ids.length === 0) {
       return res.status(422).json({ error: "site_id + product_ids[] required" });
     }
+    // Hard cap per call so a runaway bulk push can't hold the Express worker
+    // for minutes and time out at the proxy. The client chunks larger sets
+    // into multiple /push calls — see doPush() in inventory.woo.tsx.
+    const MAX_PER_CALL = 50;
+    if (product_ids.length > MAX_PER_CALL) {
+      return res.status(413).json({
+        error: `Too many products in one push (${product_ids.length}). Max ${MAX_PER_CALL} per request — please chunk on the client.`,
+      });
+    }
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }
@@ -1096,6 +1123,9 @@ export function mountOmsWoo(app, { requireAuth }) {
       } catch (e) {
         failed.push({ product_id: row.id, error: e.message });
       }
+      // Tiny breather between PUTs — many shared WP hosts throttle bursts of
+      // /wp-json calls and the loop becomes much more reliable with a pause.
+      await new Promise((r) => setTimeout(r, 50));
     }
     res.json({ ok, failed });
   });

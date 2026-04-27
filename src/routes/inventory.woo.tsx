@@ -577,17 +577,50 @@ function WooInventory() {
       toast.error(e instanceof Error ? `Save before push failed: ${e.message}` : "Save before push failed");
       return;
     }
-    const t = toast.loading(`Pushing ${idsForPush.length} product${idsForPush.length === 1 ? "" : "s"} to WooCommerce…`);
+    // Chunk the IDs so large bulk pushes (hundreds/thousands of products)
+    // don't hold a single HTTP request open long enough to time out at the
+    // proxy and crash the page mid-flight. Each chunk is ≤ MAX_CHUNK so
+    // the server can finish well within its request window.
+    const MAX_CHUNK = 25;
+    const total = idsForPush.length;
+    const chunks: string[][] = [];
+    for (let i = 0; i < idsForPush.length; i += MAX_CHUNK) {
+      chunks.push(idsForPush.slice(i, i + MAX_CHUNK));
+    }
+    const t = toast.loading(
+      `Pushing ${total} product${total === 1 ? "" : "s"} to WooCommerce…`,
+      { duration: Infinity },
+    );
+    let okTotal = 0;
+    const failedAll: Array<{ product_id?: string; wc_id?: number; reason?: string; error?: string }> = [];
+    let processed = 0;
     try {
-      const r = await wcApi.push(siteId, idsForPush);
-      if (r.failed.length) {
-        const first = r.failed[0]?.error || r.failed[0]?.reason || "unknown";
+      for (const chunk of chunks) {
+        try {
+          const r = await wcApi.push(siteId, chunk);
+          okTotal += r.ok;
+          if (r.failed?.length) failedAll.push(...r.failed);
+        } catch (e) {
+          // Network / server error on this chunk — record one synthetic
+          // failure per id so the user knows what didn't go through, and
+          // keep going with the next chunk instead of aborting the run.
+          const msg = e instanceof Error ? e.message : "Push failed";
+          for (const id of chunk) failedAll.push({ product_id: id, error: msg });
+        }
+        processed += chunk.length;
+        toast.loading(
+          `Pushing to WooCommerce — ${processed}/${total} done…`,
+          { id: t, duration: Infinity },
+        );
+      }
+      if (failedAll.length) {
+        const first = failedAll[0]?.error || failedAll[0]?.reason || "unknown";
         toast.warning(
-          `Pushed ${r.ok}, failed ${r.failed.length}. First error: ${first}`,
+          `Pushed ${okTotal}, failed ${failedAll.length}. First error: ${first}`,
           { id: t, duration: 8000 },
         );
       } else {
-        toast.success(`Pushed ${r.ok} product${r.ok === 1 ? "" : "s"} to WooCommerce`, { id: t });
+        toast.success(`Pushed ${okTotal} product${okTotal === 1 ? "" : "s"} to WooCommerce`, { id: t });
       }
       qc.invalidateQueries({ queryKey: ["wc-sites"] });
       qc.invalidateQueries({ queryKey: ["wc-backups"] });

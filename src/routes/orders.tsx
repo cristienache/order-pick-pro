@@ -1037,7 +1037,8 @@ function PicklistPage() {
                               <span className="truncate">{site?.name || `Site ${sid}`}</span>
                             </Badge>
                           </div>
-                          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
                             <span className="truncate">{o.customer || "\u2014"}</span>
                             {(() => {
                               const sh = shipmentsByOrder[`${sid}:${o.id}`];
@@ -1083,6 +1084,23 @@ function PicklistPage() {
                               </Badge>
                             )}
                             <PriorityBadges order={o} highValueThreshold={highValueThreshold} />
+                            </div>
+                            {(o.shipping_method || o.shipping_country) && (
+                              <div className="flex items-center gap-2 text-[11px] text-muted-foreground leading-tight">
+                                {o.shipping_method && (
+                                  <span className="inline-flex items-center gap-1 truncate" title={o.shipping_method}>
+                                    <Truck className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{o.shipping_method}</span>
+                                  </span>
+                                )}
+                                {o.shipping_country && (
+                                  <span className="inline-flex items-center gap-1 font-mono uppercase">
+                                    <span className="opacity-60">·</span>
+                                    {o.shipping_country}
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </div>
                           <div className="flex-[1.4] min-w-0 text-xs text-muted-foreground leading-tight">
                             {o.items && o.items.length > 0 ? (

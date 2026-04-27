@@ -1037,7 +1037,8 @@ function PicklistPage() {
                               <span className="truncate">{site?.name || `Site ${sid}`}</span>
                             </Badge>
                           </div>
-                          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+                          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2 flex-wrap min-w-0">
                             <span className="truncate">{o.customer || "\u2014"}</span>
                             {(() => {
                               const sh = shipmentsByOrder[`${sid}:${o.id}`];

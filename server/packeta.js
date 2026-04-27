@@ -287,16 +287,131 @@ function readOrderMeta(order, keys) {
   return null;
 }
 
+// Some WC Packeta plugin versions don't store `packetery_point_id` as its own
+// meta key — instead they save a single human-labelled blob, visible in the
+// WooCommerce admin as "Packeta - Pickup Point Detail". The value is either a
+// JSON object, a serialized PHP array, or a plain text dump that contains
+// the point ID under one of several aliases (id, point_id, pointId,
+// packetery_point_id…). This helper digs the ID out of any of those shapes.
+function extractPacketaDetailField(detail, fields) {
+  if (detail == null) return null;
+  if (typeof detail === "object" && !Array.isArray(detail)) {
+    for (const f of fields) {
+      const v = detail[f];
+      if (v != null && String(v).trim() !== "") return String(v).trim();
+    }
+    return null;
+  }
+  const str = String(detail);
+  if (!str) return null;
+
+  // Try JSON first.
+  const trimmed = str.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+      if (obj && typeof obj === "object") {
+        for (const f of fields) {
+          const v = obj[f];
+          if (v != null && String(v).trim() !== "") return String(v).trim();
+        }
+      }
+    } catch {
+      /* fallthrough */
+    }
+  }
+
+  // PHP serialized: a:N:{s:LEN:"key";s:LEN:"value";...} or with i: ints.
+  // Match s:LEN:"key";<value-token> where value is s:LEN:"…" or i:NUM.
+  for (const f of fields) {
+    const reStr = new RegExp(
+      `s:\\d+:"${f.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}";\\s*s:\\d+:"([^"]*)"`,
+      "i",
+    );
+    const reInt = new RegExp(
+      `s:\\d+:"${f.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}";\\s*i:(-?\\d+)`,
+      "i",
+    );
+    const m = reStr.exec(str) || reInt.exec(str);
+    if (m && m[1] != null && String(m[1]).trim() !== "") return String(m[1]).trim();
+  }
+
+  // Plain text dump like "ID: 12345" or "id=12345" or "Point ID: 12345".
+  for (const f of fields) {
+    const re = new RegExp(
+      `(?:^|[^a-z0-9_])${f.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\s*[:=]\\s*"?([A-Za-z0-9_-]+)`,
+      "im",
+    );
+    const m = re.exec(str);
+    if (m && m[1]) return m[1];
+  }
+
+  return null;
+}
+
+// Read the raw "Packeta - Pickup Point Detail" blob from order meta. The WC
+// Packeta plugin saves it under a few different key spellings depending on
+// version; we accept all common variants.
+function readPacketaDetailBlob(order) {
+  if (!order || typeof order !== "object") return null;
+  const candidateKeys = new Set([
+    "packetery_point_detail",
+    "_packetery_point_detail",
+    "packeta_point_detail",
+    "_packeta_point_detail",
+    "packetery - pickup point detail",
+    "packeta - pickup point detail",
+    "pickup point detail",
+    "pickup_point_detail",
+    "packetery_pickup_point_detail",
+  ]);
+  const tryRead = (arr) => {
+    if (!Array.isArray(arr)) return null;
+    for (const m of arr) {
+      const k = String(m?.key || "").toLowerCase().trim();
+      // Also match display_key (used by some WC REST responses).
+      const dk = String(m?.display_key || "").toLowerCase().trim();
+      if (candidateKeys.has(k) || candidateKeys.has(dk)) {
+        if (m.value != null && m.value !== "") return m.value;
+      }
+    }
+    return null;
+  };
+  const fromOrder = tryRead(order.meta_data);
+  if (fromOrder != null) return fromOrder;
+  if (Array.isArray(order.shipping_lines)) {
+    for (const line of order.shipping_lines) {
+      const v = tryRead(line.meta_data);
+      if (v != null) return v;
+    }
+  }
+  return null;
+}
+
 // Read the WC Packeta plugin's pickup-point ID off a WooCommerce order.
 // Stored in order/shipping-line meta as `packetery_point_id` (and a few
-// historical aliases).
+// historical aliases). As a final fallback, dig it out of the
+// "Packeta - Pickup Point Detail" blob the plugin shows in the order admin.
 export function pickPacketaPickupPointId(order) {
-  return readOrderMeta(order, [
+  const direct = readOrderMeta(order, [
     "packetery_point_id",
     "_packetery_point_id",
     "packeta_point_id",
     "_packeta_point_id",
     "packetery point id",
+    "packetery_id",
+    "_packetery_id",
+  ]);
+  if (direct) return direct;
+  const blob = readPacketaDetailBlob(order);
+  return extractPacketaDetailField(blob, [
+    "id",
+    "point_id",
+    "pointId",
+    "packetery_point_id",
+    "packeta_point_id",
+    "ID",
   ]);
 }
 
@@ -305,13 +420,47 @@ export function pickPacketaPickupPointId(order) {
 //   - a numeric Packeta carrier code (e.g. "106" for CZ Home Delivery)
 //   - the literal string "zpoint" / "packeta" for Packeta pickup points
 // We pass it through verbatim; the caller decides whether to look it up in
-// our carrier catalog.
+// our carrier catalog. Falls back to the "Pickup Point Detail" blob when
+// the carrier wasn't saved as its own meta key.
 export function pickPacketaCarrierId(order) {
-  return readOrderMeta(order, [
+  const direct = readOrderMeta(order, [
     "packetery_carrier_id",
     "_packetery_carrier_id",
     "packeta_carrier_id",
   ]);
+  if (direct) return direct;
+  const blob = readPacketaDetailBlob(order);
+  return extractPacketaDetailField(blob, [
+    "carrier_id",
+    "carrierId",
+    "packetery_carrier_id",
+    "packeta_carrier_id",
+  ]);
+}
+
+// Expose the parsed pickup-point detail blob so the label flow can show it
+// to the user (or use it for fallback address fields). Returns null if no
+// blob is present on the order.
+export function pickPacketaPickupPointDetail(order) {
+  const blob = readPacketaDetailBlob(order);
+  if (blob == null) return null;
+  const fields = [
+    "id",
+    "name",
+    "street",
+    "city",
+    "zip",
+    "country",
+    "carrier_id",
+    "carrierId",
+    "carrier_pickup_point_id",
+  ];
+  const out = {};
+  for (const f of fields) {
+    const v = extractPacketaDetailField(blob, [f]);
+    if (v) out[f] = v;
+  }
+  return Object.keys(out).length > 0 ? out : { raw: typeof blob === "string" ? blob.slice(0, 500) : blob };
 }
 
 // Order weight (kg) saved by the WC Packeta plugin. Falls back to null if

@@ -1025,6 +1025,15 @@ export function mountOmsWoo(app, { requireAuth }) {
     if (!Number.isInteger(site_id) || !Array.isArray(product_ids) || product_ids.length === 0) {
       return res.status(422).json({ error: "site_id + product_ids[] required" });
     }
+    // Hard cap per call so a runaway bulk push can't hold the Express worker
+    // for minutes and time out at the proxy. The client chunks larger sets
+    // into multiple /push calls — see doPush() in inventory.woo.tsx.
+    const MAX_PER_CALL = 50;
+    if (product_ids.length > MAX_PER_CALL) {
+      return res.status(413).json({
+        error: `Too many products in one push (${product_ids.length}). Max ${MAX_PER_CALL} per request — please chunk on the client.`,
+      });
+    }
     let site;
     try { site = getSiteForUser(req.user.id, site_id); }
     catch (e) { return res.status(e.status || 500).json({ error: e.message }); }

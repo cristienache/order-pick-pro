@@ -517,17 +517,32 @@ export function OrderDetailDrawer({ siteId, orderId, storeUrl, onOpenChange }: P
                     Reprint Packeta label · {pk.shipment.packeta_barcode || pk.shipment.tracking_number || "created"}
                   </Button>
                 ) : (
-                  <Button
-                    onClick={createPacketaLabel}
-                    size="sm"
-                    className="w-full"
-                    disabled={pkBusy}
-                  >
-                    {pkBusy
-                      ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      : <Package className="h-3.5 w-3.5" />}
-                    Create Packeta label (4×6")
-                  </Button>
+                  <div className="space-y-2">
+                    <Button
+                      onClick={createPacketaLabel}
+                      size="sm"
+                      className="w-full"
+                      disabled={pkBusy}
+                    >
+                      {pkBusy
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Package className="h-3.5 w-3.5" />}
+                      Create Packeta label (4×6")
+                    </Button>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setPkBusy(true);
+                        try { await pickAndSavePickupPoint(); }
+                        catch (e) { toast.error(e instanceof Error ? e.message : "Could not save pickup point"); }
+                        finally { setPkBusy(false); }
+                      }}
+                      disabled={pkBusy}
+                      className="w-full text-xs text-muted-foreground hover:text-foreground inline-flex items-center justify-center gap-1.5"
+                    >
+                      <MapPin className="h-3 w-3" /> Choose pickup point manually
+                    </button>
+                  </div>
                 )}
               </>
             )}
